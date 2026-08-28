@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from json import loads as json_loads
+from json import dumps as json_dumps, loads as json_loads
 from pathlib import Path
 from random import randint
 from uuid import uuid4
@@ -91,6 +91,17 @@ CATALOG_STOCK_OPTIONS = [
     {"value": "", "label": "Tous stocks"},
     {"value": "available", "label": "Stock disponible"},
     {"value": "empty", "label": "Stock a confirmer / nul"},
+]
+PWA_CACHE_NAME = "heliantha-pwa-v2"
+PWA_CORE_PATHS = [
+    "/",
+    "/assets/helin.jpeg",
+    "/static/css/app.css",
+    "/static/css/admin.css",
+    "/static/js/app.js",
+    "/static/js/public-result.js",
+    "/static/js/advisor.js",
+    "/static/js/pwa.js?v=20260828-2",
 ]
 
 PRICING_RULE_PRESENTATION = {
@@ -448,10 +459,124 @@ def index():
     )
 
 
-@bp.get("/assets/helin.jpeg")
 @bp.get("/assets/heliantha-terrain.jpeg")
+@bp.get("/assets/helin.jpeg")
 def brand_image():
     return send_file(Path(__file__).resolve().parent.parent / "helin.jpeg", mimetype="image/jpeg")
+
+
+@bp.get("/manifest.webmanifest")
+def pwa_manifest():
+    icon_url = url_for("main.brand_image")
+    manifest = {
+        "name": "HELIANTHA",
+        "short_name": "HELIANTHA",
+        "description": "HeliAntha Smart Quote pour les estimations solaires et energetiques.",
+        "start_url": url_for("main.index"),
+        "scope": url_for("main.index"),
+        "display": "standalone",
+        "display_override": ["window-controls-overlay", "standalone"],
+        "orientation": "portrait",
+        "background_color": "#f6f8fb",
+        "theme_color": "#102638",
+        "lang": "fr",
+        "icons": [
+            {
+                "src": icon_url,
+                "sizes": "192x192",
+                "type": "image/jpeg",
+            },
+            {
+                "src": icon_url,
+                "sizes": "512x512",
+                "type": "image/jpeg",
+            },
+        ],
+    }
+    return current_app.response_class(json_dumps(manifest, ensure_ascii=False), mimetype="application/manifest+json")
+
+
+@bp.get("/service-worker.js")
+def service_worker():
+    core_assets = ",\n  ".join(f'"{path}"' for path in PWA_CORE_PATHS)
+    source = f"""
+const CACHE_NAME = "{PWA_CACHE_NAME}";
+const CORE_ASSETS = [
+  {core_assets}
+];
+
+const isSameOrigin = (request) => new URL(request.url).origin === self.location.origin;
+
+self.addEventListener("install", (event) => {{
+  event.waitUntil((async () => {{
+    const cache = await caches.open(CACHE_NAME);
+    await cache.addAll(CORE_ASSETS);
+  }})());
+  self.skipWaiting();
+}});
+
+self.addEventListener("activate", (event) => {{
+  event.waitUntil((async () => {{
+    const keys = await caches.keys();
+    await Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)));
+    await self.clients.claim();
+  }})());
+}});
+
+self.addEventListener("fetch", (event) => {{
+  const {{ request }} = event;
+
+  if (request.method !== "GET" || !isSameOrigin(request)) {{
+    return;
+  }}
+
+  const url = new URL(request.url);
+
+  if (request.mode === "navigate") {{
+    event.respondWith((async () => {{
+      try {{
+        return await fetch(request);
+      }} catch {{
+        const cache = await caches.open(CACHE_NAME);
+        return (await cache.match("/")) || Response.error();
+      }}
+    }})());
+    return;
+  }}
+
+  if (["style", "script", "image", "font"].includes(request.destination) || url.pathname.startsWith("/assets/") || url.pathname.startsWith("/static/")) {{
+    event.respondWith((async () => {{
+      const cache = await caches.open(CACHE_NAME);
+      const cached = await cache.match(request);
+
+      const updateCache = async () => {{
+        try {{
+          const response = await fetch(request);
+          if (response && response.ok) {{
+            await cache.put(request, response.clone());
+          }}
+        }} catch {{}}
+      }};
+
+      if (cached) {{
+        event.waitUntil(updateCache());
+        return cached;
+      }}
+
+      try {{
+        const response = await fetch(request);
+        if (response && response.ok) {{
+          await cache.put(request, response.clone());
+        }}
+        return response;
+      }} catch {{
+        return (await cache.match("/")) || Response.error();
+      }}
+    }})());
+  }}
+}});
+""".strip()
+    return current_app.response_class(source, mimetype="application/javascript")
 
 
 @bp.get("/health")

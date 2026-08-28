@@ -2,6 +2,8 @@
 const publicUrls = window.PUBLIC_QUOTE_URLS || {};
 
 let activeOffer = publicView.recommended_offer || (publicView.offers || [])[0] || null;
+let equipmentAutoScrollRaf = null;
+let equipmentAutoScrollPaused = false;
 window.PUBLIC_QUOTE_ACTIVE = activeOffer;
 
 initScrollReveal();
@@ -68,7 +70,6 @@ function renderCurrentOffer(immediate = false) {
   swapContent("#equipment-grid", () => renderEquipment(offer.main_components || []), immediate);
   swapContent("#solution-diagram", () => renderDiagram(offer.diagram || {}), immediate);
   swapContent("#energy-flow-summary", () => renderEnergyFlowSummary(offer), immediate);
-  swapContent("#technical-details-grid", () => renderTechnicalDetails(offer), immediate);
 }
 
 function renderPriceCard(offer) {
@@ -83,25 +84,16 @@ function renderPriceCard(offer) {
 }
 
 function renderSpotlight(offer) {
-  const metric = primaryMetricForOffer(offer);
-  const value = document.querySelector("#spotlight-value");
-  const unit = document.querySelector("#spotlight-unit");
-  const label = document.querySelector("#spotlight-label");
   const title = document.querySelector("#offer-name");
-  const equipment = document.querySelector("#spotlight-equipment");
-  const highlights = document.querySelector("#spotlight-highlights");
-
-  if (value) value.textContent = metric.value;
-  if (unit) unit.textContent = metric.unit;
-  if (label) label.textContent = metric.label;
+  const resultsGrid = document.querySelector("#spotlight-results-grid");
   if (title) title.textContent = offer.name || "Solution HeliAntha";
-  if (equipment) equipment.textContent = primaryEquipmentLabel(offer);
 
-  if (highlights) {
-    highlights.innerHTML = buildSpotlightHighlights(offer).map((item) => `
-      <article class="spotlight-highlight">
-        <small>${item.label}</small>
-        <strong>${item.value}</strong>
+  if (resultsGrid) {
+    resultsGrid.innerHTML = buildTechnicalDetails(offer).map((row) => `
+      <article class="metric-card metric-card-soft">
+        <small>${row.label}</small>
+        <strong>${row.value}</strong>
+        ${row.note ? `<p class="metric-note">${row.note}</p>` : ""}
       </article>
     `).join("");
   }
@@ -112,7 +104,7 @@ function renderEquipment(components) {
   if (!container) return;
 
   if (!components.length) {
-    container.innerHTML = `<div class="empty-state">Le matériel final sera confirmé par HeliAntha lors de l’étude technique.</div>`;
+    container.innerHTML = `<div class="empty-state">Le materiel final sera confirme par HeliAntha lors de l'etude technique.</div>`;
     return;
   }
 
@@ -120,12 +112,14 @@ function renderEquipment(components) {
     <article class="equipment-card">
       <span class="equipment-icon">${iconForEquipment(item.category)}</span>
       <small>${labelForCategory(item.category)}</small>
-      <h3>${item.title || "Matériel à confirmer"}</h3>
-      <p>${item.summary || "À confirmer lors de l’étude technique"}</p>
-      ${item.reference ? `<p class="offer-meta">Référence ${item.reference}</p>` : `<p class="offer-meta">Référence finale à confirmer</p>`}
+      <h3>${item.title || "Materiel a confirmer"}</h3>
+      <p>${item.summary || "A confirmer lors de l'etude technique"}</p>
+      ${item.reference ? `<p class="offer-meta">Reference ${item.reference}</p>` : `<p class="offer-meta">Reference finale a confirmer</p>`}
       <span class="equipment-source">${sourceLabel(item.source_type)}</span>
     </article>
   `).join("");
+
+  startEquipmentAutoScroll(container);
 }
 
 function renderTechnicalDetails(offer) {
@@ -140,6 +134,73 @@ function renderTechnicalDetails(offer) {
       ${row.note ? `<p class="metric-note">${row.note}</p>` : ""}
     </article>
   `).join("");
+}
+
+function startEquipmentAutoScroll(container) {
+  if (!container || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    return;
+  }
+
+  if (equipmentAutoScrollRaf) {
+    cancelAnimationFrame(equipmentAutoScrollRaf);
+    equipmentAutoScrollRaf = null;
+  }
+
+  let lastTime = performance.now();
+  const speed = 10; // pixels per second
+  let direction = 1;
+  const pauseFor = (ms) => {
+    equipmentAutoScrollPaused = true;
+    window.setTimeout(() => {
+      equipmentAutoScrollPaused = false;
+      lastTime = performance.now();
+    }, ms);
+  };
+
+  const tick = (now) => {
+    const delta = (now - lastTime) / 1000;
+    lastTime = now;
+
+    if (!equipmentAutoScrollPaused && container.scrollWidth > container.clientWidth + 2) {
+      const maxScroll = container.scrollWidth - container.clientWidth;
+      let next = container.scrollLeft + direction * speed * delta;
+
+      if (next >= maxScroll) {
+        next = maxScroll;
+        direction = -1;
+        pauseFor(1600);
+      } else if (next <= 0) {
+        next = 0;
+        direction = 1;
+        pauseFor(1600);
+      }
+
+      container.scrollLeft = next;
+    }
+
+    equipmentAutoScrollRaf = requestAnimationFrame(tick);
+  };
+
+  container.onmouseenter = () => {
+    equipmentAutoScrollPaused = true;
+  };
+  container.onmouseleave = () => {
+    equipmentAutoScrollPaused = false;
+    lastTime = performance.now();
+  };
+  container.onfocusin = () => {
+    equipmentAutoScrollPaused = true;
+  };
+  container.onfocusout = () => {
+    equipmentAutoScrollPaused = false;
+    lastTime = performance.now();
+  };
+  container.onwheel = () => {
+    pauseFor(500);
+  };
+
+  equipmentAutoScrollPaused = false;
+  equipmentAutoScrollRaf = requestAnimationFrame(tick);
 }
 
 function renderDiagram(diagram) {

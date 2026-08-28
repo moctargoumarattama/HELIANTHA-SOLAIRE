@@ -3,12 +3,20 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Résultat de simulation HeliAntha Smart Quote.">
-  <title>{{ public_view.simulation_label }} — {{ company.company_name }}</title>
+  <meta name="description" content="Resultat de simulation HeliAntha Smart Quote.">
+  <title>{{ public_view.simulation_label }} - {{ company.company_name }}</title>
+  <meta name="theme-color" content="#102638">
+  <meta name="application-name" content="HELIANTHA">
+  <meta name="apple-mobile-web-app-title" content="HELIANTHA">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  <link rel="manifest" href="{{ url_for('main.pwa_manifest') }}">
+  <link rel="icon" href="{{ url_for('main.brand_image') }}" type="image/jpeg">
+  <link rel="apple-touch-icon" href="{{ url_for('main.brand_image') }}">
 </head>
 <body class="page-result{% if print_mode %} page-print{% endif %}">
   <header class="site-header site-header-compact">
@@ -22,10 +30,9 @@
       </a>
 
       <div class="header-actions">
-        <a class="button button-ghost button-small" href="{{ url_for('main.index') }}">Nouvelle étude</a>
+        <a class="button button-ghost button-small action-short" href="{{ url_for('main.index') }}"><span class="action-full">Nouvelle etude</span><span class="action-compact">Nouveau</span></a>
         {% if not print_mode %}
-          <a class="button button-ghost button-small" href="{{ url_for('main.public_quote_print', quote_number=quote.quote_number) }}" target="_blank" rel="noreferrer">Pré-devis</a>
-          <button class="button button-primary button-small" type="button" onclick="window.print()">Imprimer</button>
+          <button class="button button-primary button-small action-short" type="button" onclick="window.print()"><span class="action-full">Imprimer</span><span class="action-compact">PDF</span></button>
         {% endif %}
       </div>
     </div>
@@ -37,34 +44,34 @@
         <span class="brand-mark" aria-hidden="true"><img class="brand-logo" src="{{ url_for('main.brand_image') }}" alt=""></span>
         <div>
           <strong>{{ company.company_name }}</strong>
-          <small>Pré-devis HeliAntha</small>
+          <small>Pre-devis HeliAntha</small>
         </div>
       </div>
       <div class="print-reference">
-        <strong>Réf. {{ quote.quote_number }}</strong>
+        <strong>Ref. {{ quote.quote_number }}</strong>
         <small>{{ quote.created_at }}</small>
       </div>
     </section>
   {% endif %}
 
   {% if not print_mode %}
-    <section class="expertise-strip" aria-label="Message d’expertise HeliAntha">
+    <section class="expertise-strip" aria-label="Message d'expertise HeliAntha">
       <div class="shell">
         <div class="expertise-marquee">
           <div class="expertise-marquee-track">
             <div class="expertise-marquee-group">
-              <span>Plus de 10 ans d’expertise dans l’énergie solaire et les systèmes embarqués au Maroc.</span>
-              <span class="expertise-dot" aria-hidden="true">•</span>
-              <span>Plus de 10 ans d’expertise dans l’énergie solaire et les systèmes embarqués au Maroc.</span>
-              <span class="expertise-dot" aria-hidden="true">•</span>
-              <span>Plus de 10 ans d’expertise dans l’énergie solaire et les systèmes embarqués au Maroc.</span>
+              <span>Plus de 10 ans d'expertise dans l'energie solaire et les systemes embarques au Maroc.</span>
+              <span class="expertise-dot" aria-hidden="true">-</span>
+              <span>Plus de 10 ans d'expertise dans l'energie solaire et les systemes embarques au Maroc.</span>
+              <span class="expertise-dot" aria-hidden="true">-</span>
+              <span>Plus de 10 ans d'expertise dans l'energie solaire et les systemes embarques au Maroc.</span>
             </div>
             <div class="expertise-marquee-group" aria-hidden="true">
-              <span>Plus de 10 ans d’expertise dans l’énergie solaire et les systèmes embarqués au Maroc.</span>
-              <span class="expertise-dot" aria-hidden="true">•</span>
-              <span>Plus de 10 ans d’expertise dans l’énergie solaire et les systèmes embarqués au Maroc.</span>
-              <span class="expertise-dot" aria-hidden="true">•</span>
-              <span>Plus de 10 ans d’expertise dans l’énergie solaire et les systèmes embarqués au Maroc.</span>
+              <span>Plus de 10 ans d'expertise dans l'energie solaire et les systemes embarques au Maroc.</span>
+              <span class="expertise-dot" aria-hidden="true">-</span>
+              <span>Plus de 10 ans d'expertise dans l'energie solaire et les systemes embarques au Maroc.</span>
+              <span class="expertise-dot" aria-hidden="true">-</span>
+              <span>Plus de 10 ans d'expertise dans l'energie solaire et les systemes embarques au Maroc.</span>
             </div>
           </div>
         </div>
@@ -77,7 +84,6 @@
       <div class="shell result-hero-grid result-hero-grid-simple">
         <div class="result-hero-copy">
           <span class="eyebrow">{{ public_view.simulation_label }}</span>
-          <h1>Votre étude HeliAntha</h1>
           <div class="hero-meta-grid">
             <article class="hero-meta-card">
               <small>Projet</small>
@@ -87,13 +93,10 @@
               <small>Ville</small>
               <strong>{{ quote.city or quote.location or "Maroc" }}</strong>
             </article>
-            <article class="hero-meta-card">
-              <small>Réf.</small>
+            <article class="hero-meta-card hero-meta-card-ref">
+              <small>Ref.</small>
               <strong>{{ quote.quote_number }}</strong>
             </article>
-          </div>
-          <div class="result-chips">
-            <span class="chip chip-{{ public_view.compatibility.tone }}">{{ public_view.compatibility.label }}</span>
           </div>
         </div>
       </div>
@@ -116,49 +119,36 @@
                 <span class="eyebrow">Votre solution</span>
                 <span class="solution-badge" id="offer-name">{{ public_view.recommended_offer.name if public_view.recommended_offer else "Solution HeliAntha" }}</span>
               </div>
-              <div class="spotlight-value">
-                <strong id="spotlight-value"></strong>
-                <span id="spotlight-unit"></span>
-              </div>
-              <p class="spotlight-label" id="spotlight-label">Résumé simple de votre installation</p>
-              <div class="spotlight-highlights" id="spotlight-highlights"></div>
-              <p class="spotlight-note" id="spotlight-equipment"></p>
-              <div class="summary-actions">
-                <button class="button button-ghost button-small" type="button" id="open-tech-details">Voir les détails</button>
-              </div>
+              <div class="metric-grid metric-grid-compact spotlight-tech-grid" id="spotlight-results-grid"></div>
             </div>
           </section>
         </div>
 
         <aside class="result-sidebar result-sidebar-compact">
           <section class="price-card price-card-compact" id="price-card">
-            <span class="eyebrow">Prix estimé</span>
-            <strong id="offer-price">—</strong>
-            <p id="offer-subprice">Estimation préparée pour votre projet</p>
+            <span class="eyebrow">Prix estime</span>
+            <strong id="offer-price">-</strong>
+            <p id="offer-subprice">Estimation preparee pour votre projet</p>
           </section>
 
-          <section class="confidence-card confidence-card-compact">
-            <span class="eyebrow">À retenir</span>
-            <strong>{{ public_view.compatibility.label }}</strong>
-            <p>HeliAntha finalise les derniers détails avant installation.</p>
+          <section class="equipment-card equipment-card-compact equipment-card-sidebar">
+            <div class="diagram-head diagram-head-tight">
+              <div>
+                <span class="eyebrow">Materiel principal</span>
+              </div>
+            </div>
+            <div class="equipment-grid equipment-grid-sidebar" id="equipment-grid"></div>
           </section>
         </aside>
       </div>
     </section>
 
-    <details class="tech-details shell" id="technical-details-section" {% if print_mode %}open{% endif %}>
-      <summary>Voir les détails techniques</summary>
-      <div class="tech-details-body">
-        <div class="metric-grid metric-grid-compact spotlight-tech-grid" id="technical-details-grid"></div>
-      </div>
-    </details>
-
     <section class="diagram-card energy-flow-card reveal-on-scroll">
       <div class="shell">
         <div class="diagram-head">
           <div>
-            <span class="eyebrow">Flux énergétique</span>
-            <h2>Comment ça fonctionne</h2>
+            <span class="eyebrow">Flux energetique</span>
+            <h2>Comment ca fonctionne</h2>
           </div>
         </div>
         <div id="solution-diagram" class="solution-diagram" aria-live="polite"></div>
@@ -166,44 +156,21 @@
       </div>
     </section>
 
-    <section class="equipment-section reveal-on-scroll">
-      <div class="shell">
-        <div class="diagram-head">
-          <div>
-            <span class="eyebrow">Équipements</span>
-            <h2>Matériel principal</h2>
-          </div>
-        </div>
-        <div class="equipment-grid" id="equipment-grid"></div>
-      </div>
-    </section>
-
-    {% if public_view.warnings %}
-      {% set critical_warnings = public_view.warnings | selectattr("level", "equalto", "critical") | list %}
+    {% set critical_warnings = public_view.warnings | selectattr("level", "equalto", "critical") | list %}
+    {% if critical_warnings %}
       <section class="warnings-section reveal-on-scroll" id="warnings-section">
         <div class="shell">
-          <article class="warning-card warning-info">
-            <strong>Votre étude est prête.</strong>
-            <p>HeliAntha finalise les derniers détails avant installation.</p>
-            {% if critical_warnings %}
-              <div class="summary-actions">
-                <button class="button button-ghost button-small" type="button" id="open-warning-details">Voir les points à vérifier</button>
-              </div>
-            {% endif %}
-          </article>
-          {% if critical_warnings %}
-            <details class="tech-details">
-              <summary>Point à vérifier</summary>
-              <div class="warning-list warning-list-compact">
-                {% for item in critical_warnings %}
-                  <article class="warning-card warning-{{ item.level }}">
-                    <strong>À vérifier</strong>
-                    <p>{{ item.text }}</p>
-                  </article>
-                {% endfor %}
-              </div>
-            </details>
-          {% endif %}
+          <details class="tech-details">
+            <summary>Points à vérifier</summary>
+            <div class="warning-list warning-list-compact">
+              {% for item in critical_warnings %}
+                <article class="warning-card warning-{{ item.level }}">
+                  <strong>À vérifier</strong>
+                  <p>{{ item.text }}</p>
+                </article>
+              {% endfor %}
+            </div>
+          </details>
         </div>
       </section>
     {% endif %}
@@ -211,12 +178,12 @@
     <section class="final-cta-section reveal-on-scroll">
       <div class="shell final-cta-card final-cta-card-compact">
         <div>
-          <span class="eyebrow">Prêt à avancer ?</span>
+          <span class="eyebrow">Pret a avancer ?</span>
           <h2>Demandez la suite quand vous voulez.</h2>
         </div>
         <div class="final-cta-actions final-cta-actions-compact">
           <button class="button button-primary" type="button" id="visit-toggle-bottom">Demander une visite technique</button>
-          <a class="button button-ghost" href="{{ url_for('main.public_quote_print', quote_number=quote.quote_number) }}" target="_blank" rel="noreferrer">Télécharger mon pré-devis</a>
+          <a class="button button-ghost" href="{{ url_for('main.public_quote_print', quote_number=quote.quote_number) }}" target="_blank" rel="noreferrer">Telecharger mon pre-devis</a>
         </div>
       </div>
     </section>
@@ -230,22 +197,22 @@
           <span class="eyebrow">Visite technique</span>
           <h2 id="visit-title">Demander une visite HeliAntha</h2>
         </div>
-        <button class="close-button" type="button" id="visit-close-button" aria-label="Fermer la demande de visite">×</button>
+        <button class="close-button" type="button" id="visit-close-button" aria-label="Fermer la demande de visite">x</button>
       </header>
 
       <form id="visit-form" class="visit-form">
         <div class="form-grid">
           <div class="field">
-            <label for="visit-date">Date souhaitée</label>
+            <label for="visit-date">Date souhaitee</label>
             <input id="visit-date" name="preferred_date" type="date">
           </div>
           <div class="field">
-            <label for="visit-slot">Créneau</label>
+            <label for="visit-slot">Creneau</label>
             <select id="visit-slot" name="time_slot">
               <option value="">Choisir</option>
               <option value="Matin">Matin</option>
-              <option value="Après-midi">Après-midi</option>
-              <option value="Fin de journée">Fin de journée</option>
+              <option value="Apres-midi">Apres-midi</option>
+              <option value="Fin de journee">Fin de journee</option>
             </select>
           </div>
           <div class="field full">
@@ -253,12 +220,12 @@
             <input id="visit-address" name="address" type="text" required value="{{ quote.location or quote.request.contact.location or quote.city or '' }}">
           </div>
           <div class="field">
-            <label for="visit-phone">Téléphone</label>
+            <label for="visit-phone">Telephone</label>
             <input id="visit-phone" name="phone" type="text" required value="{{ quote.phone or quote.request.contact.phone or '' }}">
           </div>
           <div class="field full">
             <label for="visit-comment">Commentaire</label>
-            <textarea id="visit-comment" name="comment" rows="4" placeholder="Accès au site, contrainte horaire, détail utile…"></textarea>
+            <textarea id="visit-comment" name="comment" rows="4" placeholder="Acces au site, contrainte horaire, detail utile..."></textarea>
           </div>
         </div>
 
@@ -282,6 +249,7 @@
   </script>
   <script src="{{ url_for('static', filename='js/public-result.js') }}"></script>
   <script src="{{ url_for('static', filename='js/advisor.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/pwa.js') }}?v=20260828-2"></script>
   {% if print_mode %}
     <script>
       window.addEventListener("load", () => window.setTimeout(() => window.print(), 300));

@@ -2544,3 +2544,18 @@ body.admin-menu-open{
     font-size:10px;
   }
 }
+
+.admin-topbar-actions{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  justify-content:flex-end;
+}
+
+.admin-topbar-actions form{
+  margin:0;
+}
+
+.admin-topbar-actions .ghost-button{
+  white-space:nowrap;
+}

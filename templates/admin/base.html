@@ -4,6 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}HELIANTHA Admin{% endblock %}</title>
+  <meta name="theme-color" content="#102638">
+  <meta name="application-name" content="HELIANTHA">
+  <meta name="apple-mobile-web-app-title" content="HELIANTHA">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="{{ url_for('main.pwa_manifest') }}">
+  <link rel="icon" href="{{ url_for('main.brand_image') }}" type="image/jpeg">
+  <link rel="apple-touch-icon" href="{{ url_for('main.brand_image') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}?v=20260828-1">
 </head>
 <body class="admin-app">
@@ -35,9 +43,11 @@
         <small>HELIANTHA Smart Quote</small>
         <h1>{% block page_title %}Administration{% endblock %}</h1>
       </div>
-      <form method="post" action="{{ url_for('main.admin_logout') }}">
-        <button class="ghost-button" type="submit">Déconnexion</button>
-      </form>
+      <div class="admin-topbar-actions">
+        <form method="post" action="{{ url_for('main.admin_logout') }}">
+          <button class="ghost-button" type="submit">Déconnexion</button>
+        </form>
+      </div>
     </header>
     <main class="admin-content">
       {% block content %}{% endblock %}
@@ -74,6 +84,7 @@
       });
     })();
   </script>
+  <script src="{{ url_for('static', filename='js/pwa.js') }}?v=20260828-2"></script>
   {% block page_scripts %}{% endblock %}
 </body>
 </html>

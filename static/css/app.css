@@ -295,6 +295,20 @@ form {
   transition: transform var(--transition), background var(--transition), border-color var(--transition), color var(--transition);
 }
 
+.pwa-install-button {
+  white-space: nowrap;
+}
+
+.action-short {
+  white-space: nowrap;
+  flex: 0 0 auto;
+  min-width: max-content;
+}
+
+.action-compact {
+  display: none;
+}
+
 .button:hover,
 .button:focus-visible {
   transform: translateY(-1px);
@@ -490,6 +504,13 @@ form {
   font-family: "Manrope", sans-serif;
   font-size: 1rem;
   color: var(--text);
+}
+
+.hero-meta-card-ref {
+  grid-column: 1 / -1;
+  justify-self: center;
+  width: min(100%, 240px);
+  text-align: center;
 }
 
 .hero-actions,
@@ -1968,8 +1989,65 @@ form {
 
 .confidence-card-compact {
   display: grid;
-  gap: 0.35rem;
+  gap: 0.55rem;
   align-self: stretch;
+}
+
+.confidence-strip {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(168px, 1fr);
+  gap: 0.75rem;
+  overflow-x: auto;
+  padding-bottom: 0.15rem;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: thin;
+}
+
+.confidence-strip::-webkit-scrollbar {
+  height: 8px;
+}
+
+.confidence-strip::-webkit-scrollbar-thumb {
+  background: rgba(40, 120, 168, 0.22);
+  border-radius: 999px;
+}
+
+.confidence-mini-card {
+  scroll-snap-align: start;
+  min-height: 112px;
+  padding: 0.9rem 0.95rem;
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at top right, rgba(40, 120, 168, 0.08), transparent 42%),
+    rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(220, 230, 238, 0.9);
+  box-shadow: 0 10px 22px rgba(15, 34, 48, 0.04);
+}
+
+.confidence-mini-card small {
+  display: block;
+  margin-bottom: 0.3rem;
+  color: var(--blue);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.confidence-mini-card strong {
+  display: block;
+  margin: 0;
+  font-family: "Manrope", sans-serif;
+  font-size: 1rem;
+  line-height: 1.18;
+}
+
+.confidence-mini-card p {
+  margin: 0.35rem 0 0;
+  color: var(--text-soft);
+  font-size: 0.88rem;
+  line-height: 1.45;
 }
 
 .confidence-card-compact strong {
@@ -2064,8 +2142,26 @@ form {
 
 .price-card-compact {
   display: grid;
-  gap: 0.35rem;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.99) 0%, rgba(247, 250, 252, 0.96) 100%);
+  gap: 0.3rem;
+  justify-items: center;
+  text-align: center;
+  padding: 0.95rem 1rem;
+  min-height: 150px;
+  background:
+    radial-gradient(circle at top, rgba(40, 120, 168, 0.12), transparent 58%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.99) 0%, rgba(247, 250, 252, 0.96) 100%);
+  position: relative;
+  overflow: hidden;
+}
+
+.price-card-compact::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, transparent 0%, rgba(246, 190, 26, 0.16) 45%, transparent 70%);
+  transform: translateX(-120%);
+  animation: priceSheen 4.8s ease-in-out infinite;
+  pointer-events: none;
 }
 
 .detail-card-compact {
@@ -2127,6 +2223,23 @@ form {
   display: block;
   margin: 0.25rem 0 0.75rem;
   font-size: 2rem;
+}
+
+.price-card-compact strong {
+  margin: 0.15rem 0 0;
+  font-size: clamp(1.75rem, 4vw, 2.25rem);
+  line-height: 1.02;
+  letter-spacing: -0.03em;
+  color: transparent;
+  background: linear-gradient(90deg, #102638 0%, var(--blue) 38%, #1f8f74 74%, #b87700 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: pricePulse 3.8s ease-in-out infinite;
+}
+
+.price-card-compact p {
+  margin: 0;
+  color: var(--text-soft);
 }
 
 /* 06 Results */
@@ -2272,6 +2385,89 @@ form {
 
 .equipment-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.equipment-card-sidebar {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.diagram-head-tight {
+  margin-bottom: 0;
+}
+
+.equipment-grid-sidebar {
+  display: flex;
+  gap: 0.7rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.15rem 0 0.35rem;
+  scroll-snap-type: x proximity;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  touch-action: pan-x;
+  align-items: stretch;
+}
+
+.equipment-grid-sidebar::-webkit-scrollbar {
+  height: 8px;
+}
+
+.equipment-grid-sidebar::-webkit-scrollbar-thumb {
+  background: rgba(40, 120, 168, 0.22);
+  border-radius: 999px;
+}
+
+.equipment-grid-sidebar .equipment-card {
+  flex: 0 0 clamp(168px, 66vw, 196px);
+  min-width: 168px;
+  max-width: 196px;
+  padding: 0.82rem 0.82rem 0.76rem;
+  gap: 0.22rem;
+  scroll-snap-align: start;
+  align-content: start;
+}
+
+.equipment-grid-sidebar .equipment-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 11px;
+  font-size: 0.95rem;
+}
+
+.equipment-grid-sidebar .equipment-card small {
+  font-size: 0.76rem;
+}
+
+.equipment-grid-sidebar .equipment-card h3 {
+  margin-bottom: 0.2rem;
+  font-size: 0.98rem;
+  line-height: 1.18;
+}
+
+.equipment-grid-sidebar .equipment-card p,
+.equipment-grid-sidebar .offer-meta,
+.equipment-grid-sidebar .equipment-source {
+  font-size: 0.8rem;
+  line-height: 1.24;
+}
+
+.equipment-grid-sidebar .equipment-card p {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.equipment-grid-sidebar .offer-meta {
+  margin-top: 0.1rem;
+}
+
+.equipment-grid-sidebar .equipment-source {
+  margin-top: auto;
+  min-height: 26px;
+  padding: 0 0.55rem;
+  font-size: 0.76rem;
 }
 
 .equipment-card h3,
@@ -2956,6 +3152,29 @@ textarea:disabled {
   transition: opacity 180ms ease, transform 180ms ease;
 }
 
+@keyframes pricePulse {
+  0%, 100% {
+    transform: translateY(0);
+    filter: brightness(1);
+  }
+  50% {
+    transform: translateY(-1px);
+    filter: brightness(1.08);
+  }
+}
+
+@keyframes priceSheen {
+  0% {
+    transform: translateX(-120%);
+  }
+  55% {
+    transform: translateX(125%);
+  }
+  100% {
+    transform: translateX(125%);
+  }
+}
+
 .final-cta-section {
   padding: 0 0 4rem;
 }
@@ -3478,6 +3697,30 @@ textarea:disabled {
   .button,
   .offer-tab {
     width: 100%;
+  }
+
+  .page-result .header-actions {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+    gap: 0.45rem;
+  }
+
+  .page-result .header-actions .button {
+    width: auto;
+    min-width: 0;
+    white-space: nowrap;
+    padding-inline: 0.82rem;
+    min-height: 38px;
+    font-size: 0.8rem;
+  }
+
+  .page-result .header-actions .action-full {
+    display: none;
+  }
+
+  .page-result .header-actions .action-compact {
+    display: inline;
   }
 
   .spotlight-value {
