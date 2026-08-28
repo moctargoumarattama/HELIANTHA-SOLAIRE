@@ -4,6 +4,7 @@
   const printMode = document.body.classList.contains("page-print");
   const STORAGE_KEY = "heliantha_advisor_state_v2";
   const POSITION_KEY = "heliantha_advisor_position_v1";
+  const LAUNCHER_POSITION_KEY = "heliantha_advisor_launcher_position_v1";
   const desktopDragMedia = window.matchMedia("(min-width: 769px)");
 
   if (printMode) return;
@@ -23,11 +24,22 @@
   let state = loadState();
   let lastFocus = null;
   let dragState = null;
+  let launcherDragState = null;
+  let suppressLauncherClick = false;
 
   renderHistory();
   renderActions(defaultActions());
+  applyLauncherPosition(true);
 
-  launcher.addEventListener("click", openAdvisor);
+  launcher.addEventListener("click", (event) => {
+    if (suppressLauncherClick) {
+      event.preventDefault();
+      suppressLauncherClick = false;
+      return;
+    }
+    openAdvisor();
+  });
+  launcher.addEventListener("pointerdown", onLauncherDragStart);
   closeButtons.forEach((button) => button.addEventListener("click", closeAdvisor));
   form.addEventListener("submit", onSubmit);
   document.addEventListener("keydown", (event) => {
@@ -39,9 +51,12 @@
     window.addEventListener("pointermove", onDragMove);
     window.addEventListener("pointerup", onDragEnd);
     window.addEventListener("resize", () => {
+      applyLauncherPosition(true);
       if (!panel.hidden) applyPosition(true);
     });
   }
+  window.addEventListener("pointermove", onLauncherDragMove);
+  window.addEventListener("pointerup", onLauncherDragEnd);
 
   function defaultState() {
     return {
@@ -75,14 +90,14 @@
   function ensureShell() {
     if (document.querySelector("#advisor-launcher") && document.querySelector("#advisor-panel")) return;
     document.body.insertAdjacentHTML("beforeend", `
-      <button class="advisor-launcher" type="button" id="advisor-launcher" aria-expanded="false" aria-controls="advisor-panel">Besoin d'aide ?</button>
+      <button class="advisor-launcher" type="button" id="advisor-launcher" aria-expanded="false" aria-controls="advisor-panel" aria-label="Ouvrir le conseiller HELIANTHA">Conseiller</button>
       <div class="advisor-panel" id="advisor-panel" hidden aria-hidden="true">
         <div class="advisor-backdrop" data-advisor-close></div>
         <section class="advisor-shell" role="dialog" aria-modal="true" aria-labelledby="advisor-title">
           <header class="advisor-header">
             <div>
               <span class="eyebrow">Conseiller HeliAntha</span>
-              <h2 id="advisor-title">Besoin d'aide ?</h2>
+              <h2 id="advisor-title">Conseiller</h2>
             </div>
             <button class="close-button" type="button" data-advisor-close aria-label="Fermer le conseiller">x</button>
           </header>
@@ -295,6 +310,78 @@
       top: parseFloat(shell.style.top || "0"),
     }));
     dragState = null;
+  }
+
+  function onLauncherDragStart(event) {
+    if (!desktopDragMedia.matches || event.button !== 0) return;
+    const rect = launcher.getBoundingClientRect();
+    launcherDragState = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+      dragged: false,
+    };
+    launcher.classList.add("is-dragging");
+    event.preventDefault();
+  }
+
+  function onLauncherDragMove(event) {
+    if (!launcherDragState || event.pointerId !== launcherDragState.pointerId) return;
+    const deltaX = event.clientX - launcherDragState.startX;
+    const deltaY = event.clientY - launcherDragState.startY;
+    if (!launcherDragState.dragged && Math.hypot(deltaX, deltaY) < 4) return;
+    launcherDragState.dragged = true;
+    const width = launcherDragState.width || launcher.offsetWidth || 180;
+    const height = launcherDragState.height || launcher.offsetHeight || 56;
+    const left = clamp(launcherDragState.left + deltaX, 12, window.innerWidth - width - 12);
+    const top = clamp(launcherDragState.top + deltaY, 12, window.innerHeight - height - 12);
+    setLauncherPosition(left, top);
+  }
+
+  function onLauncherDragEnd() {
+    if (!launcherDragState) return;
+    launcher.classList.remove("is-dragging");
+    if (launcherDragState.dragged) {
+      localStorage.setItem(LAUNCHER_POSITION_KEY, JSON.stringify({
+        left: parseFloat(launcher.style.left || "0"),
+        top: parseFloat(launcher.style.top || "0"),
+      }));
+      suppressLauncherClick = true;
+      window.setTimeout(() => {
+        suppressLauncherClick = false;
+      }, 0);
+    }
+    launcherDragState = null;
+  }
+
+  function applyLauncherPosition(forceClamp) {
+    if (!launcher || !desktopDragMedia.matches) {
+      launcher?.removeAttribute("style");
+      return;
+    }
+    let stored = {};
+    try { stored = JSON.parse(localStorage.getItem(LAUNCHER_POSITION_KEY) || "{}") || {}; } catch {}
+    if (stored.left == null || stored.top == null) {
+      launcher.removeAttribute("style");
+      return;
+    }
+    const width = launcher.offsetWidth || 180;
+    const height = launcher.offsetHeight || 56;
+    const left = forceClamp ? clamp(stored.left, 12, window.innerWidth - width - 12) : stored.left;
+    const top = forceClamp ? clamp(stored.top, 12, window.innerHeight - height - 12) : stored.top;
+    setLauncherPosition(left, top);
+  }
+
+  function setLauncherPosition(left, top) {
+    launcher.style.left = `${Math.round(left)}px`;
+    launcher.style.top = `${Math.round(top)}px`;
+    launcher.style.right = "auto";
+    launcher.style.bottom = "auto";
+    launcher.style.margin = "0";
   }
 
   function applyPosition(forceClamp) {
