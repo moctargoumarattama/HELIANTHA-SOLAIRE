@@ -1,0 +1,126 @@
+{% extends "admin/base.html" %}
+{% block title %}Prospects - HeliAntha Admin{% endblock %}
+{% block page_title %}Clients / prospects{% endblock %}
+{% block content %}
+<form class="filters prospect-filters prospect-filter-panel" method="get" data-live-prospect-filters>
+  <input name="q" value="{{ filters.get('q', '') }}" placeholder="Recherche instantanee">
+
+  <select name="project" aria-label="Projet">
+    <option value="">Tous projets</option>
+    {% for key in public_projects %}
+    <option value="{{ key }}" {% if filters.get('project') == key %}selected{% endif %}>{{ project_labels.get(key) }}</option>
+    {% endfor %}
+  </select>
+
+  <select name="status" aria-label="Statut">
+    <option value="">Tous statuts</option>
+    {% for status in statuses %}
+    <option value="{{ status }}" {% if filters.get('status') == status %}selected{% endif %}>{{ status }}</option>
+    {% endfor %}
+  </select>
+</form>
+
+<section class="panel prospects-panel">
+  <div class="panel-head">
+    <div>
+      <h2>Prospects</h2>
+      <p class="muted">Recherche et filtres instantanes.</p>
+    </div>
+    <span class="status"><span data-live-prospect-count>{{ quotes|length }}</span> prospect(s)</span>
+  </div>
+
+  <div class="table-wrap prospects-table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Nom</th>
+          <th>Telephone</th>
+          <th>Email</th>
+          <th>Entreprise</th>
+          <th>Ville</th>
+          <th>Projet</th>
+          <th>Date</th>
+          <th>Montant</th>
+          <th>Commercial</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for q in quotes %}
+        <tr
+          data-prospect-row
+          data-project="{{ q.project or '' }}"
+          data-status="{{ q.status or '' }}"
+          data-search="{{ [q.customer_name, q.phone, q.email, q.company, q.location, q.city, project_labels.get(q.project, q.project), q.status]|select|join(' ')|lower }}"
+        >
+          <td><a href="{{ url_for('main.admin_quote_detail', quote_id=q.id) }}">{{ q.customer_name or "-" }}</a></td>
+          <td>{% if q.phone %}<a href="tel:{{ q.phone }}">{{ q.phone }}</a>{% else %}-{% endif %}</td>
+          <td>{% if q.email %}<a href="mailto:{{ q.email }}">{{ q.email }}</a>{% else %}-{% endif %}</td>
+          <td>{{ q.company or "-" }}</td>
+          <td>{{ q.location or q.city or "-" }}</td>
+          <td>{{ project_labels.get(q.project, q.project) }}</td>
+          <td>{{ q.created_at }}</td>
+          <td>{{ "{:,.0f}".format(q.amount_ttc or 0).replace(",", " ") }} DH</td>
+          <td>-</td>
+        </tr>
+        {% else %}
+        <tr data-prospect-empty><td colspan="9">Aucun prospect trouve.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="prospect-no-results" data-live-prospect-empty hidden>Aucun prospect ne correspond aux filtres.</div>
+  </div>
+</section>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+(() => {
+  const form = document.querySelector("[data-live-prospect-filters]");
+  const rows = Array.from(document.querySelectorAll("[data-prospect-row]"));
+  const count = document.querySelector("[data-live-prospect-count]");
+  const empty = document.querySelector("[data-live-prospect-empty]");
+  if (!form || !rows.length) return;
+
+  const normalize = (value) => (value || "").toString().trim().toLowerCase();
+
+  const matches = (row) => {
+    const query = normalize(form.elements.q.value);
+    const project = form.elements.project.value;
+    const status = form.elements.status.value;
+    if (project && row.dataset.project !== project) return false;
+    if (status && row.dataset.status !== status) return false;
+    if (query && !normalize(row.dataset.search).includes(query)) return false;
+    return true;
+  };
+
+  const applyFilters = () => {
+    let visibleCount = 0;
+    rows.forEach((row) => {
+      const visible = matches(row);
+      row.hidden = !visible;
+      row.style.display = visible ? "" : "none";
+      if (visible) visibleCount += 1;
+    });
+    if (count) count.textContent = visibleCount;
+    if (empty) empty.hidden = visibleCount !== 0;
+  };
+
+  const cleanUrl = () => {
+    if (window.location.search) {
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  };
+
+  form.addEventListener("submit", (event) => event.preventDefault());
+  form.addEventListener("input", () => {
+    cleanUrl();
+    applyFilters();
+  });
+  form.addEventListener("change", () => {
+    cleanUrl();
+    applyFilters();
+  });
+  applyFilters();
+})();
+</script>
+{% endblock %}

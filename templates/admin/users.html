@@ -1,0 +1,80 @@
+{% extends "admin/base.html" %}
+{% block title %}Comptes - HeliAntha Admin{% endblock %}
+{% block page_title %}Comptes{% endblock %}
+{% block content %}
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <h2>{% if editing_user %}Modifier un compte{% else %}Créer un compte{% endif %}</h2>
+      <p class="muted">Un compte principal Direction et des comptes Commercial.</p>
+    </div>
+  </div>
+
+  {% if error %}
+  <div class="admin-alert">{{ error }}</div>
+  {% endif %}
+
+  <form method="post" class="admin-form">
+    <input type="hidden" name="action" value="save">
+    <input type="hidden" name="user_id" value="{{ editing_user.id if editing_user else '' }}">
+    <label>
+      <span>Email</span>
+      <input type="email" name="email" value="{{ editing_user.username if editing_user else '' }}" placeholder="direction@heliantha.ma" required>
+    </label>
+    <label>
+      <span>Mot de passe</span>
+      <input type="password" name="password" placeholder="{% if editing_user %}Laisser vide pour conserver{% else %}Mot de passe{% endif %}" {% if not editing_user %}required{% endif %}>
+    </label>
+    <div class="admin-note">
+      Les comptes créés ici sont des comptes Commercial. Le compte Direction reste réservé.
+    </div>
+    <div class="form-actions">
+      <button class="admin-button" type="submit">{% if editing_user %}Enregistrer{% else %}Créer{% endif %}</button>
+      {% if editing_user %}
+      <a class="ghost-button" href="{{ url_for('main.admin_users') }}">Annuler</a>
+      {% endif %}
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <h2>Comptes existants</h2>
+      <p class="muted">{{ users|length }} compte(s)</p>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Email</th>
+          <th>Type</th>
+          <th>Créé le</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for user in users %}
+        <tr>
+          <td><strong>{{ user.username }}</strong></td>
+          <td>{{ user.role }}</td>
+          <td>{{ user.created_at }}</td>
+          <td class="row-actions">
+            <a href="{{ url_for('main.admin_users', edit_id=user.id) }}">Modifier</a>
+            <form method="post" action="{{ url_for('main.admin_users') }}" onsubmit="return confirm('Supprimer ce compte ?');">
+              <input type="hidden" name="action" value="delete">
+              <input type="hidden" name="user_id" value="{{ user.id }}">
+              <button type="submit">Supprimer</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4">Aucun compte trouvé.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

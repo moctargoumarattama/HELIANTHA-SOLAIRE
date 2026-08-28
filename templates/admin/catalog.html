@@ -1,0 +1,180 @@
+{% extends "admin/base.html" %}
+{% block title %}Catalogue - HeliAntha Admin{% endblock %}
+{% block page_title %}Catalogue{% endblock %}
+{% block content %}
+<section class="learning-panel">
+  <h2>Catalogue produits</h2>
+  <p>Recherchez, filtrez et modifiez les equipements utilises par HeliAntha Smart Quote.</p>
+</section>
+
+{% if request.args.get("saved") %}
+<div class="admin-success">Produit enregistre : {{ request.args.get("saved") }}</div>
+{% endif %}
+
+<form class="filters catalog-filters catalog-filter-panel" method="get" data-live-catalog-filters>
+  <select name="category" aria-label="Categorie">
+    <option value="">Toutes categories</option>
+    {% for option in category_options %}
+    <option value="{{ option.value }}" {% if filters.get('category') == option.value %}selected{% endif %}>{{ option.label }}</option>
+    {% endfor %}
+  </select>
+
+  <input name="q" value="{{ filters.get('q', '') }}" placeholder="Recherche instantanee">
+
+  <input name="brand" value="{{ filters.get('brand', '') }}" placeholder="Marque">
+
+  <select name="active" aria-label="Statut">
+    <option value="">Actifs et inactifs</option>
+    <option value="1" {% if filters.get('active') == '1' %}selected{% endif %}>Actifs</option>
+    <option value="0" {% if filters.get('active') == '0' %}selected{% endif %}>Inactifs</option>
+  </select>
+
+  <select name="stock">
+    {% for option in stock_options %}
+    <option value="{{ option.value }}" {% if filters.get('stock') == option.value %}selected{% endif %}>{{ option.label }}</option>
+    {% endfor %}
+  </select>
+
+  <select name="sort">
+    {% for option in sort_options %}
+    <option value="{{ option.value }}" {% if filters.get('sort') == option.value %}selected{% endif %}>{{ option.label }}</option>
+    {% endfor %}
+  </select>
+
+  <a class="admin-button secondary" href="{{ url_for('main.admin_catalog_new') }}">Ajouter produit</a>
+</form>
+
+<section class="panel catalog-panel">
+  <div class="panel-head">
+    <div>
+      <h2>Produits catalogue</h2>
+      <p class="muted">Affichage simple par defaut. Les caracteristiques detaillees restent dans la fiche produit.</p>
+    </div>
+    <span class="status"><span data-live-catalog-count>{{ products|length }}</span> produit(s)</span>
+  </div>
+
+  <div class="table-wrap catalog-table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Reference</th>
+          <th>Produit</th>
+          <th>Categorie</th>
+          <th>Caracteristique principale</th>
+          <th>Prix vente</th>
+          <th>Stock</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in products %}
+        <tr
+          data-catalog-row
+          data-category="{{ p.category or '' }}"
+          data-brand="{{ p.brand or '' }}"
+          data-active="{{ 1 if p.active else 0 }}"
+          data-stock="{{ p.stock or 0 }}"
+          data-price="{{ p.sale_price or 0 }}"
+          data-updated="{{ p.updated_at or '' }}"
+          data-search="{{ [p.reference, p.brand, p.model, p.description, p.category_label, p.main_characteristic]|select|join(' ')|lower }}"
+        >
+          <td>
+            <strong>{{ p.reference }}</strong>
+            {% if p.datasheet_available %}
+            <div><a href="{{ p.datasheet_url }}" target="_blank" rel="noopener">Fiche technique</a></div>
+            {% endif %}
+          </td>
+          <td>
+            <strong>{{ [p.brand, p.model]|select|join(' ') or "Produit catalogue" }}</strong>
+            {% if p.description %}
+            <div class="muted">{{ p.description }}</div>
+            {% endif %}
+          </td>
+          <td>{{ p.category_label }}</td>
+          <td>{{ p.main_characteristic }}</td>
+          <td>{{ "{:,.2f}".format(p.sale_price or 0).replace(",", " ") }} {{ p.currency or "DH" }}</td>
+          <td>
+            <strong>{{ p.stock or 0 }}</strong>
+            <div class="muted">{{ p.stock_label }}</div>
+          </td>
+          <td class="row-actions">
+            <a href="{{ url_for('main.admin_catalog_edit', product_id=p.id) }}">Modifier</a>
+            <form method="post" action="{{ url_for('main.admin_catalog_toggle', product_id=p.id) }}">
+              <button type="submit">{{ "Desactiver" if p.active else "Reactiver" }}</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr data-catalog-empty>
+          <td colspan="9">Aucun produit ne correspond aux filtres actuels.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="catalog-no-results" data-live-catalog-empty hidden>Aucun produit ne correspond aux filtres.</div>
+  </div>
+</section>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+(() => {
+  const form = document.querySelector("[data-live-catalog-filters]");
+  const rows = Array.from(document.querySelectorAll("[data-catalog-row]"));
+  const count = document.querySelector("[data-live-catalog-count]");
+  const empty = document.querySelector("[data-live-catalog-empty]");
+  const tbody = document.querySelector(".catalog-table-wrap tbody");
+  if (!form || !rows.length || !tbody) return;
+
+  const normalize = (value) => (value || "").toString().trim().toLowerCase();
+  const numberValue = (value) => Number.parseFloat(value || "0") || 0;
+
+  const matches = (row) => {
+    const category = form.elements.category.value;
+    const active = form.elements.active.value;
+    const stock = form.elements.stock.value;
+    const query = normalize(form.elements.q.value);
+    const brand = normalize(form.elements.brand.value);
+    if (category && row.dataset.category !== category) return false;
+    if (active && row.dataset.active !== active) return false;
+    if (stock === "available" && numberValue(row.dataset.stock) <= 0) return false;
+    if (stock === "empty" && numberValue(row.dataset.stock) > 0) return false;
+    if (brand && !normalize(row.dataset.brand).includes(brand)) return false;
+    if (query && !normalize(row.dataset.search).includes(query)) return false;
+    return true;
+  };
+
+  const sortRows = (visibleRows) => {
+    const sort = form.elements.sort.value;
+    return [...visibleRows].sort((a, b) => {
+      if (sort === "brand") return normalize(a.dataset.brand).localeCompare(normalize(b.dataset.brand));
+      if (sort === "stock_desc") return numberValue(b.dataset.stock) - numberValue(a.dataset.stock);
+      if (sort === "price_asc") return numberValue(a.dataset.price) - numberValue(b.dataset.price);
+      if (sort === "price_desc") return numberValue(b.dataset.price) - numberValue(a.dataset.price);
+      if (sort === "updated") return normalize(b.dataset.updated).localeCompare(normalize(a.dataset.updated));
+      return 0;
+    });
+  };
+
+  const applyFilters = () => {
+    const visible = rows.filter(matches);
+    rows.forEach((row) => {
+      row.hidden = true;
+      row.style.display = "none";
+    });
+    sortRows(visible).forEach((row) => {
+      row.hidden = false;
+      row.style.display = "";
+      tbody.appendChild(row);
+    });
+    if (count) count.textContent = visible.length;
+    if (empty) empty.hidden = visible.length !== 0;
+  };
+
+  form.addEventListener("submit", (event) => event.preventDefault());
+  form.addEventListener("input", applyFilters);
+  form.addEventListener("change", applyFilters);
+  applyFilters();
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HELIANTHA Admin - Connexion</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+</head>
+<body class="login-page">
+  <main class="login-card">
+    <div class="admin-brand">
+      <span class="admin-mark" aria-hidden="true"><img class="admin-logo" src="{{ url_for('main.brand_image') }}" alt=""></span>
+      <div><b>HELIANTHA Admin</b><small>Smart Quote</small></div>
+    </div>
+    <h1>Connexion</h1>
+    <p>Accès réservé à l'équipe HELIANTHA.</p>
+    {% if error %}<div class="admin-alert">{{ error }}</div>{% endif %}
+    <form method="post">
+      <label>Email</label>
+      <input type="email" name="email" placeholder="direction@heliantha.ma" autofocus>
+      <label>Mot de passe</label>
+      <input type="password" name="password" required>
+      <button class="admin-button" type="submit">Entrer</button>
+    </form>
+    <p class="muted">Vous pouvez aussi garder l'ancien mot de passe principal.</p>
+  </main>
+</body>
+</html>

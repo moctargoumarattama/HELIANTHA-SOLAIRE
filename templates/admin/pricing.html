@@ -1,0 +1,61 @@
+{% extends "admin/base.html" %}
+{% block title %}Tarification - HeliAntha Admin{% endblock %}
+{% block page_title %}Tarification{% endblock %}
+{% block content %}
+<section class="learning-panel pricing-intro">
+  <h2>À quoi sert cette page ?</h2>
+  <p>
+    Ici, HeliAntha règle les frais ajoutés au prix du matériel : accessoires,
+    installation, déplacement, marge commerciale et TVA.
+  </p>
+</section>
+
+<form class="pricing-form" method="post">
+  {% for group in pricing_groups %}
+  <section class="pricing-group">
+    <div class="pricing-group-head">
+      <h2>{{ group.name }}</h2>
+      <span>{{ group.rules|length }} règle(s)</span>
+    </div>
+
+    <div class="pricing-grid">
+      {% for r in group.rules %}
+      <article class="pricing-card{% if not r.active %} is-disabled{% endif %}">
+        <header>
+          <span class="pricing-icon">{{ r.display_icon }}</span>
+          <div>
+            <h3>{{ r.display_title }}</h3>
+            <p>{{ r.plain_help }}</p>
+          </div>
+        </header>
+
+        <label class="pricing-value">
+          <span>Valeur utilisée</span>
+          <div>
+            <input
+              type="number"
+              step="any"
+              name="value_{{ r.id }}"
+              value="{{ '{:g}'.format(r.display_value) }}"
+            >
+            {% if r.display_unit %}<b>{{ r.display_unit }}</b>{% endif %}
+          </div>
+        </label>
+
+        <label class="pricing-toggle">
+          <input type="checkbox" name="active_{{ r.id }}" {% if r.active %}checked{% endif %}>
+          <span>Utiliser dans les nouveaux devis</span>
+        </label>
+
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+  {% endfor %}
+
+  <div class="pricing-save-bar">
+    <button class="admin-button" type="submit">Enregistrer la tarification</button>
+    <p>Les changements s’appliquent aux nouveaux devis uniquement.</p>
+  </div>
+</form>
+{% endblock %}

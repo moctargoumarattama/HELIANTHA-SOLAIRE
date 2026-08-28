@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}HELIANTHA Admin{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}?v=20260828-1">
+</head>
+<body class="admin-app">
+  <div class="admin-backdrop" id="admin-backdrop" aria-hidden="true"></div>
+  <aside class="admin-sidebar" id="admin-sidebar">
+    <a class="admin-brand" href="{{ url_for('main.admin_dashboard') }}">
+      <span class="admin-mark" aria-hidden="true"><img class="admin-logo" src="{{ url_for('main.brand_image') }}" alt=""></span>
+      <div><b>HELIANTHA</b><small>ADMIN</small></div>
+    </a>
+    <nav>
+      <a class="admin-nav-link{% if request.endpoint == 'main.admin_dashboard' %} active{% endif %}" href="{{ url_for('main.admin_dashboard') }}">Tableau de bord</a>
+      <a class="admin-nav-link{% if request.endpoint == 'main.admin_prospects' %} active{% endif %}" href="{{ url_for('main.admin_prospects') }}">Clients / prospects</a>
+      <a class="admin-nav-link{% if request.endpoint == 'main.admin_quotes' %} active{% endif %}" href="{{ url_for('main.admin_quotes') }}">Devis</a>
+      <a class="admin-nav-link{% if request.endpoint == 'main.admin_catalog' %} active{% endif %}" href="{{ url_for('main.admin_catalog') }}">Catalogue</a>
+      <a class="admin-nav-link{% if request.endpoint == 'main.admin_calculation_parameters' %} active{% endif %}" href="{{ url_for('main.admin_calculation_parameters') }}">Paramètres de calcul</a>
+      <a class="admin-nav-link{% if request.endpoint == 'main.admin_pricing' %} active{% endif %}" href="{{ url_for('main.admin_pricing') }}">Tarification</a>
+      <a class="admin-nav-link{% if request.endpoint == 'main.admin_advisor' %} active{% endif %}" href="{{ url_for('main.admin_advisor') }}">Conseiller</a>
+      <a class="admin-nav-link{% if request.endpoint == 'main.admin_users' %} active{% endif %}" href="{{ url_for('main.admin_users') }}">Utilisateurs</a>
+      <a class="admin-nav-link{% if request.endpoint == 'main.admin_settings' %} active{% endif %}" href="{{ url_for('main.admin_settings') }}">Paramètres</a>
+    </nav>
+  </aside>
+  <div class="admin-main">
+    <header class="admin-topbar">
+      <button class="admin-menu-toggle" type="button" id="admin-menu-toggle" aria-expanded="false" aria-controls="admin-sidebar" aria-label="Ouvrir le menu">
+        <span></span><span></span><span></span>
+        <small>Menu</small>
+      </button>
+      <div>
+        <small>HELIANTHA Smart Quote</small>
+        <h1>{% block page_title %}Administration{% endblock %}</h1>
+      </div>
+      <form method="post" action="{{ url_for('main.admin_logout') }}">
+        <button class="ghost-button" type="submit">Déconnexion</button>
+      </form>
+    </header>
+    <main class="admin-content">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  <script>
+    (() => {
+      const toggle = document.getElementById("admin-menu-toggle");
+      const backdrop = document.getElementById("admin-backdrop");
+      const body = document.body;
+      const sidebar = document.querySelector(".admin-sidebar");
+      if (!toggle || !backdrop || !sidebar) return;
+
+      const setOpen = (open) => {
+        body.classList.toggle("admin-menu-open", open);
+        toggle.setAttribute("aria-expanded", String(open));
+      };
+
+      toggle.addEventListener("click", () => setOpen(!body.classList.contains("admin-menu-open")));
+      backdrop.addEventListener("click", () => setOpen(false));
+
+      sidebar.querySelectorAll("a").forEach((link) => {
+        link.addEventListener("click", () => {
+          if (window.matchMedia("(max-width: 980px)").matches) setOpen(false);
+        });
+      });
+
+      window.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") setOpen(false);
+      });
+
+      window.addEventListener("resize", () => {
+        if (!window.matchMedia("(max-width: 980px)").matches) setOpen(false);
+      });
+    })();
+  </script>
+  {% block page_scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="HELIANTHA prépare une première estimation claire et rapide pour votre projet énergétique au Maroc.">
+  <title>HELIANTHA Smart Quote — Votre projet énergétique commence ici</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body class="page-home">
+  <div class="page-glow" aria-hidden="true"></div>
+
+  <header class="site-header">
+    <div class="shell header-bar">
+      <a class="brand" href="{{ url_for('main.index') }}" aria-label="Accueil HELIANTHA">
+        <span class="brand-mark" aria-hidden="true"><img class="brand-logo" src="{{ url_for('main.brand_image') }}" alt=""></span>
+        <span class="brand-copy">
+          <strong>HELIANTHA</strong>
+          <small>Étude • Installation • Maintenance</small>
+        </span>
+      </a>
+
+      <nav class="header-nav" aria-label="Navigation principale">
+        <a href="#solutions">Solutions</a>
+        <a href="#contact">Contact</a>
+      </nav>
+
+      <button class="mobile-menu-toggle" type="button" id="mobile-menu-toggle" aria-expanded="false" aria-controls="mobile-menu" aria-label="Ouvrir le menu">
+        <span></span><span></span><span></span>
+      </button>
+      <button class="button button-primary js-start" type="button">Obtenir mon estimation</button>
+    </div>
+
+    <div class="mobile-menu" id="mobile-menu" hidden>
+      <div class="shell mobile-menu-inner">
+        <a href="#solutions">Solutions</a>
+        <a href="#contact">Contact</a>
+        <button class="button button-primary js-start" type="button">Obtenir mon estimation</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero-section reveal-on-scroll">
+      <div class="shell hero-grid hero-grid-single">
+        <div class="hero-copy">
+          <span class="eyebrow">HELIANTHA</span>
+          <h1>Votre projet solaire commence ici.</h1>
+          <p class="hero-lead">Obtenez une première estimation adaptée à votre besoin.</p>
+
+          <div class="hero-actions">
+            <button class="button button-primary button-large js-start" type="button">Obtenir mon estimation</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="projects-section reveal-on-scroll" id="solutions">
+      <div class="shell">
+        <div class="section-head section-head-tight">
+          <h2>Quel est votre projet ?</h2>
+        </div>
+
+        <div class="project-grid project-grid-short">
+          <button class="project-card" data-project="pumping">
+            <span class="project-icon">💧</span>
+            <strong>Pompage solaire</strong>
+            <p>Forage, irrigation, eau.</p>
+            <span class="project-action">Estimer mon pompage</span>
+          </button>
+
+          <button class="project-card" data-project="offgrid">
+            <span class="project-icon">🏠</span>
+            <strong>Site sans réseau</strong>
+            <small>Off-Grid</small>
+            <p>Produisez et stockez votre énergie.</p>
+            <span class="project-action">Estimer mon installation</span>
+          </button>
+
+          <button class="project-card" data-project="ongrid">
+            <span class="project-icon">☀️</span>
+            <strong>Réduire ma consommation</strong>
+            <small>Photovoltaïque</small>
+            <p>Réduisez votre facture avec le solaire.</p>
+            <span class="project-action">Estimer mes économies</span>
+          </button>
+
+          <button class="project-card" data-project="hybrid">
+            <span class="project-icon">🔋</span>
+            <strong>Solaire avec batteries</strong>
+            <small>Hybride</small>
+            <p>Solaire et stockage, en continuité.</p>
+            <span class="project-action">Estimer mon installation</span>
+          </button>
+
+          <button class="project-card" data-project="thermal">
+            <span class="project-icon">♨️</span>
+            <strong>Chauffage solaire</strong>
+            <p>Eau chaude solaire.</p>
+            <span class="project-action">Estimer mon besoin</span>
+          </button>
+
+          <button class="project-card" data-project="ev">
+            <span class="project-icon">🚗</span>
+            <strong>Recharge électrique</strong>
+            <p>Une borne adaptée à votre véhicule.</p>
+            <span class="project-action">Choisir ma borne</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section class="contact-human-section reveal-on-scroll" id="contact">
+      <div class="shell">
+        <div class="contact-human-card">
+          <h2>Vous préférez nous parler ?</h2>
+
+          <div class="contact-human-actions">
+            <a class="button button-primary" href="tel:{{ company.phone|replace(' ', '') }}">Être rappelé</a>
+            <a class="button button-ghost" href="https://wa.me/{{ company.whatsapp|replace(' ', '')|replace('+', '')|replace('-', '')|replace(' ', '') }}" target="_blank" rel="noreferrer">WhatsApp</a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="shell footer-grid">
+      <div>
+        <div class="brand brand-footer">
+          <span class="brand-mark" aria-hidden="true"><img class="brand-logo" src="{{ url_for('main.brand_image') }}" alt=""></span>
+          <span class="brand-copy">
+            <strong>HELIANTHA</strong>
+            <small>Étude • Installation • Maintenance</small>
+          </span>
+        </div>
+        <p class="footer-note">Les estimations en ligne sont soumises à validation technique par HELIANTHA.</p>
+      </div>
+
+      <div class="footer-column">
+        <small>Téléphones</small>
+        <a class="contact-link-card" href="{{ company.phone_url }}" aria-label="Appeler HeliAntha au {{ company.phone }}">
+          <span class="contact-link-icon" aria-hidden="true">📞</span>
+          <span class="contact-link-copy">
+            <span class="contact-link-title">Appeler</span>
+            <strong class="contact-link-value">{{ company.phone }}</strong>
+            <small class="contact-link-caption">Numéro direct</small>
+          </span>
+        </a>
+        <a class="contact-link-card" href="{{ company.whatsapp_url }}" target="_blank" rel="noreferrer" aria-label="Ouvrir WhatsApp pour {{ company.whatsapp }}">
+          <span class="contact-link-icon" aria-hidden="true">💬</span>
+          <span class="contact-link-copy">
+            <span class="contact-link-title">WhatsApp</span>
+            <strong class="contact-link-value">{{ company.whatsapp }}</strong>
+            <small class="contact-link-caption">Message rapide</small>
+          </span>
+        </a>
+      </div>
+
+      <div class="footer-column">
+        <small>Email</small>
+        <a class="contact-link-card" href="mailto:{{ company.email }}" aria-label="Envoyer un e-mail à {{ company.email }}">
+          <span class="contact-link-icon" aria-hidden="true">✉️</span>
+          <span class="contact-link-copy">
+            <span class="contact-link-title">E-mail</span>
+            <strong class="contact-link-value">{{ company.email }}</strong>
+            <small class="contact-link-caption">Réponse par mail</small>
+          </span>
+        </a>
+      </div>
+
+      <div class="footer-column">
+        <small>Site</small>
+        <a class="contact-link-card" href="{{ company.website_url }}" target="_blank" rel="noreferrer" aria-label="Ouvrir le site HeliAntha">
+          <span class="contact-link-icon" aria-hidden="true">🌐</span>
+          <span class="contact-link-copy">
+            <span class="contact-link-title">Site</span>
+            <strong class="contact-link-value">{{ company.website }}</strong>
+            <small class="contact-link-caption">Ouvrir le site</small>
+          </span>
+        </a>
+        <a class="contact-link-card" href="{{ company.location_url }}" target="_blank" rel="noreferrer" aria-label="Ouvrir l'itinéraire sur Google Maps">
+          <span class="contact-link-icon" aria-hidden="true">📍</span>
+          <span class="contact-link-copy">
+            <span class="contact-link-title">Itinéraire</span>
+            <strong class="contact-link-value">Google Maps</strong>
+            <small class="contact-link-caption">Ouvrir l’accès</small>
+          </span>
+        </a>
+      </div>
+    </div>
+  </footer>
+
+  <button class="advisor-launcher" type="button" id="advisor-launcher" aria-expanded="false" aria-controls="advisor-panel">
+    💬 Besoin d’aide ?
+  </button>
+
+  <div class="advisor-panel" id="advisor-panel" hidden aria-hidden="true">
+    <div class="advisor-backdrop" data-advisor-close></div>
+    <section class="advisor-shell" role="dialog" aria-modal="true" aria-labelledby="advisor-title">
+      <header class="advisor-header">
+        <div>
+          <span class="eyebrow">Conseiller HELIANTHA</span>
+          <h2 id="advisor-title">Besoin d’aide ?</h2>
+        </div>
+        <button class="close-button" type="button" data-advisor-close aria-label="Fermer le conseiller">×</button>
+      </header>
+      <div class="advisor-messages" id="advisor-messages"></div>
+      <div class="advisor-quick-actions" id="advisor-quick-actions"></div>
+      <form class="advisor-composer" id="advisor-form">
+        <label class="sr-only" for="advisor-input">Votre message</label>
+        <input id="advisor-input" type="text" placeholder="Écrivez votre question" maxlength="2000">
+        <button class="button button-primary" type="submit">Envoyer</button>
+      </form>
+    </section>
+  </div>
+
+  <div class="wizard" id="wizard" aria-hidden="true">
+    <div class="wizard-backdrop" data-close></div>
+    <section class="wizard-panel" role="dialog" aria-modal="true" aria-labelledby="wizard-title">
+      <header class="wizard-header">
+        <a class="brand" href="{{ url_for('main.index') }}">
+          <span class="brand-mark" aria-hidden="true"><img class="brand-logo" src="{{ url_for('main.brand_image') }}" alt=""></span>
+          <span class="brand-copy">
+            <strong>HELIANTHA</strong>
+            <small>Smart Quote</small>
+          </span>
+        </a>
+        <button class="close-button" type="button" data-close aria-label="Fermer l'assistant">×</button>
+      </header>
+
+      <div class="wizard-shell">
+        <aside class="wizard-aside" id="wizard-aside"></aside>
+
+        <form class="wizard-main" id="quote-form">
+          <div class="wizard-progress">
+            <div class="wizard-progress-meta">
+              <span id="step-label">Étape 1</span>
+              <strong id="progress-label">0 %</strong>
+            </div>
+            <div class="progress-steps" id="progress-steps" aria-hidden="true"></div>
+            <div class="progress-bar" aria-hidden="true"><span id="progress-bar"></span></div>
+          </div>
+
+          <div class="wizard-body" id="wizard-body"></div>
+
+          <footer class="wizard-footer">
+            <button type="button" class="button button-ghost" id="back-button">Retour</button>
+            <div class="wizard-footer-note">Vos réponses restent associées à cette simulation uniquement.</div>
+            <button type="submit" class="button button-primary" id="next-button">Continuer</button>
+          </footer>
+        </form>
+      </div>
+    </section>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    window.HELIANTHA_COMPANY = {{ company|tojson }};
+  </script>
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/advisor.js') }}"></script>
+</body>
+</html>

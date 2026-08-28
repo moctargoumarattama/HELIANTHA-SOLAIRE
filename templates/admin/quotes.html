@@ -1,0 +1,124 @@
+{% extends "admin/base.html" %}
+{% block title %}Devis - HeliAntha Admin{% endblock %}
+{% block page_title %}Devis{% endblock %}
+{% block content %}
+<form class="filters quote-filters quote-filter-panel" method="get" data-live-quote-filters>
+  <input name="q" value="{{ filters.get('q', '') }}" placeholder="Recherche instantanee">
+
+  <select name="project" aria-label="Projet">
+    <option value="">Tous projets</option>
+    {% for key in public_projects %}
+    <option value="{{ key }}" {% if filters.get('project') == key %}selected{% endif %}>{{ project_labels.get(key) }}</option>
+    {% endfor %}
+  </select>
+
+  <select name="status" aria-label="Statut">
+    <option value="">Tous statuts</option>
+    {% for status in statuses %}
+    <option value="{{ status }}" {% if filters.get('status') == status %}selected{% endif %}>{{ status }}</option>
+    {% endfor %}
+  </select>
+</form>
+
+<section class="panel quotes-panel">
+  <div class="panel-head">
+    <div>
+      <h2>Devis</h2>
+      <p class="muted">Recherche et filtres instantanes.</p>
+    </div>
+    <span class="status"><span data-live-quote-count>{{ quotes|length }}</span> devis</span>
+  </div>
+
+  <div class="table-wrap quotes-table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Numero</th>
+          <th>Date</th>
+          <th>Client</th>
+          <th>Ville</th>
+          <th>Projet</th>
+          <th>Solution</th>
+          <th>HT</th>
+          <th>TTC</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for q in quotes %}
+        <tr
+          data-quote-row
+          data-project="{{ q.project or '' }}"
+          data-status="{{ q.status or '' }}"
+          data-search="{{ [q.quote_number, q.customer_name, q.phone, q.email, q.location, q.city, project_labels.get(q.project, q.project), q.solution_name, q.status]|select|join(' ')|lower }}"
+        >
+          <td><a href="{{ url_for('main.admin_quote_detail', quote_id=q.id) }}">{{ q.quote_number }}</a></td>
+          <td>{{ q.created_at }}</td>
+          <td>{{ q.customer_name or "-" }}</td>
+          <td>{{ q.location or q.city or "-" }}</td>
+          <td>{{ project_labels.get(q.project, q.project) }}</td>
+          <td>{{ q.solution_name or "-" }}</td>
+          <td>{{ "{:,.0f}".format(q.amount_ht or 0).replace(",", " ") }} DH</td>
+          <td>{{ "{:,.0f}".format(q.amount_ttc or 0).replace(",", " ") }} DH</td>
+        </tr>
+        {% else %}
+        <tr data-quote-empty><td colspan="8">Aucun devis trouve.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="quote-no-results" data-live-quote-empty hidden>Aucun devis ne correspond aux filtres.</div>
+  </div>
+</section>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+(() => {
+  const form = document.querySelector("[data-live-quote-filters]");
+  const rows = Array.from(document.querySelectorAll("[data-quote-row]"));
+  const count = document.querySelector("[data-live-quote-count]");
+  const empty = document.querySelector("[data-live-quote-empty]");
+  if (!form || !rows.length) return;
+
+  const normalize = (value) => (value || "").toString().trim().toLowerCase();
+
+  const matches = (row) => {
+    const query = normalize(form.elements.q.value);
+    const project = form.elements.project.value;
+    const status = form.elements.status.value;
+    if (project && row.dataset.project !== project) return false;
+    if (status && row.dataset.status !== status) return false;
+    if (query && !normalize(row.dataset.search).includes(query)) return false;
+    return true;
+  };
+
+  const cleanUrl = () => {
+    if (window.location.search) {
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  };
+
+  const applyFilters = () => {
+    let visibleCount = 0;
+    rows.forEach((row) => {
+      const visible = matches(row);
+      row.hidden = !visible;
+      row.style.display = visible ? "" : "none";
+      if (visible) visibleCount += 1;
+    });
+    if (count) count.textContent = visibleCount;
+    if (empty) empty.hidden = visibleCount !== 0;
+  };
+
+  form.addEventListener("submit", (event) => event.preventDefault());
+  form.addEventListener("input", () => {
+    cleanUrl();
+    applyFilters();
+  });
+  form.addEventListener("change", () => {
+    cleanUrl();
+    applyFilters();
+  });
+  applyFilters();
+})();
+</script>
+{% endblock %}

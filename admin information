@@ -1,0 +1,223 @@
+Pour te connecter à l’admin :
+
+1. Lance l’application :
+
+```powershell
+python run.py
+```
+
+2. Ouvre dans ton navigateur :
+
+```text
+http://127.0.0.1:5000/admin/
+```
+
+3. Mot de passe :
+
+```text
+heliantha2026
+```
+
+Si tu veux changer le mot de passe admin, dans PowerShell avant de lancer l’app :
+
+```powershell
+$env:HELIANTHA_ADMIN_PASSWORD="ton-nouveau-mot-de-passe"
+python run.py
+```
+
+Après connexion, tu arriveras sur le tableau de bord HeliAntha Admin.
+
+
+
+
+
+
+
+
+------------------------------------------------
+
+
+
+Exactement. Tu as raison : **une constante qui ne changera jamais n’a aucun intérêt à encombrer “Paramètres de calcul”**. Cette page doit surtout contenir ce que HeliAntha pourra réellement décider ou modifier.
+
+Dans ta page actuelle, je séparerais les choses comme ça.
+
+### 🔒 1. Valeurs fixes à retirer de l’administration
+
+Ces valeurs peuvent rester directement dans le moteur Python, car ton boss n’a aucune raison de les modifier :
+
+| Constante                 |               Valeur | Utilité                                 |
+| ------------------------- | -------------------: | --------------------------------------- |
+| Gravité terrestre `g`     |        **9,81 m/s²** | Calcul hydraulique                      |
+| Densité de l’eau `ρ`      |     **≈ 1000 kg/m³** | Calcul hydraulique                      |
+| 1 kW                      |           **1000 W** | Conversion                              |
+| 1 m³                      |           **1000 L** | Conversion                              |
+| 1 heure                   |           **3600 s** | Conversion débit/énergie                |
+| 1 kWh                     |           **3,6 MJ** | Conversion énergétique                  |
+| √3                        |          **≈ 1,732** | Calcul triphasé                         |
+| π                         |        **≈ 3,14159** | Calculs mathématiques éventuels         |
+| Chaleur massique de l’eau | **≈ 4,186 kJ/kg·°C** | Calcul chauffe-eau solaire, si utilisée |
+
+Ces données peuvent être regroupées dans le code, par exemple :
+
+```python
+GRAVITY = 9.81
+WATER_DENSITY = 1000.0
+WATER_SPECIFIC_HEAT = 4.186
+LITERS_PER_M3 = 1000
+SECONDS_PER_HOUR = 3600
+SQRT_3 = 1.7320508075688772
+```
+
+Elles n’ont pas besoin d’un bouton **Modifier**.
+
+---
+
+### ⚙️ 2. Valeurs qui doivent rester dans “Paramètres de calcul”
+
+Celles-ci peuvent changer selon les méthodes choisies par HeliAntha :
+
+* marge de dimensionnement PV ;
+* pertes photovoltaïques ;
+* autonomie batterie par défaut ;
+* marge de capacité batterie ;
+* rendement batterie par défaut ;
+* DoD / part utilisable par défaut ;
+* marge de puissance onduleur ;
+* rendement onduleur par défaut ;
+* rendement pompe par défaut ;
+* rendement variateur ;
+* pertes hydrauliques estimées ;
+* marge de sécurité pompage ;
+* rendement recharge EV ;
+* marge borne EV ;
+* pertes thermiques ;
+* besoin d’eau chaude par personne ;
+* température d’eau chaude souhaitée ;
+* température d’eau froide estimée.
+
+Ce sont de vrais **réglages métier**.
+
+---
+
+### 📦 3. Certaines valeurs ne devraient même pas être des paramètres globaux à terme
+
+Elles devraient principalement venir du **catalogue matériel**.
+
+Par exemple :
+
+**Puissance panneau par défaut = 590 W**
+
+À terme, mieux vaut :
+
+```text
+Catalogue
+↓
+Panneau HPower 590 W
+Panneau JA Solar 610 W
+Panneau LONGi 585 W
+↓
+Moteur choisit le produit
+```
+
+Même chose pour :
+
+* rendement réel d’un onduleur ;
+* DoD réel d’une batterie ;
+* rendement réel d’une batterie ;
+* puissance d’une borne EV ;
+* rendement d’une pompe ;
+* débit/HMT d’une pompe ;
+* capacité d’un ballon ;
+* caractéristiques d’un capteur solaire thermique.
+
+Le paramètre global reste uniquement **une valeur de secours** si aucun produit précis n’est encore sélectionné.
+
+---
+
+### 📍 4. Certaines valeurs doivent dépendre de la localisation
+
+Par exemple :
+
+**Ensoleillement solaire = 5,4 h/j**
+
+Je ne considère pas ça comme une constante.
+
+Un projet à Tanger et un projet à Ouarzazate ne devraient pas forcément utiliser exactement la même donnée.
+
+À terme :
+
+```text
+Localisation du client
+        ↓
+Données solaires de la zone
+        ↓
+Productible / irradiation
+        ↓
+Calcul PV
+```
+
+Le `5,4 h/j` devient simplement :
+
+> **Valeur de secours lorsqu’aucune donnée locale n’est disponible.**
+
+Même logique éventuellement pour la température d’eau froide en solaire thermique.
+
+---
+
+### Donc ta page devrait être beaucoup plus légère
+
+Je viserais quelque chose comme :
+
+```text
+🧮 PARAMÈTRES DE CALCUL
+
+☀️ PHOTOVOLTAÏQUE
+• Marge de dimensionnement         15 %
+• Pertes estimées                  15 %
+• Performance globale              80 %
+• Ensoleillement de secours       5,4 h/j
+
+🔋 BATTERIES
+• Autonomie par défaut              1 jour
+• Part utilisable                  80 %
+• Rendement par défaut             93 %
+• Marge capacité                   10 %
+
+⚡ ONDULEURS
+• Rendement par défaut             96 %
+• Marge de puissance              +25 %
+
+💧 POMPAGE
+• Rendement pompe par défaut       48 %
+• Rendement variateur              95 %
+• Pertes hydrauliques              10 %
+• Marge de sécurité                20 %
+
+🚗 BORNES EV
+• Rendement recharge               90 %
+• Marge de sécurité                10 %
+
+♨️ THERMIQUE
+• Eau chaude/personne              50 L/j
+• Pertes thermiques                20 %
+• Température cible                55 °C
+• Température entrée               15 °C
+```
+
+Et **plus de gravité, densité de l’eau, etc. dans cette page**.
+
+Le principe devient très simple :
+
+**🔒 Constante scientifique → code uniquement**
+**⚙️ Règle choisie par HeliAntha → Paramètres de calcul**
+**📦 Caractéristique d’un matériel → Catalogue**
+**📍 Valeur dépendant du lieu → données de localisation**
+
+C’est cette séparation que je conseillerais. Elle rendra l’administration beaucoup plus propre et évitera que quelqu’un transforme accidentellement la gravité terrestre en `4,5 m/s²` et dimensionne une pompe pour la Lune. 😄
+
+
+
+
+direction@heliantha.ma
+heliatha2026

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Devis {{ quote.quote_number }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+</head>
+<body class="pdf-page">
+  <main class="pdf-sheet">
+    <header class="pdf-header">
+      <div class="admin-brand">
+        <span class="admin-mark" aria-hidden="true"><img class="admin-logo" src="{{ url_for('main.brand_image') }}" alt=""></span>
+        <div>
+          <b>HeliAntha</b>
+          <small>Etude · Installation · Maintenance</small>
+        </div>
+      </div>
+      <div>
+        <b>Pré-devis {{ quote.quote_number }}</b>
+        <span>{{ quote.created_at }}</span>
+      </div>
+    </header>
+
+    <section class="pdf-grid">
+      <div>
+        <h2>Client</h2>
+        <p>{{ quote.customer_name }}<br>{{ quote.phone }}<br>{{ quote.email }}</p>
+      </div>
+      <div>
+        <h2>Projet</h2>
+        <p>{{ project_labels.get(quote.project, quote.project) }}<br>{{ quote.solution_name }}<br>{{ quote.location or quote.city }}</p>
+      </div>
+    </section>
+
+    <h2>Configuration retenue</h2>
+    <table>
+      <thead>
+        <tr><th>Référence</th><th>Désignation</th><th>Qté</th><th>PU</th><th>Total</th></tr>
+      </thead>
+      <tbody>
+        {% for item in display_equipment_lines %}
+          <tr>
+            <td>{{ item.reference }}</td>
+            <td>{{ item.brand }} {{ item.model }}</td>
+            <td>{{ item.quantity }}</td>
+            <td>{{ "{:,.2f}".format(item.unit_price or 0).replace(",", " ") }} DH</td>
+            <td>{{ "{:,.2f}".format(item.total_price or 0).replace(",", " ") }} DH</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="5">Aucune ligne matérielle à afficher.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <h2>Lecture rapide</h2>
+    <div class="finance-box compact">
+      {% for row in financial_summary_rows %}
+      <div class="{% if row.emphasis %}total{% endif %}"><span>{{ row.label }}</span><b>{{ "{:,.2f}".format(row.amount or 0).replace(",", " ") }} DH</b></div>
+      {% endfor %}
+    </div>
+  </main>
+  <script>window.addEventListener("load",()=>setTimeout(()=>window.print(),300));</script>
+</body>
+</html>

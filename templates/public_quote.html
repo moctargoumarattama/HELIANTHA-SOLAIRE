@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Résultat de simulation HeliAntha Smart Quote.">
+  <title>{{ public_view.simulation_label }} — {{ company.company_name }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body class="page-result{% if print_mode %} page-print{% endif %}">
+  <header class="site-header site-header-compact">
+    <div class="shell header-bar">
+      <a class="brand" href="{{ url_for('main.index') }}" aria-label="Accueil HeliAntha">
+        <span class="brand-mark" aria-hidden="true"><img class="brand-logo" src="{{ url_for('main.brand_image') }}" alt=""></span>
+        <span class="brand-copy">
+          <strong>{{ company.company_name }}</strong>
+          <small>Smart Quote</small>
+        </span>
+      </a>
+
+      <div class="header-actions">
+        <a class="button button-ghost button-small" href="{{ url_for('main.index') }}">Nouvelle étude</a>
+        {% if not print_mode %}
+          <a class="button button-ghost button-small" href="{{ url_for('main.public_quote_print', quote_number=quote.quote_number) }}" target="_blank" rel="noreferrer">Pré-devis</a>
+          <button class="button button-primary button-small" type="button" onclick="window.print()">Imprimer</button>
+        {% endif %}
+      </div>
+    </div>
+  </header>
+
+  {% if print_mode %}
+    <section class="print-banner shell">
+      <div class="print-brand">
+        <span class="brand-mark" aria-hidden="true"><img class="brand-logo" src="{{ url_for('main.brand_image') }}" alt=""></span>
+        <div>
+          <strong>{{ company.company_name }}</strong>
+          <small>Pré-devis HeliAntha</small>
+        </div>
+      </div>
+      <div class="print-reference">
+        <strong>Réf. {{ quote.quote_number }}</strong>
+        <small>{{ quote.created_at }}</small>
+      </div>
+    </section>
+  {% endif %}
+
+  {% if not print_mode %}
+    <section class="expertise-strip" aria-label="Message d’expertise HeliAntha">
+      <div class="shell">
+        <div class="expertise-marquee">
+          <div class="expertise-marquee-track">
+            <div class="expertise-marquee-group">
+              <span>Plus de 10 ans d’expertise dans l’énergie solaire et les systèmes embarqués au Maroc.</span>
+              <span class="expertise-dot" aria-hidden="true">•</span>
+              <span>Plus de 10 ans d’expertise dans l’énergie solaire et les systèmes embarqués au Maroc.</span>
+              <span class="expertise-dot" aria-hidden="true">•</span>
+              <span>Plus de 10 ans d’expertise dans l’énergie solaire et les systèmes embarqués au Maroc.</span>
+            </div>
+            <div class="expertise-marquee-group" aria-hidden="true">
+              <span>Plus de 10 ans d’expertise dans l’énergie solaire et les systèmes embarqués au Maroc.</span>
+              <span class="expertise-dot" aria-hidden="true">•</span>
+              <span>Plus de 10 ans d’expertise dans l’énergie solaire et les systèmes embarqués au Maroc.</span>
+              <span class="expertise-dot" aria-hidden="true">•</span>
+              <span>Plus de 10 ans d’expertise dans l’énergie solaire et les systèmes embarqués au Maroc.</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  {% endif %}
+
+  <main class="result-main result-main-compact">
+    <section class="result-hero result-hero-simple reveal-on-scroll">
+      <div class="shell result-hero-grid result-hero-grid-simple">
+        <div class="result-hero-copy">
+          <span class="eyebrow">{{ public_view.simulation_label }}</span>
+          <h1>Votre étude HeliAntha</h1>
+          <div class="hero-meta-grid">
+            <article class="hero-meta-card">
+              <small>Projet</small>
+              <strong>{{ public_view.project_label }}</strong>
+            </article>
+            <article class="hero-meta-card">
+              <small>Ville</small>
+              <strong>{{ quote.city or quote.location or "Maroc" }}</strong>
+            </article>
+            <article class="hero-meta-card">
+              <small>Réf.</small>
+              <strong>{{ quote.quote_number }}</strong>
+            </article>
+          </div>
+          <div class="result-chips">
+            <span class="chip chip-{{ public_view.compatibility.tone }}">{{ public_view.compatibility.label }}</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    {% if public_view.has_multiple_offers %}
+      <section class="result-offers reveal-on-scroll">
+        <div class="shell">
+          <div class="offer-tabs offer-tabs-wide" id="offer-tabs" aria-label="Choix de solution"></div>
+        </div>
+      </section>
+    {% endif %}
+
+    <section class="result-summary reveal-on-scroll">
+      <div class="shell result-layout result-layout-compact">
+        <div class="result-primary">
+          <section class="result-spotlight solution-card" id="result-spotlight">
+            <div class="spotlight-primary">
+              <div class="spotlight-topline">
+                <span class="eyebrow">Votre solution</span>
+                <span class="solution-badge" id="offer-name">{{ public_view.recommended_offer.name if public_view.recommended_offer else "Solution HeliAntha" }}</span>
+              </div>
+              <div class="spotlight-value">
+                <strong id="spotlight-value"></strong>
+                <span id="spotlight-unit"></span>
+              </div>
+              <p class="spotlight-label" id="spotlight-label">Résumé simple de votre installation</p>
+              <div class="spotlight-highlights" id="spotlight-highlights"></div>
+              <p class="spotlight-note" id="spotlight-equipment"></p>
+              <div class="summary-actions">
+                <button class="button button-ghost button-small" type="button" id="open-tech-details">Voir les détails</button>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <aside class="result-sidebar result-sidebar-compact">
+          <section class="price-card price-card-compact" id="price-card">
+            <span class="eyebrow">Prix estimé</span>
+            <strong id="offer-price">—</strong>
+            <p id="offer-subprice">Estimation préparée pour votre projet</p>
+          </section>
+
+          <section class="confidence-card confidence-card-compact">
+            <span class="eyebrow">À retenir</span>
+            <strong>{{ public_view.compatibility.label }}</strong>
+            <p>HeliAntha finalise les derniers détails avant installation.</p>
+          </section>
+        </aside>
+      </div>
+    </section>
+
+    <details class="tech-details shell" id="technical-details-section" {% if print_mode %}open{% endif %}>
+      <summary>Voir les détails techniques</summary>
+      <div class="tech-details-body">
+        <div class="metric-grid metric-grid-compact spotlight-tech-grid" id="technical-details-grid"></div>
+      </div>
+    </details>
+
+    <section class="diagram-card energy-flow-card reveal-on-scroll">
+      <div class="shell">
+        <div class="diagram-head">
+          <div>
+            <span class="eyebrow">Flux énergétique</span>
+            <h2>Comment ça fonctionne</h2>
+          </div>
+        </div>
+        <div id="solution-diagram" class="solution-diagram" aria-live="polite"></div>
+        <p class="diagram-summary" id="energy-flow-summary" aria-live="polite"></p>
+      </div>
+    </section>
+
+    <section class="equipment-section reveal-on-scroll">
+      <div class="shell">
+        <div class="diagram-head">
+          <div>
+            <span class="eyebrow">Équipements</span>
+            <h2>Matériel principal</h2>
+          </div>
+        </div>
+        <div class="equipment-grid" id="equipment-grid"></div>
+      </div>
+    </section>
+
+    {% if public_view.warnings %}
+      {% set critical_warnings = public_view.warnings | selectattr("level", "equalto", "critical") | list %}
+      <section class="warnings-section reveal-on-scroll" id="warnings-section">
+        <div class="shell">
+          <article class="warning-card warning-info">
+            <strong>Votre étude est prête.</strong>
+            <p>HeliAntha finalise les derniers détails avant installation.</p>
+            {% if critical_warnings %}
+              <div class="summary-actions">
+                <button class="button button-ghost button-small" type="button" id="open-warning-details">Voir les points à vérifier</button>
+              </div>
+            {% endif %}
+          </article>
+          {% if critical_warnings %}
+            <details class="tech-details">
+              <summary>Point à vérifier</summary>
+              <div class="warning-list warning-list-compact">
+                {% for item in critical_warnings %}
+                  <article class="warning-card warning-{{ item.level }}">
+                    <strong>À vérifier</strong>
+                    <p>{{ item.text }}</p>
+                  </article>
+                {% endfor %}
+              </div>
+            </details>
+          {% endif %}
+        </div>
+      </section>
+    {% endif %}
+
+    <section class="final-cta-section reveal-on-scroll">
+      <div class="shell final-cta-card final-cta-card-compact">
+        <div>
+          <span class="eyebrow">Prêt à avancer ?</span>
+          <h2>Demandez la suite quand vous voulez.</h2>
+        </div>
+        <div class="final-cta-actions final-cta-actions-compact">
+          <button class="button button-primary" type="button" id="visit-toggle-bottom">Demander une visite technique</button>
+          <a class="button button-ghost" href="{{ url_for('main.public_quote_print', quote_number=quote.quote_number) }}" target="_blank" rel="noreferrer">Télécharger mon pré-devis</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="visit-panel" id="visit-panel" hidden>
+    <div class="visit-backdrop" id="visit-close"></div>
+    <section class="visit-dialog" role="dialog" aria-modal="true" aria-labelledby="visit-title">
+      <header class="visit-header">
+        <div>
+          <span class="eyebrow">Visite technique</span>
+          <h2 id="visit-title">Demander une visite HeliAntha</h2>
+        </div>
+        <button class="close-button" type="button" id="visit-close-button" aria-label="Fermer la demande de visite">×</button>
+      </header>
+
+      <form id="visit-form" class="visit-form">
+        <div class="form-grid">
+          <div class="field">
+            <label for="visit-date">Date souhaitée</label>
+            <input id="visit-date" name="preferred_date" type="date">
+          </div>
+          <div class="field">
+            <label for="visit-slot">Créneau</label>
+            <select id="visit-slot" name="time_slot">
+              <option value="">Choisir</option>
+              <option value="Matin">Matin</option>
+              <option value="Après-midi">Après-midi</option>
+              <option value="Fin de journée">Fin de journée</option>
+            </select>
+          </div>
+          <div class="field full">
+            <label for="visit-address">Adresse</label>
+            <input id="visit-address" name="address" type="text" required value="{{ quote.location or quote.request.contact.location or quote.city or '' }}">
+          </div>
+          <div class="field">
+            <label for="visit-phone">Téléphone</label>
+            <input id="visit-phone" name="phone" type="text" required value="{{ quote.phone or quote.request.contact.phone or '' }}">
+          </div>
+          <div class="field full">
+            <label for="visit-comment">Commentaire</label>
+            <textarea id="visit-comment" name="comment" rows="4" placeholder="Accès au site, contrainte horaire, détail utile…"></textarea>
+          </div>
+        </div>
+
+        <div class="visit-actions">
+          <button class="button button-ghost" type="button" id="visit-cancel">Annuler</button>
+          <button class="button button-primary" type="submit">Envoyer la demande</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    window.HELIANTHA_COMPANY = {{ company|tojson }};
+    window.PUBLIC_QUOTE = {{ public_view|tojson }};
+    window.PUBLIC_QUOTE_URLS = {
+      selectOffer: "{{ url_for('main.select_public_offer', quote_number=quote.quote_number) }}",
+      visit: "{{ url_for('main.create_visit_request', quote_number=quote.quote_number) }}"
+    };
+  </script>
+  <script src="{{ url_for('static', filename='js/public-result.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/advisor.js') }}"></script>
+  {% if print_mode %}
+    <script>
+      window.addEventListener("load", () => window.setTimeout(() => window.print(), 300));
+    </script>
+  {% endif %}
+</body>
+</html>

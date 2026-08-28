@@ -1,0 +1,239 @@
+{% extends "admin/base.html" %}
+{% block title %}Produit - HeliAntha Admin{% endblock %}
+{% block page_title %}{{ "Modifier produit" if product and product.get('reference') else "Ajouter produit" }}{% endblock %}
+{% block content %}
+{% set specs = product.get('technical_specs', {}) if product else {} %}
+
+<section class="learning-panel">
+  <h2>Fiche produit catalogue</h2>
+  <p>
+    Cette fiche sert au moteur pour choisir le bon materiel, expliquer ce choix,
+    verifier la compatibilite et calculer le prix reel du devis. Seules les
+    informations fiables doivent etre renseignees comme telles.
+  </p>
+</section>
+
+{% if errors %}
+<div class="admin-alert">
+  <b>La fiche contient des points a corriger.</b>
+  <ul class="clean-list">
+    {% for message in errors.values() %}
+    <li>{{ message }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<form class="panel form-panel catalog-form" method="post">
+  <div class="form-section">
+    <h2>Identification du produit</h2>
+    <div class="form-grid">
+      <label>
+        Reference
+        <input name="reference" value="{{ product.get('reference', '') if product else '' }}" required>
+        {% if errors.get('reference') %}<small class="field-error">{{ errors.get('reference') }}</small>{% endif %}
+      </label>
+
+      <label>
+        Categorie
+        <select name="category" id="catalog-category" required>
+          <option value="">Choisir une categorie</option>
+          {% for option in category_options %}
+          <option value="{{ option.value }}" {% if product and product.get('category') == option.value %}selected{% endif %}>{{ option.label }}</option>
+          {% endfor %}
+        </select>
+        {% if errors.get('category') %}<small class="field-error">{{ errors.get('category') }}</small>{% endif %}
+      </label>
+
+      <label>
+        Sous-categorie
+        <input name="subcategory" value="{{ product.get('subcategory', '') if product else '' }}" placeholder="ex. monocristallin, hybride, triphase">
+      </label>
+
+      <label>
+        Marque
+        <input name="brand" value="{{ product.get('brand', '') if product else '' }}">
+      </label>
+
+      <label>
+        Modele
+        <input name="model" value="{{ product.get('model', '') if product else '' }}">
+      </label>
+
+      <label>
+        Unite
+        <input name="unit" value="{{ product.get('unit', 'piece') if product else 'piece' }}">
+      </label>
+
+      <label>
+        Garantie
+        <input name="warranty" value="{{ product.get('warranty', '') if product else '' }}" placeholder="ex. 10 ans">
+      </label>
+
+      <label>
+        Fournisseur
+        <input name="supplier" value="{{ product.get('supplier', '') if product else '' }}">
+      </label>
+
+      <label class="full">
+        Description
+        <textarea name="description">{{ product.get('description', '') if product else '' }}</textarea>
+      </label>
+    </div>
+  </div>
+
+  <div class="form-section">
+    <h2>Informations commerciales</h2>
+    <div class="form-grid">
+      {% for name, label in [
+        ('power_kw', 'Puissance kW'),
+        ('power_w', 'Puissance W'),
+        ('voltage', 'Tension'),
+        ('current_amp', 'Courant'),
+        ('capacity_kwh', 'Capacite kWh'),
+        ('capacity_l', 'Capacite L'),
+        ('efficiency', 'Rendement global'),
+        ('purchase_price', 'Prix achat'),
+        ('sale_price', 'Prix vente'),
+        ('stock', 'Stock'),
+        ('vat_rate', 'TVA'),
+        ('currency', 'Devise'),
+        ('priority', 'Priorite HeliAntha')
+      ] %}
+      <label>
+        {{ label }}
+        <input
+          {% if name not in ['currency'] %}type="number" step="any"{% endif %}
+          name="{{ name }}"
+          value="{{ product.get(name, '') if product else '' }}"
+        >
+        {% if errors.get(name) %}<small class="field-error">{{ errors.get(name) }}</small>{% endif %}
+        {% if name == 'vat_rate' %}<small>20 ou 0.20 acceptes.</small>{% endif %}
+      </label>
+      {% endfor %}
+
+      <label class="full">
+        URL fiche technique
+        <input name="datasheet_url" value="{{ product.get('datasheet_url', '') if product else '' }}" placeholder="https://...">
+        {% if errors.get('datasheet_url') %}<small class="field-error">{{ errors.get('datasheet_url') }}</small>{% endif %}
+      </label>
+    </div>
+  </div>
+
+  <div class="form-section">
+    <h2>Statut et gouvernance</h2>
+    <div class="form-grid">
+      <label class="checkbox">
+        <input type="checkbox" name="active" {% if not product or product.get('active', 1) %}checked{% endif %}>
+        Produit actif
+      </label>
+      <label class="checkbox">
+        <input type="checkbox" name="preferred" {% if product and product.get('preferred') %}checked{% endif %}>
+        Produit a favoriser
+      </label>
+      <label class="checkbox">
+        <input type="checkbox" name="demo" {% if not product or product.get('demo', 1) %}checked{% endif %}>
+        Référence HeliAntha
+      </label>
+      <div class="muted">
+        Une référence HeliAntha peut être utilisée pour les essais, tout en restant
+        clairement identifiée dans l'administration.
+      </div>
+    </div>
+  </div>
+
+  <div class="form-section">
+    <div class="panel-head">
+      <div>
+        <h2>Fiche technique adaptee a la categorie</h2>
+        <p class="muted">Seuls les champs utiles a la categorie choisie sont affiches.</p>
+      </div>
+    </div>
+
+    <div class="catalog-tech-empty" data-tech-empty {% if product and product.get('category') %}hidden{% endif %}>
+      Choisissez d'abord une categorie pour afficher les caracteristiques techniques pertinentes.
+    </div>
+
+    {% for category, fields in technical_fields.items() %}
+    <section class="catalog-tech-group" data-tech-category="{{ category }}" {% if not product or product.get('category') != category %}hidden{% endif %}>
+      <div class="form-grid">
+        {% for field in fields %}
+        {% set raw_value = specs.get(field.key, '') %}
+        {% if field.kind in ['percent', 'ratio'] and raw_value not in ('', none) and raw_value is number %}
+          {% set display_value = raw_value * 100 %}
+        {% elif field.kind == 'pump_curve' and raw_value %}
+          {% set display_value = raw_value|tojson(indent=2) if raw_value is not string else raw_value %}
+        {% else %}
+          {% set display_value = raw_value %}
+        {% endif %}
+        <label class="{% if field.key == 'pump_curve' %}full{% endif %}">
+          {{ field.label }}
+          {% if field.kind == 'choice' %}
+          <select name="spec_{{ field.key }}">
+            <option value="">Non renseigne</option>
+            {% for choice in field.choices %}
+            <option value="{{ choice }}" {% if raw_value == choice %}selected{% endif %}>{{ choice }}</option>
+            {% endfor %}
+          </select>
+          {% elif field.kind == 'boolean' %}
+          <select name="spec_{{ field.key }}">
+            <option value="">Non renseigne</option>
+            <option value="1" {% if raw_value in [True, 1, '1', 'true', 'True', 'oui', 'on'] %}selected{% endif %}>Oui</option>
+            <option value="0" {% if raw_value in [False, 0, '0', 'false', 'False', 'non', 'off'] %}selected{% endif %}>Non</option>
+          </select>
+          {% elif field.kind == 'pump_curve' %}
+          <textarea name="spec_{{ field.key }}" placeholder='[{"flow_m3_h": 2, "hmt_m": 100}, {"flow_m3_h": 5, "hmt_m": 80}]'>{{ display_value }}</textarea>
+          {% else %}
+          <input
+            {% if field.kind in ['number', 'percent', 'ratio', 'integer'] %}type="number" step="{% if field.kind == 'integer' %}1{% else %}any{% endif %}"{% endif %}
+            name="spec_{{ field.key }}"
+            value="{{ display_value }}"
+            {% if field.required %}required{% endif %}
+          >
+          {% endif %}
+          <small>
+            {% if field.unit %}Unite : {{ field.unit }}{% endif %}
+            {% if field.required %} {% if field.unit %}•{% endif %} Champ recommande pour la selection auto{% endif %}
+          </small>
+          {% if errors.get('spec_' ~ field.key) %}<small class="field-error">{{ errors.get('spec_' ~ field.key) }}</small>{% endif %}
+        </label>
+        {% endfor %}
+      </div>
+    </section>
+    {% endfor %}
+  </div>
+
+  <div class="detail-actions">
+    <button class="admin-button" type="submit">Enregistrer la fiche</button>
+    <a class="admin-button secondary" href="{{ url_for('main.admin_catalog') }}">Annuler</a>
+  </div>
+</form>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+(() => {
+  const categorySelect = document.getElementById("catalog-category");
+  const groups = Array.from(document.querySelectorAll("[data-tech-category]"));
+  const emptyState = document.querySelector("[data-tech-empty]");
+  if (!categorySelect) return;
+
+  const toggleGroups = () => {
+    const current = categorySelect.value;
+    let visible = false;
+    groups.forEach((group) => {
+      const active = group.dataset.techCategory === current;
+      group.hidden = !active;
+      group.querySelectorAll("input, select, textarea").forEach((field) => {
+        field.disabled = !active;
+      });
+      if (active) visible = true;
+    });
+    if (emptyState) emptyState.hidden = visible;
+  };
+
+  categorySelect.addEventListener("change", toggleGroups);
+  toggleGroups();
+})();
+</script>
+{% endblock %}

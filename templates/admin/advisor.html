@@ -1,0 +1,299 @@
+{% extends "admin/base.html" %}
+{% block title %}Conseiller - HeliAntha Admin{% endblock %}
+{% block page_title %}Conseiller HeliAntha{% endblock %}
+{% block content %}
+{% set current_item = current_item if current_item is defined else (unknown_messages[0] if unknown_messages else None) %}
+<div class="advisor-page">
+  <section class="panel advisor-hero">
+    <div class="advisor-hero-copy">
+      <span class="advisor-kicker">Conseiller HeliAntha</span>
+      <h2>Améliorations à vérifier</h2>
+      <p>
+        Le Conseiller propose. HeliAntha valide, corrige ou ignore.
+      </p>
+
+      <div class="advisor-status-tabs" aria-label="Filtrer les messages">
+        <a class="advisor-tab{% if current_status == 'new' %} active{% endif %}" href="{{ url_for('main.admin_advisor', status='new') }}">À vérifier</a>
+        <a class="advisor-tab{% if current_status == 'learned' %} active{% endif %}" href="{{ url_for('main.admin_advisor', status='learned') }}">Validés</a>
+        <a class="advisor-tab{% if current_status == 'ignored' %} active{% endif %}" href="{{ url_for('main.admin_advisor', status='ignored') }}">Ignorés</a>
+      </div>
+    </div>
+
+    <div class="advisor-hero-stats">
+      <article class="advisor-hero-stat">
+        <small>À vérifier</small>
+        <strong>{{ pending_count }}</strong>
+        <span>élément(s)</span>
+      </article>
+      <article class="advisor-hero-stat">
+        <small>Appris cette semaine</small>
+        <strong>{{ weekly_count }}</strong>
+        <span>validations</span>
+      </article>
+      <article class="advisor-hero-stat">
+        <small>Réponses HeliAntha</small>
+        <strong>{{ response_count }}</strong>
+        <span>réponses prêtes</span>
+      </article>
+      <article class="advisor-hero-stat">
+        <small>État affiché</small>
+        <strong>{{ current_status_label }}</strong>
+        <span>filtre actuel</span>
+      </article>
+    </div>
+  </section>
+
+  <section class="panel advisor-workflow">
+    <div class="advisor-workflow-head">
+      <div>
+        <span class="advisor-step">{{ current_index }} / {{ unknown_messages|length if unknown_messages else 0 }}</span>
+        <h2>Le Conseiller propose</h2>
+      </div>
+      <span class="badge">{{ remaining_count }} restant(s)</span>
+    </div>
+
+    {% if current_item %}
+    <div class="advisor-message-card">
+      <span class="advisor-section-label">LE CLIENT A ÉCRIT</span>
+      <blockquote>« {{ current_item.original_message }} »</blockquote>
+      <div class="advisor-message-meta">
+        <span>{{ current_item.project_label }}</span>
+        <span>{{ current_item.status_label }}</span>
+        {% if current_item.similar_count > 1 %}
+        <span>Vu {{ current_item.similar_count }} fois</span>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="advisor-suggestion-card">
+      <span class="advisor-section-label">LE CONSEILLER PROPOSE</span>
+      <strong>{{ suggestion.title }}</strong>
+      <p>{{ suggestion.label }}</p>
+      {% if suggestion.note %}
+      <small>{{ suggestion.note }}</small>
+      {% endif %}
+    </div>
+
+    <div class="advisor-actions">
+      {% if suggestion.mode == 'knowledge_new' %}
+      <form method="post" class="advisor-primary-form advisor-response-form">
+        <input type="hidden" name="action" value="save_knowledge">
+        <input type="hidden" name="item_id" value="{{ current_item.id }}">
+        <input type="hidden" name="category" value="{{ suggestion.category }}">
+        <input type="hidden" name="title" value="{{ suggestion.title_input }}">
+        <input type="hidden" name="question" value="{{ suggestion.question }}">
+        <input type="hidden" name="keywords" value="{{ suggestion.keywords }}">
+        <label for="advisor-answer">Réponse HeliAntha</label>
+        <textarea id="advisor-answer" name="answer" rows="4" placeholder="Réponse courte, claire et rassurante" required></textarea>
+        <button class="admin-button advisor-primary-button" type="submit">{{ suggestion.primary_label }}</button>
+      </form>
+      {% else %}
+      <form method="post" class="advisor-primary-form">
+        <input type="hidden" name="action" value="{{ suggestion.action }}">
+        <input type="hidden" name="item_id" value="{{ current_item.id }}">
+        {% if suggestion.action == 'save_intent' %}
+        <input type="hidden" name="intent" value="{{ suggestion.intent }}">
+        <input type="hidden" name="example_text" value="{{ suggestion.example_text }}">
+        <input type="hidden" name="project_type" value="{{ suggestion.project_type }}">
+        {% elif suggestion.action == 'save_synonym' %}
+        <input type="hidden" name="canonical_term" value="{{ suggestion.canonical_term }}">
+        <input type="hidden" name="variant" value="{{ suggestion.variant }}">
+        <input type="hidden" name="category" value="{{ suggestion.category }}">
+        <input type="hidden" name="project_type" value="{{ suggestion.project_type }}">
+        {% elif suggestion.action == 'save_knowledge' %}
+        <input type="hidden" name="category" value="{{ suggestion.category }}">
+        <input type="hidden" name="title" value="{{ suggestion.title_input }}">
+        <input type="hidden" name="question" value="{{ suggestion.question }}">
+        <input type="hidden" name="answer" value="{{ suggestion.answer }}">
+        <input type="hidden" name="keywords" value="{{ suggestion.keywords }}">
+        {% endif %}
+        <button class="admin-button advisor-primary-button" type="submit">{{ suggestion.primary_label }}</button>
+      </form>
+      {% endif %}
+
+      <details class="advisor-correction">
+        <summary class="ghost-button">Corriger</summary>
+        <div class="advisor-correction-panel">
+          {% if suggestion.mode == 'synonym' %}
+          <form method="post" class="advisor-correction-form">
+            <input type="hidden" name="action" value="save_synonym">
+            <input type="hidden" name="item_id" value="{{ current_item.id }}">
+            <label>Expression reconnue</label>
+            <input type="text" name="variant" value="{{ suggestion.variant }}" required>
+            <label>Terme principal</label>
+            <input type="text" name="canonical_term" value="{{ suggestion.canonical_term }}" required>
+            <label>Catégorie</label>
+            <input type="text" name="category" value="{{ suggestion.category }}">
+            <input type="hidden" name="project_type" value="{{ suggestion.project_type }}">
+            <button class="ghost-button" type="submit">Enregistrer</button>
+          </form>
+          {% elif suggestion.mode == 'knowledge_existing' %}
+          <form method="post" class="advisor-correction-form">
+            <input type="hidden" name="action" value="save_knowledge">
+            <input type="hidden" name="item_id" value="{{ current_item.id }}">
+            <label>Catégorie</label>
+            <input type="text" name="category" value="{{ suggestion.category }}">
+            <label>Titre</label>
+            <input type="text" name="title" value="{{ suggestion.title_input }}" required>
+            <label>Question</label>
+            <textarea name="question" rows="3">{{ suggestion.question }}</textarea>
+            <label>Réponse</label>
+            <textarea name="answer" rows="4" required>{{ suggestion.answer }}</textarea>
+            <label>Mots-clés</label>
+            <input type="text" name="keywords" value="{{ suggestion.keywords }}">
+            <button class="ghost-button" type="submit">Enregistrer</button>
+          </form>
+          {% elif suggestion.mode == 'knowledge_new' %}
+          <div class="advisor-correction-note">
+            <p>Laissez la réponse principale ci-dessus, ou ajustez le titre si besoin.</p>
+            <small>Le titre et la catégorie sont déjà préparés.</small>
+          </div>
+          {% else %}
+          <form method="post" class="advisor-correction-form">
+            <input type="hidden" name="action" value="save_intent">
+            <input type="hidden" name="item_id" value="{{ current_item.id }}">
+            <label>Ce que le client voulait faire</label>
+            <select name="intent">
+              <option value="request_visit">Demande de visite</option>
+              <option value="request_human">Parler à quelqu’un</option>
+              <option value="ask_price">Question de prix</option>
+              <option value="ask_explanation">Question technique</option>
+              <option value="ask_equipment">Question matériel</option>
+              <option value="request_quote">Lancer une étude</option>
+              <option value="change_project">Changer de projet</option>
+              <option value="start_project">Démarrer le projet</option>
+              <option value="give_information">Information donnée</option>
+            </select>
+            <input type="hidden" name="example_text" value="{{ current_item.original_message }}">
+            <input type="hidden" name="project_type" value="{{ current_item.project_type or '' }}">
+            <button class="ghost-button" type="submit">Enregistrer</button>
+          </form>
+          {% endif %}
+        </div>
+      </details>
+
+      <form method="post" class="advisor-ghost-form">
+        <input type="hidden" name="action" value="ignore">
+        <input type="hidden" name="item_id" value="{{ current_item.id }}">
+        <button class="ghost-button" type="submit">Ignorer</button>
+      </form>
+    </div>
+
+    <div class="advisor-next-line">
+      <span>{{ remaining_count }} élément(s) restent à traiter.</span>
+      <span>Le passage suivant s'ouvre automatiquement après validation.</span>
+    </div>
+    {% else %}
+    <div class="advisor-empty">
+      <h3>Tout est à jour</h3>
+      <p>Le Conseiller n’a rien à vérifier pour le moment.</p>
+    </div>
+    {% endif %}
+  </section>
+
+  <details class="panel advisor-archive">
+    <summary>Voir les détails du Conseiller</summary>
+    <div class="advisor-archive-grid">
+      <section class="advisor-archive-card">
+        <div class="panel-head">
+          <div>
+            <h3>Réponses HeliAntha</h3>
+            <p class="muted">Réponses prêtes à être réutilisées.</p>
+          </div>
+          <span class="badge">{{ knowledge_rows|length }}</span>
+        </div>
+        <div class="advisor-mini-list">
+          {% for item in knowledge_rows[:5] %}
+          <article>
+            <strong>{{ item.title }}</strong>
+            <small>{{ item.category_label or item.category }}</small>
+          </article>
+          {% else %}
+          <p class="muted">Aucune réponse enregistrée.</p>
+          {% endfor %}
+        </div>
+      </section>
+
+      <section class="advisor-archive-card">
+        <div class="panel-head">
+          <div>
+            <h3>Expressions reconnues</h3>
+            <p class="muted">Vocabulaire appris automatiquement.</p>
+          </div>
+          <span class="badge">{{ synonym_rows|length }}</span>
+        </div>
+        <div class="advisor-mini-list">
+          {% for item in synonym_rows[:5] %}
+          <article>
+            <strong>{{ item.canonical_term }}</strong>
+            <small>{{ item.variant }}</small>
+          </article>
+          {% else %}
+          <p class="muted">Aucune expression apprise.</p>
+          {% endfor %}
+        </div>
+      </section>
+
+      <section class="advisor-archive-card">
+        <div class="panel-head">
+          <div>
+            <h3>Ce que les clients veulent faire</h3>
+            <p class="muted">Exemples validés pour les intentions courantes.</p>
+          </div>
+          <span class="badge">{{ intent_example_rows|length }}</span>
+        </div>
+        <div class="advisor-mini-list">
+          {% for item in intent_example_rows[:5] %}
+          <article>
+            <strong>{{ item.intent_label or item.intent }}</strong>
+            <small>{{ item.example_text }}</small>
+          </article>
+          {% else %}
+          <p class="muted">Aucun exemple d’intention.</p>
+          {% endfor %}
+        </div>
+      </section>
+
+      <section class="advisor-archive-card">
+        <div class="panel-head">
+          <div>
+            <h3>Conversations récentes</h3>
+            <p class="muted">Derniers échanges enregistrés.</p>
+          </div>
+          <span class="badge">{{ conversation_rows|length }}</span>
+        </div>
+        <div class="advisor-chat-list">
+          {% for item in conversation_rows[:6] %}
+          <article class="advisor-chat-line {% if item.role == 'user' %}is-client{% else %}is-advisor{% endif %}">
+            <div class="advisor-chat-role">{{ item.role_label }}</div>
+            <div class="advisor-chat-message">{{ item.message }}</div>
+          </article>
+          {% else %}
+          <p class="muted">Aucune conversation enregistrée.</p>
+          {% endfor %}
+        </div>
+      </section>
+
+      <section class="advisor-archive-card">
+        <div class="panel-head">
+          <div>
+            <h3>Historique d’apprentissage</h3>
+            <p class="muted">Validations récentes.</p>
+          </div>
+          <span class="badge">{{ learning_log|length }}</span>
+        </div>
+        <div class="advisor-mini-list">
+          {% for item in learning_log[:6] %}
+          <article>
+            <strong>{{ item.learning_label }}</strong>
+            <small>{{ item.target_key }}</small>
+          </article>
+          {% else %}
+          <p class="muted">Aucun historique disponible.</p>
+          {% endfor %}
+        </div>
+      </section>
+    </div>
+  </details>
+</div>
+{% endblock %}

@@ -1,0 +1,453 @@
+{% extends "admin/base.html" %}
+{% block title %}{{ quote.quote_number }} - HeliAntha Admin{% endblock %}
+{% block page_title %}Detail du devis{% endblock %}
+{% block content %}
+<div class="detail-actions">
+  <a class="admin-button secondary" href="{{ url_for('main.admin_quotes') }}">Retour</a>
+  <a class="admin-button" href="{{ url_for('main.admin_quote_pdf', quote_id=quote.id) }}" target="_blank">Imprimer / PDF</a>
+  <form method="post" action="{{ url_for('main.admin_quote_status', quote_id=quote.id) }}">
+    <select name="status">
+      {% for status in statuses %}
+      <option value="{{ status }}" {% if quote.status == status %}selected{% endif %}>{{ status }}</option>
+      {% endfor %}
+    </select>
+    <button class="admin-button" type="submit">Modifier statut</button>
+  </form>
+</div>
+
+<section class="admin-grid two">
+  <article class="panel">
+    <h2>Informations client</h2>
+    <dl class="info-list">
+      <dt>Numero</dt><dd>{{ quote.quote_number }}</dd>
+      <dt>Client</dt><dd>{{ quote.customer_name or "-" }}</dd>
+      <dt>Telephone</dt><dd>{{ quote.phone or "-" }}</dd>
+      <dt>Email</dt><dd>{{ quote.email or "-" }}</dd>
+      <dt>Ville</dt><dd>{{ quote.location or quote.city or "-" }}</dd>
+      <dt>Projet</dt><dd>{{ project_labels.get(quote.project, quote.project) }}</dd>
+      <dt>Statut</dt><dd><span class="status">{{ quote.status }}</span></dd>
+    </dl>
+  </article>
+  <article class="panel">
+    <h2>Resume technique</h2>
+    <div class="metric-list">
+      {% for metric in quote.result.get('metrics', []) %}
+      <div><small>{{ metric.label }}</small><b>{{ metric.value }}</b></div>
+      {% else %}
+      <p class="muted">Aucun resume disponible.</p>
+      {% endfor %}
+    </div>
+  </article>
+</section>
+
+{% set compatibility = quote.compatibility or quote.calculation_detail.get('compatibility', {}) %}
+{% set product_selections = quote.product_selections or quote.calculation_detail.get('product_selections', {}) %}
+{% set bom = quote.bom or quote.calculation_detail.get('bom', {}) %}
+{% set bom_lines = display_equipment_lines %}
+
+{% set technical_configuration = quote.technical_configuration or quote.calculation_detail.get('technical_configuration', {}) %}
+
+{% if technical_configuration and technical_configuration.get('sections') %}
+<section class="panel">
+  <h2>Configuration technique retenue</h2>
+  <div class="config-section-grid">
+    {% for section in technical_configuration.get('sections', []) %}
+    {% if section.get('items') %}
+    <article class="config-section-card">
+      <h3>{{ section.title }}</h3>
+      <div class="config-items">
+        {% for item in section.get('items', []) %}
+        <div>
+          <small>{{ item.label }}</small>
+          <b>{{ item.value or "-" }}</b>
+          {% if item.details %}<p>{{ item.details }}</p>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </article>
+    {% endif %}
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if compatibility %}
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <h2>Compatibilite globale</h2>
+      <p class="muted">Resume des controles techniques disponibles a la creation du devis.</p>
+    </div>
+    <span class="engine-usage-badge compatibility-{{ compatibility.get('status', 'manual_validation_required') }}">
+      {% if compatibility.get('status') == 'compatible' %}
+        Compatible
+      {% elif compatibility.get('status') == 'compatible_with_warning' %}
+        Compatible avec reserve
+      {% elif compatibility.get('status') == 'incompatible' %}
+        Incompatible
+      {% else %}
+        Validation manuelle requise
+      {% endif %}
+    </span>
+  </div>
+
+  <div class="compatibility-grid">
+    {% for key, item in compatibility.get('items', {}).items() %}
+    <article class="compatibility-card">
+      <h3>{{ key.replace('_', ' / ').title() }}</h3>
+      <span class="engine-usage-badge compatibility-{{ item.get('status', 'manual_validation_required') }}">
+        {% if item.get('status') == 'compatible' %}
+          Compatible
+        {% elif item.get('status') == 'compatible_with_warning' %}
+          Compatible avec reserve
+        {% elif item.get('status') == 'incompatible' %}
+          Incompatible
+        {% else %}
+          Validation manuelle requise
+        {% endif %}
+      </span>
+      <ul class="clean-list compact">
+        {% for check in item.get('checks', []) %}
+        <li>
+          <b>{{ check.label or check.code }}</b> - {{ check.message }}
+        </li>
+        {% else %}
+        <li>Aucun detail de controle enregistre.</li>
+        {% endfor %}
+      </ul>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if product_selections %}
+<section class="panel">
+  <h2>Selection du materiel</h2>
+  <div class="selection-grid">
+    {% for component, selection in product_selections.items() %}
+    {% set product = selection.get('selected_product') %}
+    {% set product_label = ([product.get('brand'), product.get('model')]|select|join(' ')) if product else '' %}
+    <article class="selection-card">
+      <header>
+        <div>
+          <small>{{ component.replace('_', ' ')|title }}</small>
+          <h3>{{ product_label or (product.get('reference') if product else 'A confirmer') }}</h3>
+        </div>
+        <span class="engine-usage-badge compatibility-{{ selection.get('status', 'manual_validation_required') }}">
+          {% if selection.get('status') == 'compatible' %}
+            Compatible
+          {% elif selection.get('status') == 'compatible_with_warning' %}
+            Compatible avec reserve
+          {% elif selection.get('status') == 'incompatible' %}
+            Incompatible
+          {% else %}
+            Validation manuelle requise
+          {% endif %}
+        </span>
+      </header>
+
+      <div class="selection-meta">
+        <div><small>Reference</small><b>{{ product.get('reference') if product else 'A confirmer' }}</b></div>
+        <div><small>Quantite</small><b>{{ selection.get('quantity', 0) }}</b></div>
+        <div><small>Pertinence</small><b>{{ selection.get('selection_score', 0) }}/100</b></div>
+      </div>
+
+      <div class="used-for">
+        <b>Pourquoi ce produit ?</b>
+        <span>{{ (selection.get('reasons') or [])|join(' ') or "Selection catalogue a confirmer." }}</span>
+      </div>
+
+      {% if selection.get('warnings') %}
+      <div class="warning-list compact">
+        {% for warn in selection.get('warnings', []) %}
+        <article class="{{ warn.level }}">
+          <b>{{ warn.code }}</b>
+          <p>{{ warn.message }}</p>
+        </article>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <details class="technical-details">
+        <summary>Voir details avances</summary>
+        {% if selection.get('compatibility', {}).get('checks') %}
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Controle</th><th>Statut</th><th>Message</th></tr>
+            </thead>
+            <tbody>
+              {% for check in selection.get('compatibility', {}).get('checks', []) %}
+              <tr>
+                <td>{{ check.label or check.code }}</td>
+                <td>{{ check.status }}</td>
+                <td>{{ check.message }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% endif %}
+
+        {% if selection.get('rejected_candidates') %}
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Produit non retenu</th><th>Statut</th><th>Raison</th></tr>
+            </thead>
+            <tbody>
+              {% for rejected in selection.get('rejected_candidates', []) %}
+              <tr>
+                <td>{{ [rejected.brand, rejected.model]|select|join(' ') or rejected.reference }}</td>
+                <td>{{ rejected.status }}</td>
+                <td>{{ rejected.reason }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% endif %}
+      </details>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<section class="panel">
+  <h2>Donnees du questionnaire</h2>
+  <div class="key-grid">
+    {% for key, value in quote.request.get('data', {}).items() %}
+    <div><small>{{ key }}</small><b>{{ value or "-" }}</b></div>
+    {% else %}
+    <p class="muted">Aucune donnee de questionnaire.</p>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Raisonnement technique</h2>
+  {% if quote.calculation_detail.get('calculation_blocks') %}
+  <div class="calculation-blocks">
+    {% for block in quote.calculation_detail.get('calculation_blocks', []) %}
+    <article class="calculation-block">
+      <h3>{{ block.title }}</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Etape</th><th>Valeur</th><th>Formule</th><th>Source</th><th>Note</th></tr>
+          </thead>
+          <tbody>
+            {% for item in block.get('items', []) %}
+            <tr>
+              <td>{{ item.label }}</td>
+              <td>{{ item.value }}</td>
+              <td>{{ item.formula or "-" }}</td>
+              <td>
+                {% if item.source_badge or item.source_name %}
+                <div>{{ item.source_badge or "-" }}</div>
+                <small>{{ item.source_name or "" }}</small>
+                {% else %}
+                -
+                {% endif %}
+              </td>
+              <td>{{ item.note or "-" }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5">Aucune etape detaillee dans ce bloc.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="muted">Raisonnement detaille non disponible pour ce devis historique.</p>
+  {% endif %}
+
+  <details class="technical-details">
+    <summary>Voir aussi le tableau technique ligne par ligne</summary>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Donnee d'entree</th><th>Regle / formule</th><th>Resultat intermediaire</th><th>Coefficient</th><th>Decision</th><th>Equipement</th></tr>
+        </thead>
+        <tbody>
+          {% for step in quote.calculation_detail.get('reasoning_steps', []) %}
+          <tr>
+            <td>{{ step.input }}</td>
+            <td>{{ step.rule }}</td>
+            <td>{{ step.intermediate_result }}</td>
+            <td>{{ step.coefficient or "-" }}</td>
+            <td>{{ step.technical_decision }}</td>
+            <td>{{ step.selected_equipment or "-" }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6">Raisonnement non disponible pour cet ancien devis.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+
+  <details class="technical-details">
+    <summary>Valeurs et sources reellement utilisees</summary>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Valeur utilisee</th><th>Affichage</th><th>Source</th><th>Type</th><th>Reference</th></tr>
+        </thead>
+        <tbody>
+          {% for key, item in quote.calculation_detail.get('resolved_sources', {}).items() %}
+          <tr>
+            <td>{{ item.label or key }}</td>
+            <td>{{ item.display_value or item.value }}</td>
+            <td>{{ item.source_name or "Source non renseignee" }}</td>
+            <td>{{ item.source_badge or item.source_type or "-" }}</td>
+            <td>{{ item.source_reference or "-" }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5">Aucune source enregistree.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+</section>
+
+<section class="panel">
+  <h2>Hypotheses utilisees</h2>
+  <ul class="clean-list">
+    {% for item in quote.calculation_detail.get('assumptions', []) %}
+    <li>{{ item }}</li>
+    {% else %}
+    <li>Aucune hypothese enregistree.</li>
+    {% endfor %}
+  </ul>
+</section>
+
+<section class="panel">
+  <h2>Parametres utilises</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Cle</th><th>Nom</th><th>Valeur interne</th><th>Unite</th><th>Categorie</th><th>Source</th><th>Utilise pour</th></tr>
+      </thead>
+      <tbody>
+        {% for key, param in quote.calculation_detail.get('parameters_used', {}).items() %}
+        <tr>
+          <td>{{ key }}</td>
+          <td>{{ param.display_name or param.name }}</td>
+          <td>{{ param.value }}</td>
+          <td>{{ param.unit }}</td>
+          <td>{{ param.category }}</td>
+          <td>{{ param.source_name or param.source_type or "Non renseignee" }}</td>
+          <td>{{ param.used_for or "-" }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7">Aucun parametre enregistre.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Avertissements</h2>
+  <div class="warning-list">
+    {% for warn in quote.calculation_detail.get('warnings', []) %}
+    <article class="{{ warn.level }}"><b>{{ warn.level }} · {{ warn.code }}</b><p>{{ warn.message }}</p><small>{{ warn.recommendation }}</small></article>
+    {% else %}
+    <p class="muted">Aucun avertissement technique.</p>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <h2>Nomenclature technique (BOM)</h2>
+      <p class="muted">Snapshot materiel conserve avec le devis. Les anciens devis restent inchanges meme si le catalogue evolue.</p>
+    </div>
+    <span class="status">{{ bom_lines|length }} ligne(s)</span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Role</th><th>Reference</th><th>Produit</th><th>Qté</th><th>Compatibilite</th><th>Source</th><th>PU</th><th>Total</th></tr>
+      </thead>
+      <tbody>
+        {% for item in bom_lines %}
+        <tr>
+          <td>{{ item.role or item.category }}</td>
+          <td>{{ item.reference or "-" }}</td>
+          <td>{{ [item.brand, item.model]|select|join(' ') or item.description or "-" }}</td>
+          <td>{{ item.quantity }}</td>
+          <td>{{ item.compatibility_status or "-" }}</td>
+          <td>{{ item.source.source_name if item.get('source') else item.source_type or "-" }}</td>
+          <td>{{ "{:,.2f}".format(item.unit_price or 0).replace(",", " ") }} {{ item.currency or "DH" }}</td>
+          <td>{{ "{:,.2f}".format(item.total_price or 0).replace(",", " ") }} {{ item.currency or "DH" }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8">Aucune ligne materiel enregistree.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Decomposition financiere</h2>
+  <div class="finance-box compact">
+    {% for row in financial_summary_rows %}
+    <div class="{% if row.emphasis %}total{% endif %}"><span>{{ row.label }}</span><b>{{ "{:,.2f}".format(row.amount or 0).replace(",", " ") }} DH</b></div>
+    {% endfor %}
+  </div>
+  <div class="finance-box">
+    {% for cat in quote.financial_breakdown.get('categories', []) %}
+    <div><span>{{ cat.label }}</span><b>{{ "{:,.2f}".format(cat.amount or 0).replace(",", " ") }} DH</b></div>
+    {% endfor %}
+    <hr>
+    <div><span>Sous-total avant marge</span><b>{{ "{:,.2f}".format(quote.financial_breakdown.get('subtotal_before_margin', 0)).replace(",", " ") }} DH</b></div>
+    <div><span>Marge commerciale</span><b>{{ "{:,.2f}".format(quote.financial_breakdown.get('commercial_margin', 0)).replace(",", " ") }} DH</b></div>
+    <div><span>Total HT</span><b>{{ "{:,.2f}".format(quote.financial_breakdown.get('total_ht', 0)).replace(",", " ") }} DH</b></div>
+    <div><span>TVA</span><b>{{ "{:,.2f}".format(quote.financial_breakdown.get('vat', 0)).replace(",", " ") }} DH</b></div>
+    <div class="total"><span>Total TTC</span><b>{{ "{:,.2f}".format(quote.financial_breakdown.get('total_ttc', 0)).replace(",", " ") }} DH</b></div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Offres Essentiel / Optimal / Performance</h2>
+  <div class="offer-grid">
+    {% for offer in quote.result.get('offers', []) %}
+    <article class="{% if offer.recommended %}recommended{% endif %}">
+      <h3>{{ offer.name }}</h3>
+      <p>{{ offer.description }}</p>
+      <small>{{ offer.technical_difference }}</small>
+      <b>{{ "{:,.2f}".format(offer.ttc or 0).replace(",", " ") }} DH TTC</b>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="admin-grid two">
+  <article class="panel">
+    <h2>Versions des calculateurs</h2>
+    <dl class="info-list">
+      {% for key, value in quote.calculator_versions.items() %}
+      <dt>{{ key }}</dt><dd>{{ value }}</dd>
+      {% endfor %}
+    </dl>
+  </article>
+  <article class="panel">
+    <h2>Referentiel utilise</h2>
+    <dl class="info-list">
+      <dt>Nom</dt><dd>{{ quote.technical_reference.get('name', '-') }}</dd>
+      <dt>Version</dt><dd>{{ quote.technical_reference.get('version', '-') }}</dd>
+      <dt>Statut</dt><dd>{{ quote.technical_reference.get('status', '-') }}</dd>
+    </dl>
+  </article>
+</section>
+{% endblock %}

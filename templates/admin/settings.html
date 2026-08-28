@@ -1,0 +1,13 @@
+{% extends "admin/base.html" %}
+{% block title %}Paramètres - HeliAntha Admin{% endblock %}
+{% block page_title %}Paramètres généraux{% endblock %}
+{% block content %}
+<form class="panel" method="post">
+  <div class="form-grid">
+    {% for s in settings %}
+    <label>{{ s.label }} <small>{{ s.key }}</small><input name="value_{{ s.id }}" value="{{ s.value }}"></label>
+    {% endfor %}
+  </div>
+  <button class="admin-button" type="submit">Enregistrer les paramètres</button>
+</form>
+{% endblock %}

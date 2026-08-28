@@ -1,0 +1,190 @@
+{% extends "admin/base.html" %}
+{% block title %}Paramètres de calcul - HELIANTHA Admin{% endblock %}
+{% block page_title %}Paramètres de calcul{% endblock %}
+{% block content %}
+<section class="panel parameter-hero">
+  <div class="parameter-hero-copy">
+    <span class="advisor-kicker">Réglages HeliAntha</span>
+    <h2>Réglages de calcul.</h2>
+    <p>Valeurs utilisées pour les nouveaux devis. Les anciens devis restent inchangés.</p>
+  </div>
+  <div class="parameter-hero-stats" aria-label="Résumé de la page">
+    <article>
+      <small>Réglages visibles</small>
+      <strong>{{ parameters|length }}</strong>
+    </article>
+    <article>
+      <small>Familles</small>
+      <strong>{{ groups|length }}</strong>
+    </article>
+    <article>
+      <small>Historique</small>
+      <strong>{{ history|length }}</strong>
+    </article>
+  </div>
+</section>
+
+<section class="panel parameter-guide">
+  <div class="parameter-guide-copy">
+    <h2>À quoi sert cette page ?</h2>
+    <p class="muted">Modifier les réglages utilisés pour les nouveaux devis.</p>
+  </div>
+</section>
+
+<form class="filters parameter-filters parameter-toolbar" method="get" role="search">
+  <input
+    name="q"
+    value="{{ filters.get('q', '') }}"
+    placeholder="Rechercher un réglage"
+    aria-label="Rechercher un réglage"
+  >
+  <select name="category" aria-label="Filtrer par catégorie">
+    <option value="">Toutes les catégories</option>
+    {% for key, category in categories.items() %}
+    <option value="{{ key }}" {% if filters.get('category') == key %}selected{% endif %}>
+      {{ category.icon }} {{ category.label }}
+    </option>
+    {% endfor %}
+  </select>
+  <button class="admin-button" type="submit">Filtrer</button>
+  <a class="admin-button secondary" href="{{ url_for('main.admin_calculation_parameters') }}">Réinitialiser</a>
+</form>
+
+{% if filters.get('updated') %}
+<div class="admin-success">Paramètre enregistré. Les anciens devis restent inchangés.</div>
+{% endif %}
+{% if filters.get('error') %}
+<div class="admin-alert">La valeur saisie n’a pas pu être comprise.</div>
+{% endif %}
+
+{% for group in groups.values() %}
+<section class="parameter-group">
+  <div class="group-title group-title--clean">
+    <div class="group-title-copy">
+      <span>{{ group.icon }}</span>
+      <div>
+        <h2>{{ group.label }}</h2>
+        <p>{{ group.parameters|length }} règle(s)</p>
+      </div>
+    </div>
+    <span class="group-count">{{ group.parameters|length }}</span>
+  </div>
+
+  <div class="parameter-grid">
+    {% for p in group.parameters %}
+    <article class="parameter-card {% if not p.editable %}locked{% endif %}">
+      <div class="parameter-card-meta">
+        <span class="source-badge source-{{ p.source_type }}">{{ p.source_badge }}</span>
+        <span class="engine-usage-badge engine-usage-{{ p.engine_usage_status }}">
+          {{ p.engine_usage_badge }}
+        </span>
+        {% if not p.editable %}
+        <span class="badge parameter-locked-badge">Verrouillé</span>
+        {% endif %}
+      </div>
+
+      <div class="parameter-card-copy">
+        <h3>{{ p.display_name }}</h3>
+        <div class="parameter-value">{{ p.display_value }}</div>
+      </div>
+
+      <p class="plain-explanation">{{ p.plain_explanation }}</p>
+
+      <div class="parameter-used-for">
+        <b>Utilisé pour</b>
+        <p>{{ p.used_for }}</p>
+      </div>
+
+      <div class="parameter-card-actions">
+        {% if p.editable %}
+        <details class="edit-details">
+          <summary>Modifier</summary>
+          <form class="parameter-edit-form" method="post" data-param-name="{{ p.display_name }}" data-old-value="{{ p.display_value }}" data-suffix="{{ p.display_input_suffix }}">
+            <input type="hidden" name="parameter_id" value="{{ p.id }}">
+            <label>
+              <span>Valeur à afficher</span>
+              <span class="input-with-unit">
+                <input type="text" name="display_value" value="{{ p.display_input_value }}" required>
+                <small>{{ p.display_input_suffix }}</small>
+              </span>
+            </label>
+            <label class="comment-field">
+              <span>Motif / commentaire</span>
+              <textarea name="change_comment" placeholder="Pourquoi ce changement ?"></textarea>
+            </label>
+            <label class="checkbox inline">
+              <input type="checkbox" name="active" {% if p.active %}checked{% endif %}>
+              Utilisé pour les nouveaux devis
+            </label>
+            <button class="admin-button" type="submit">Enregistrer</button>
+          </form>
+        </details>
+        {% else %}
+        <div class="locked-box">Ce réglage est verrouillé.</div>
+        {% endif %}
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% else %}
+<section class="panel">
+  <p class="muted">Aucun paramètre ne correspond à cette recherche.</p>
+</section>
+{% endfor %}
+
+<details class="panel parameter-history-panel">
+  <summary>Historique des modifications</summary>
+  <div class="history-list">
+    {% for item in history %}
+    <article>
+      <b>{{ item.display_name }}</b>
+      <span>{{ item.old_display }} → {{ item.new_display }}</span>
+      <small>{{ item.created_at }} · Modifié par {{ item.changed_by or "admin" }} · {{ item.source_badge }}</small>
+      {% if item.change_comment %}<p>{{ item.change_comment }}</p>{% endif %}
+    </article>
+    {% else %}
+    <p class="muted">Aucune modification enregistrée pour le moment.</p>
+    {% endfor %}
+  </div>
+</details>
+
+<dialog class="confirm-dialog" id="parameter-confirm-dialog">
+  <form method="dialog">
+    <h2>Confirmer la modification</h2>
+    <p>Cette valeur servira aux nouveaux devis.</p>
+    <dl>
+      <dt>Paramètre</dt><dd id="confirm-param-name"></dd>
+      <dt>Ancienne valeur</dt><dd id="confirm-old-value"></dd>
+      <dt>Nouvelle valeur</dt><dd id="confirm-new-value"></dd>
+    </dl>
+    <p class="muted">Les anciens devis restent inchangés.</p>
+    <div class="dialog-actions">
+      <button class="admin-button secondary" value="cancel">Annuler</button>
+      <button class="admin-button" id="confirm-submit-button" value="confirm">Confirmer la modification</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+let pendingParameterForm = null;
+document.querySelectorAll(".parameter-edit-form").forEach((form) => {
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    pendingParameterForm = form;
+    const suffix = form.dataset.suffix || "";
+    const rawValue = form.querySelector("[name='display_value']").value;
+    document.querySelector("#confirm-param-name").textContent = form.dataset.paramName;
+    document.querySelector("#confirm-old-value").textContent = form.dataset.oldValue;
+    document.querySelector("#confirm-new-value").textContent = `${rawValue} ${suffix}`.trim();
+    document.querySelector("#parameter-confirm-dialog").showModal();
+  });
+});
+document.querySelector("#confirm-submit-button").addEventListener("click", (event) => {
+  event.preventDefault();
+  if (pendingParameterForm) {
+    pendingParameterForm.submit();
+  }
+});
+</script>
+{% endblock %}

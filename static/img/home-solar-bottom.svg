@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 620" fill="none">
+  <defs>
+    <linearGradient id="sky" x1="800" y1="0" x2="800" y2="620" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f4f8fd"/>
+      <stop offset="0.56" stop-color="#fbfbf7"/>
+      <stop offset="1" stop-color="#eef6ea"/>
+    </linearGradient>
+    <linearGradient id="land" x1="800" y1="250" x2="800" y2="620" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e4f3cf"/>
+      <stop offset="1" stop-color="#7bb163"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="260" y2="140" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5592e2"/>
+      <stop offset="0.55" stop-color="#2d64b6"/>
+      <stop offset="1" stop-color="#173d72"/>
+    </linearGradient>
+    <linearGradient id="panelLine" x1="0" y1="0" x2="260" y2="140" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#dff2ff" stop-opacity="0.95"/>
+      <stop offset="1" stop-color="#a4c9f0" stop-opacity="0.45"/>
+    </linearGradient>
+    <filter id="blur" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="16"/>
+    </filter>
+  </defs>
+  <rect width="1600" height="620" fill="url(#sky)"/>
+  <circle cx="260" cy="112" r="84" fill="#f6be1a" fill-opacity=".20" filter="url(#blur)"/>
+  <path d="M-20 300C140 258 292 248 422 272C582 301 708 297 848 268C994 238 1145 235 1298 267C1432 295 1516 298 1630 284V620H-20V300Z" fill="url(#land)"/>
+  <path d="M-30 320C180 278 330 276 480 300C644 325 788 324 944 296C1098 267 1250 266 1414 294C1500 309 1562 316 1630 312L1610 620H0V338C0 338 -2 330 -30 320Z" fill="#95c06e" fill-opacity=".35"/>
+  <path d="M-20 424C120 404 274 408 434 432C592 455 746 452 900 424C1076 392 1230 390 1398 420C1492 437 1558 444 1630 440L1610 620H0V438C0 438 -4 430 -20 424Z" fill="#6f9f55" fill-opacity=".30"/>
+  <g opacity=".88">
+    <g transform="translate(58 266) rotate(-11) skewX(-12)">
+      <use href="#panel" x="0" y="0"/>
+      <use href="#panel" x="290" y="-16" />
+      <use href="#panel" x="580" y="-32" />
+      <use href="#panel" x="870" y="-48" />
+    </g>
+    <g transform="translate(92 398) rotate(-11) skewX(-12) scale(0.95)">
+      <use href="#panel" x="0" y="0"/>
+      <use href="#panel" x="286" y="-14" />
+      <use href="#panel" x="572" y="-28" />
+      <use href="#panel" x="858" y="-42" />
+    </g>
+  </g>
+  <g opacity=".26" filter="url(#blur)">
+    <path d="M1030 140C1080 98 1134 90 1190 110C1249 132 1265 176 1230 205C1200 230 1156 237 1100 231C1048 226 1008 188 1030 140Z" fill="#ffffff"/>
+  </g>
+  <defs>
+    <symbol id="panel" viewBox="0 0 260 140">
+      <rect x="0.5" y="0.5" width="259" height="139" rx="14" fill="url(#panel)" stroke="rgba(255,255,255,.36)"/>
+      <path d="M15 35H245M15 70H245M15 105H245M65 14V126M130 14V126M195 14V126" stroke="url(#panelLine)" stroke-width="1.2" opacity=".52"/>
+      <path d="M19 18H241" stroke="#ffffff" stroke-opacity=".22" stroke-width="4" stroke-linecap="round"/>
+    </symbol>
+  </defs>
+</svg>
