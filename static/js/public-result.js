@@ -72,6 +72,37 @@ function renderCurrentOffer(immediate = false) {
   swapContent("#energy-flow-summary", () => renderEnergyFlowSummary(offer), immediate);
 }
 
+function isExistingPumpMode() {
+  const final = publicView.final_results || {};
+  return publicView.project === "pumping" && String(final.pump_rule_mode || "").trim().toLowerCase() === "existing_pump_cv";
+}
+
+function phaseLabel(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return {
+    monophase: "Monophasé",
+    mono: "Monophasé",
+    triphase: "Triphasé",
+    tri: "Triphasé",
+    three_phase: "Triphasé",
+  }[normalized] || (value ? String(value) : "");
+}
+
+function pumpingExistingSummaryRows(offer) {
+  const final = publicView.final_results || {};
+  const drive = offerLine(offer, "drives");
+  const driveLabel = [drive?.brand, displayNumber(final.solar_drive_kw, 2, "kW")].filter(Boolean).join(" ").trim() || displayNumber(final.solar_drive_kw, 2, "kW");
+  const panelCount = hasValue(final.panels) ? `${displayNumber(final.panels, 0)} × ` : "";
+  const panelPower = hasValue(final.panel_power_w) ? displayNumber(final.panel_power_w, 0) : "";
+  return [
+    { label: "Pompe existante", value: displayNumber(final.pump_power_cv, 1, "CV") || "À confirmer" },
+    { label: "Panneaux", value: `${panelCount}${panelPower} W`.trim() || "À confirmer" },
+    { label: "Puissance solaire", value: displayNumber(final.pv_power_kwp || final.installed_power_kwp, 2, "kWp") || "À confirmer" },
+    { label: "Variateur", value: driveLabel || "À confirmer" },
+    { label: "Phase", value: phaseLabel(final.phase) || "À confirmer" },
+  ];
+}
+
 function renderPriceCard(offer) {
   const price = document.querySelector("#offer-price");
   const subprice = document.querySelector("#offer-subprice");
@@ -224,16 +255,24 @@ function buildDiagramMarkup(diagram) {
   const final = publicView.final_results || {};
 
   if (project === "pumping") {
-    const pumpText = [displayNumber(final.flow_m3_h, 2, "m³/h"), displayNumber(final.hmt_m, 0, "m HMT")].filter(Boolean).join(" • ") || "Débit à confirmer";
+    if (isExistingPumpMode()) {
+      return `
+        <div class="diagram-vertical">
+          ${diagramNode("☀️", "Champ PV", offerPvSummary(offer) || displayNumber(final.pv_power_kwp || final.installed_power_kwp, 2, "kWp"))}
+          <span class="diagram-connector"></span>
+          ${diagramNode("⚙️", "Variateur", [offerLine(offer, "drives")?.brand, offerLine(offer, "drives")?.model].filter(Boolean).join(" ") || displayNumber(final.solar_drive_kw, 2, "kW"))}
+          <span class="diagram-connector"></span>
+          ${diagramNode("💧", "Pompe", displayNumber(final.pump_power_cv, 1, "CV") || "À confirmer")}
+        </div>
+      `;
+    }
     return `
       <div class="diagram-vertical">
         ${diagramNode("☀️", "Champ PV", offerPvSummary(offer) || displayNumber(final.pv_power_kwp || final.installed_power_kwp, 2, "kWp"))}
         <span class="diagram-connector"></span>
         ${diagramNode("⚙️", "Variateur", offerPowerSummary(offer, "drives") || displayNumber(final.solar_drive_kw, 2, "kW"))}
         <span class="diagram-connector"></span>
-        ${diagramNode("💧", "Pompe", offerPowerSummary(offer, "pumps") || displayNumber(final.pump_power_kw, 2, "kW"))}
-        <span class="diagram-connector"></span>
-        ${diagramNode("🟦", "Réservoir", pumpText)}
+        ${diagramNode("💧", "Pompe", offerPowerSummary(offer, "pumps") || displayNumber(final.pump_power_cv, 1, "CV") || displayNumber(final.pump_power_kw, 2, "kW"))}
       </div>
     `;
   }
@@ -326,7 +365,10 @@ function energyFlowSummary(offer) {
   const project = publicView.project;
 
   if (project === "pumping") {
-    return `Le champ photovoltaïque alimente le variateur puis la pompe, afin de couvrir un besoin d’environ ${displayNumber(final.water_need_m3_day, 0, "m³/j") || "à confirmer"} avec un débit de ${displayNumber(final.flow_m3_h, 2, "m³/h") || "à confirmer"}.`;
+    if (isExistingPumpMode()) {
+      return "Le champ photovoltaïque alimente le variateur puis la pompe, selon la configuration HeliAntha retenue.";
+    }
+    return "Le champ photovoltaïque alimente le variateur puis la pompe.";
   }
   if (project === "ongrid") {
     return `Les panneaux alimentent l’onduleur puis le bâtiment. Le réseau reste disponible en complément si nécessaire. Puissance solaire affichée : ${offerPvSummary(offer) || displayNumber(final.pv_power_kwp || final.installed_power_kwp, 2, "kWp") || "à confirmer"}.`;
@@ -380,6 +422,9 @@ function primaryMetricForOffer(offer) {
 function buildSpotlightHighlights(offer) {
   const final = publicView.final_results || {};
   if (publicView.project === "pumping") {
+    if (isExistingPumpMode()) {
+      return pumpingExistingSummaryRows(offer).slice(0, 3);
+    }
     return [
       { label: "Puissance solaire", value: offerPvSummary(offer) || displayNumber(final.pv_power_kwp || final.installed_power_kwp, 2, "kWp") },
       { label: "Débit", value: displayNumber(final.flow_m3_h, 2, "m³/h") },
@@ -413,6 +458,10 @@ function buildTechnicalDetails(offer) {
   const rows = [];
 
   if (["offgrid", "ongrid", "hybrid", "pumping"].includes(project)) {
+    if (project === "pumping" && isExistingPumpMode()) {
+      rows.push(...pumpingExistingSummaryRows(offer));
+      return rows.slice(0, 8);
+    }
     rows.push({ label: "Puissance solaire", value: offerPvSummary(offer) || displayNumber(final.pv_power_kwp || final.installed_power_kwp, 2, "kWp") });
     rows.push({ label: "Panneaux", value: offerPanelSummary(offer) || displayNumber(final.panels, 0, "panneau(x)") });
   }
@@ -431,7 +480,7 @@ function buildTechnicalDetails(offer) {
 
   if (project === "pumping") {
     rows.push({ label: "Variateur", value: offerPowerSummary(offer, "drives") || displayNumber(final.solar_drive_kw, 2, "kW") });
-    rows.push({ label: "Pompe", value: offerPowerSummary(offer, "pumps") || displayNumber(final.pump_power_kw, 2, "kW") });
+    rows.push({ label: "Pompe", value: offerPowerSummary(offer, "pumps") || displayNumber(final.pump_power_cv, 1, "CV") || displayNumber(final.pump_power_kw, 2, "kW") });
     rows.push({ label: "Débit", value: displayNumber(final.flow_m3_h, 2, "m³/h") });
     rows.push({ label: "Hauteur de pompage", value: displayNumber(final.hmt_m, 0, "m") });
   }
@@ -474,6 +523,14 @@ function offerPowerKw(offer, category) {
   return Number(line.power_kw);
 }
 
+function offerPumpPower(offer) {
+  const line = offerLine(offer, "pumps");
+  if (!line) return null;
+  if (hasValue(line.power_cv)) return Number(line.power_cv);
+  if (hasValue(line.power_kw)) return Number(line.power_kw);
+  return null;
+}
+
 function offerBatteryCapacity(offer) {
   const line = offerLine(offer, "batteries");
   if (!line || !hasValue(line.capacity_kwh) || !hasValue(line.quantity)) return null;
@@ -508,6 +565,14 @@ function offerThermalSummary(offer) {
 }
 
 function offerPowerSummary(offer, category) {
+  if (category === "pumps") {
+    const line = offerLine(offer, "pumps");
+    if (line && hasValue(line.power_cv)) {
+      return `${formatNumber(line.power_cv, 1)} CV`;
+    }
+    const value = offerPumpPower(offer);
+    return hasValue(value) ? `${formatNumber(value, 2)} kW` : "";
+  }
   const value = offerPowerKw(offer, category);
   return hasValue(value) ? `${formatNumber(value, 2)} kW` : "";
 }

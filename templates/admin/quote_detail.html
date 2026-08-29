@@ -410,8 +410,6 @@
     <div><span>{{ cat.label }}</span><b>{{ "{:,.2f}".format(cat.amount or 0).replace(",", " ") }} DH</b></div>
     {% endfor %}
     <hr>
-    <div><span>Sous-total avant marge</span><b>{{ "{:,.2f}".format(quote.financial_breakdown.get('subtotal_before_margin', 0)).replace(",", " ") }} DH</b></div>
-    <div><span>Marge commerciale</span><b>{{ "{:,.2f}".format(quote.financial_breakdown.get('commercial_margin', 0)).replace(",", " ") }} DH</b></div>
     <div><span>Total HT</span><b>{{ "{:,.2f}".format(quote.financial_breakdown.get('total_ht', 0)).replace(",", " ") }} DH</b></div>
     <div><span>TVA</span><b>{{ "{:,.2f}".format(quote.financial_breakdown.get('vat', 0)).replace(",", " ") }} DH</b></div>
     <div class="total"><span>Total TTC</span><b>{{ "{:,.2f}".format(quote.financial_breakdown.get('total_ttc', 0)).replace(",", " ") }} DH</b></div>

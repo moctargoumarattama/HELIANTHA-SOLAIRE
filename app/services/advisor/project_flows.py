@@ -3,14 +3,15 @@ from __future__ import annotations
 
 PROJECT_FLOWS = {
     "pumping": {
-        "required": ["water_need", "depth"],
+        "required": [],
         "questions": [
-            {"id": "water_need", "text": "Quel volume d'eau souhaitez-vous par jour ?", "step": "water"},
             {"id": "pump_existing", "text": "Avez-vous deja une pompe ?", "step": "pump", "actions": ["Oui", "Non"]},
-            {"id": "depth", "text": "Quelle est la profondeur du forage ?", "step": "site"},
-            {"id": "city", "text": "Dans quelle ville se trouve le projet ?", "step": "site"},
+            {"id": "existing_pump_cv", "text": "Quelle est la puissance de votre pompe en CV ?", "step": "pump", "show_if": {"pump_existing": True}},
+            {"id": "water_need", "text": "Quel volume d'eau souhaitez-vous par jour ?", "step": "water", "show_if": {"pump_existing": False}},
+            {"id": "depth", "text": "Quelle est la profondeur du forage ?", "step": "site", "show_if": {"pump_existing": False}},
+            {"id": "city", "text": "Dans quelle ville se trouve le projet ?", "step": "site", "show_if": {"pump_existing": False}},
         ],
-        "fields": {"water_need", "pump_existing", "pump_power", "depth", "city", "distance", "elevation"},
+        "fields": {"water_need", "pump_existing", "existing_pump_cv", "depth", "city", "distance", "elevation"},
     },
     "offgrid": {
         "required": ["daily_kwh"],
@@ -79,6 +80,9 @@ def next_question(project: str | None, data: dict, answered_fields: list[str] | 
     answered = set(answered_fields or [])
     for question in PROJECT_FLOWS[project]["questions"]:
         key = question["id"]
+        show_if = question.get("show_if") or {}
+        if any(bool(data.get(cond_key)) is not bool(expected) and data.get(cond_key) != expected for cond_key, expected in show_if.items()):
+            continue
         if key == "monthly_kwh" and (data.get("monthly_kwh") or data.get("bill") or data.get("daily_kwh")):
             continue
         if key == "daily_kwh" and (data.get("daily_kwh") or data.get("monthly_kwh") or data.get("bill")):
@@ -94,6 +98,10 @@ def next_question(project: str | None, data: dict, answered_fields: list[str] | 
 def has_minimum(project: str | None, data: dict) -> bool:
     if not project or project not in PROJECT_FLOWS:
         return False
+    if project == "pumping":
+        if data.get("pump_existing") is True:
+            return data.get("existing_pump_cv") not in (None, "", [])
+        return all(data.get(key) not in (None, "", []) for key in ("water_need", "depth", "city"))
     flow = PROJECT_FLOWS[project]
     for key in flow.get("required", []):
         if data.get(key) in (None, "", []):

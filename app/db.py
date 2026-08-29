@@ -16,6 +16,7 @@ from .defaults import (
     QUOTE_STATUSES,
     TECHNICAL_REFERENCE,
 )
+from .pumping_rules import PUMPING_SOLAR_RULE_DEFAULTS
 
 
 SCHEMA = """
@@ -119,6 +120,38 @@ CREATE TABLE IF NOT EXISTS pricing_rules (
     unit TEXT,
     project TEXT,
     active INTEGER NOT NULL DEFAULT 1,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS pumping_solar_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    rule_key TEXT NOT NULL UNIQUE,
+    rule_type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    pump_cv REAL,
+    panel_count REAL,
+    panel_power_w REAL,
+    panel_reference TEXT,
+    panel_sale_price_ht REAL,
+    drive_power_kw REAL,
+    drive_reference TEXT,
+    drive_sale_price_ht REAL,
+    drive_brand TEXT,
+    phase TEXT,
+    min_cv REAL,
+    max_cv REAL,
+    pricing_mode TEXT,
+    unit_price_ht REAL,
+    vat_rate REAL,
+    applies_to TEXT,
+    source_type TEXT NOT NULL DEFAULT 'heliantha',
+    source_name TEXT,
+    source_reference TEXT,
+    notes TEXT,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    active INTEGER NOT NULL DEFAULT 1,
+    updated_by TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -317,6 +350,34 @@ CALCULATION_PARAMETER_COLUMNS = {
     "role_description": "TEXT",
 }
 
+PUMPING_SOLAR_RULE_COLUMNS = {
+    "rule_type": "TEXT NOT NULL",
+    "title": "TEXT NOT NULL",
+    "pump_cv": "REAL",
+    "panel_count": "REAL",
+    "panel_power_w": "REAL",
+    "panel_reference": "TEXT",
+    "panel_sale_price_ht": "REAL",
+    "drive_power_kw": "REAL",
+    "drive_reference": "TEXT",
+    "drive_sale_price_ht": "REAL",
+    "drive_brand": "TEXT",
+    "phase": "TEXT",
+    "min_cv": "REAL",
+    "max_cv": "REAL",
+    "pricing_mode": "TEXT",
+    "unit_price_ht": "REAL",
+    "vat_rate": "REAL",
+    "applies_to": "TEXT",
+    "source_type": "TEXT NOT NULL DEFAULT 'heliantha'",
+    "source_name": "TEXT",
+    "source_reference": "TEXT",
+    "notes": "TEXT",
+    "sort_order": "INTEGER NOT NULL DEFAULT 0",
+    "active": "INTEGER NOT NULL DEFAULT 1",
+    "updated_by": "TEXT",
+}
+
 ADVISOR_KNOWLEDGE_COLUMNS = {
     "validated_by": "TEXT",
 }
@@ -347,6 +408,7 @@ def ensure_schema(db=None):
     _migrate_quote_requests(db)
     _migrate_products(db)
     _migrate_calculation_parameters(db)
+    _migrate_pumping_solar_rules(db)
     _migrate_public_tracking(db)
     _migrate_users(db)
     _migrate_advisor(db)
@@ -377,6 +439,17 @@ def _migrate_calculation_parameters(db):
     for column, column_type in CALCULATION_PARAMETER_COLUMNS.items():
         if column not in existing:
             db.execute(f"ALTER TABLE calculation_parameters ADD COLUMN {column} {column_type}")
+
+
+def _migrate_pumping_solar_rules(db):
+    existing = {row["name"] for row in db.execute("PRAGMA table_info(pumping_solar_rules)").fetchall()}
+    for column, column_type in PUMPING_SOLAR_RULE_COLUMNS.items():
+        if column not in existing:
+            db.execute(f"ALTER TABLE pumping_solar_rules ADD COLUMN {column} {column_type}")
+    db.execute(
+        """CREATE INDEX IF NOT EXISTS idx_pumping_solar_rules_lookup
+        ON pumping_solar_rules(active, rule_type, pump_cv, panel_power_w, drive_power_kw, phase, sort_order)"""
+    )
 
 
 def _migrate_public_tracking(db):
@@ -536,6 +609,57 @@ def _seed_defaults(db):
             VALUES (?, ?, ?, ?, ?, ?)""",
             (key, name, value, value_type, unit, project),
         )
+    db.execute(
+        "DELETE FROM pricing_rules WHERE key IN ('travel_fixed', 'travel_cost_per_km', 'margin_rate', 'study_fee', 'other_costs')"
+    )
+    db.execute(
+        "DELETE FROM calculation_parameters WHERE key IN ('pump_efficiency', 'pump_drive_efficiency', 'pump_hydraulic_losses_rate', 'pump_safety_factor')"
+    )
+
+    for rule in PUMPING_SOLAR_RULE_DEFAULTS:
+        db.execute(
+            """INSERT OR IGNORE INTO pumping_solar_rules
+            (rule_key, rule_type, title, pump_cv, panel_count, panel_power_w,
+             panel_reference, panel_sale_price_ht, drive_power_kw, drive_reference,
+             drive_sale_price_ht, drive_brand, phase, min_cv, max_cv, pricing_mode,
+             unit_price_ht, vat_rate, applies_to, source_type, source_name,
+             source_reference, notes, sort_order, active, updated_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                rule.get("rule_key"),
+                rule.get("rule_type"),
+                rule.get("title"),
+                rule.get("pump_cv"),
+                rule.get("panel_count"),
+                rule.get("panel_power_w"),
+                rule.get("panel_reference"),
+                rule.get("panel_sale_price_ht"),
+                rule.get("drive_power_kw"),
+                rule.get("drive_reference"),
+                rule.get("drive_sale_price_ht"),
+                rule.get("drive_brand"),
+                rule.get("phase"),
+                rule.get("min_cv"),
+                rule.get("max_cv"),
+                rule.get("pricing_mode"),
+                rule.get("unit_price_ht"),
+                rule.get("vat_rate"),
+                rule.get("applies_to"),
+                rule.get("source_type", "heliantha"),
+                rule.get("source_name", "HeliAntha"),
+                rule.get("source_reference", ""),
+                rule.get("notes", ""),
+                rule.get("sort_order", 0),
+                1 if rule.get("active", 1) else 0,
+                rule.get("updated_by", "HeliAntha"),
+            ),
+        )
+
+    db.execute(
+        """UPDATE pumping_solar_rules
+        SET min_cv = 2, max_cv = 3, title = 'Monophasé 2 à 3 CV'
+        WHERE rule_key = 'coffret-mono-small' AND (min_cv IS NULL OR min_cv < 2 OR max_cv <> 3 OR title <> 'Monophasé 2 à 3 CV')"""
+    )
 
     for product in CATALOG_PRODUCTS:
         db.execute(
@@ -697,6 +821,10 @@ def load_calculation_context():
         row["key"]: dict(row)
         for row in db.execute("SELECT * FROM pricing_rules WHERE active = 1").fetchall()
     }
+    pumping_rules = {
+        row["rule_key"]: dict(row)
+        for row in db.execute("SELECT * FROM pumping_solar_rules WHERE active = 1").fetchall()
+    }
     # Keep inactive rows in the context so the calculation layer can make the
     # active/inactive decision without interpreting an empty active result as
     # "no database catalogue" and silently restoring bundled demo products.
@@ -705,6 +833,7 @@ def load_calculation_context():
     return {
         "technical_parameters": params,
         "pricing_rules": pricing,
+        "pumping_solar_rules": pumping_rules,
         "products": products,
         "technical_reference": reference,
     }
@@ -1486,6 +1615,115 @@ def update_pricing_rule(rule_id, value, active=True):
         (value, 1 if active else 0, utc_now(), rule_id),
     )
     db.commit()
+
+
+def list_pumping_solar_rules():
+    db = get_db()
+    ensure_schema(db)
+    return [
+        dict(row)
+        for row in db.execute(
+            "SELECT * FROM pumping_solar_rules ORDER BY sort_order, pump_cv, panel_power_w, drive_power_kw, id"
+        ).fetchall()
+    ]
+
+
+def get_pumping_solar_rule(rule_id):
+    db = get_db()
+    ensure_schema(db)
+    row = db.execute("SELECT * FROM pumping_solar_rules WHERE id = ?", (rule_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def update_pumping_solar_rule(rule_id, data: dict[str, object], changed_by: str = "HeliAntha") -> bool:
+    db = get_db()
+    ensure_schema(db)
+    row = db.execute("SELECT * FROM pumping_solar_rules WHERE id = ?", (rule_id,)).fetchone()
+    if not row:
+        return False
+    current = dict(row)
+    mutable_fields = {
+        "title",
+        "pump_cv",
+        "panel_count",
+        "panel_power_w",
+        "panel_reference",
+        "panel_sale_price_ht",
+        "drive_power_kw",
+        "drive_reference",
+        "drive_sale_price_ht",
+        "drive_brand",
+        "phase",
+        "min_cv",
+        "max_cv",
+        "pricing_mode",
+        "unit_price_ht",
+        "vat_rate",
+        "applies_to",
+        "source_type",
+        "source_name",
+        "source_reference",
+        "notes",
+        "sort_order",
+        "active",
+    }
+    updates = {}
+    for key in mutable_fields:
+        if key in data:
+            updates[key] = data[key]
+    if not updates:
+        return True
+    updates["updated_by"] = changed_by
+    updates["updated_at"] = utc_now()
+    assignments = ", ".join(f"{key} = ?" for key in updates)
+    db.execute(
+        f"UPDATE pumping_solar_rules SET {assignments} WHERE id = ?",
+        tuple(updates.values()) + (rule_id,),
+    )
+    db.commit()
+    return True
+
+
+def create_pumping_solar_rule(data: dict[str, object], changed_by: str = "HeliAntha") -> int:
+    db = get_db()
+    ensure_schema(db)
+    payload = {
+        "rule_key": str(data.get("rule_key") or "").strip(),
+        "rule_type": str(data.get("rule_type") or "").strip(),
+        "title": str(data.get("title") or "").strip(),
+        "pump_cv": data.get("pump_cv"),
+        "panel_count": data.get("panel_count"),
+        "panel_power_w": data.get("panel_power_w"),
+        "panel_reference": str(data.get("panel_reference") or "").strip(),
+        "panel_sale_price_ht": data.get("panel_sale_price_ht"),
+        "drive_power_kw": data.get("drive_power_kw"),
+        "drive_reference": str(data.get("drive_reference") or "").strip(),
+        "drive_sale_price_ht": data.get("drive_sale_price_ht"),
+        "drive_brand": str(data.get("drive_brand") or "").strip(),
+        "phase": str(data.get("phase") or "").strip(),
+        "min_cv": data.get("min_cv"),
+        "max_cv": data.get("max_cv"),
+        "pricing_mode": str(data.get("pricing_mode") or "").strip(),
+        "unit_price_ht": data.get("unit_price_ht"),
+        "vat_rate": data.get("vat_rate"),
+        "applies_to": str(data.get("applies_to") or "").strip(),
+        "source_type": str(data.get("source_type") or "heliantha").strip() or "heliantha",
+        "source_name": str(data.get("source_name") or "HeliAntha").strip() or "HeliAntha",
+        "source_reference": str(data.get("source_reference") or "").strip(),
+        "notes": str(data.get("notes") or "").strip(),
+        "sort_order": data.get("sort_order"),
+        "active": 1 if data.get("active", 1) else 0,
+        "updated_by": changed_by,
+        "updated_at": utc_now(),
+    }
+    columns = ", ".join(payload.keys())
+    placeholders = ", ".join("?" for _ in payload)
+    cursor = db.execute(
+        f"INSERT INTO pumping_solar_rules ({columns}) VALUES ({placeholders})",
+        tuple(payload.values()),
+    )
+    db.commit()
+    return int(cursor.lastrowid)
 
 
 def active_reference():

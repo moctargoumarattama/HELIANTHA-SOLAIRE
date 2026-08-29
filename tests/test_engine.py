@@ -17,6 +17,37 @@ def test_pumping_calculation_is_coherent():
     assert result["offers"][1]["ttc"] > result["offers"][1]["ht"]
 
 
+def test_pumping_existing_pump_uses_heliatha_rule_table(tmp_path):
+    app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "pumping-rule.db")})
+    with app.app_context():
+        result = CalculationEngine().calculate("pumping", {
+            "pump_existing": True,
+            "existing_pump_cv": 15,
+        })
+
+    assert result["final_results"]["pumping_rule_key"] == "pump-15cv"
+    assert result["final_results"]["pump_power_cv"] == 15
+    assert result["final_results"]["panel_count_theoretical"] == 24
+    assert result["final_results"]["panels"] == 24
+    assert result["final_results"]["panel_power_w"] == 715
+    assert result["final_results"]["solar_drive_kw"] == 15
+    assert result["final_results"]["drive_brand"] == "VEICHI"
+    assert result["final_results"]["pump_rule_mode"] == "existing_pump_cv"
+    assert "water_need_m3_day" not in result["final_results"]
+    assert "flow_m3_h" not in result["final_results"]
+    assert "hmt_m" not in result["final_results"]
+
+
+def test_pumping_existing_pump_without_rule_is_rejected(tmp_path):
+    app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "pumping-rule-missing.db")})
+    with app.app_context():
+        with pytest.raises(ValidationError, match="configuration personnalisée HeliAntha"):
+            CalculationEngine().calculate("pumping", {
+                "pump_existing": True,
+                "existing_pump_cv": 12,
+            })
+
+
 def test_ev_warns_when_requested_power_is_too_high():
     result = CalculationEngine().calculate("ev", {
         "available_power": 6, "charger_power": 22, "vehicle_battery": 60
@@ -192,6 +223,7 @@ def test_admin_pages_render_after_login(tmp_path):
         "/admin/catalogue",
         "/admin/catalogue/new",
         "/admin/parametres-calcul",
+        "/admin/regles-pompage",
         "/admin/tarification",
         "/admin/parametres",
         "/admin/utilisateurs",

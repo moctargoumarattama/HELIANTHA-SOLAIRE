@@ -1,0 +1,221 @@
+{% extends "admin/base.html" %}
+{% block title %}Règles Pompage solaire - HeliAntha Admin{% endblock %}
+{% block page_title %}Règles Pompage solaire{% endblock %}
+{% block content %}
+{% macro render_rule_field(rule, field, required=False) -%}
+  {% set value = rule.get(field.key) if rule else '' %}
+  <label>
+    <span>{{ field.label }}</span>
+    {% if field.kind == "select" %}
+      <select name="field_{{ field.key }}" {% if required %}required{% endif %}>
+        {% for option_value, option_label in field.options %}
+          <option value="{{ option_value }}" {% if (value|string) == (option_value|string) %}selected{% endif %}>{{ option_label }}</option>
+        {% endfor %}
+      </select>
+    {% elif field.kind == "number" %}
+      <div class="input-with-unit">
+        <input
+          type="number"
+          step="{{ field.step or 'any' }}"
+          name="field_{{ field.key }}"
+          value="{{ value if value not in (None, '') else '' }}"
+          {% if required %}required{% endif %}
+        >
+        {% if field.unit %}<small>{{ field.unit }}</small>{% endif %}
+      </div>
+    {% else %}
+      <input type="text" name="field_{{ field.key }}" value="{{ value if value not in (None, '') else '' }}" {% if required %}required{% endif %}>
+    {% endif %}
+  </label>
+{%- endmacro %}
+
+{% macro render_editor(rule, section, action_label, action_value, allow_toggle=True) -%}
+  <details class="rule-editor">
+    <summary class="ghost-button">{{ action_label }}</summary>
+    <form class="parameter-edit-form pumping-inline-form" method="post">
+      <input type="hidden" name="action" value="{{ action_value }}">
+      <input type="hidden" name="rule_id" value="{{ rule.id }}">
+      <input type="hidden" name="rule_type" value="{{ section.key }}">
+
+      <div class="pumping-rule-fields">
+        {% for field in section.fields %}
+          {{ render_rule_field(rule, field) }}
+        {% endfor %}
+      </div>
+
+      {% if allow_toggle %}
+      <label class="checkbox inline" style="margin-top:12px;">
+        <input type="checkbox" name="active" {% if rule.active %}checked{% endif %}>
+        <span>Actif</span>
+      </label>
+      {% endif %}
+
+      <div class="dialog-actions dialog-actions-left">
+        <button class="admin-button" type="submit">Enregistrer</button>
+        <button class="ghost-button" type="reset">Annuler</button>
+      </div>
+    </form>
+  </details>
+{%- endmacro %}
+
+<div class="pumping-rules-page">
+  <section class="learning-panel pumping-lead">
+    <h2>Règles Pompage solaire</h2>
+    <p>Configurez les règles utilisées pour les projets de pompage solaire.</p>
+    <p class="muted">Lorsque la puissance de la pompe est connue, HeliAntha applique la configuration correspondante.</p>
+    <div class="legend-row">
+      <span>Règle HeliAntha</span>
+      <span>Catalogue séparé</span>
+      <span>Nouveaux devis uniquement</span>
+    </div>
+  </section>
+
+  {% if saved %}
+  <div class="admin-success">✓ Règles pompage mises à jour</div>
+  {% endif %}
+
+  {% for section in sections %}
+  <section class="parameter-group pumping-section">
+    <div class="group-title pumping-section-head">
+      <span>{{ section.icon }}</span>
+      <div>
+        <h2>{{ section.title }}</h2>
+        <p class="muted">{{ section.description }}</p>
+      </div>
+      <div class="group-count">{{ section.rules|length }} règle(s)</div>
+    </div>
+
+    <div class="table-wrap pumping-table-wrap">
+      <table class="pumping-rule-table">
+        <thead>
+          {% if section.key == "pump_configuration" %}
+          <tr>
+            <th>Pompe</th>
+            <th>Panneaux</th>
+            <th>PV</th>
+            <th>Variateur</th>
+            <th>Phase</th>
+            <th>Marque</th>
+            <th>Statut</th>
+            <th>Action</th>
+          </tr>
+          {% elif section.key == "structure_pricing" %}
+          <tr>
+            <th>Panneau</th>
+            <th>Tarif HT / panneau</th>
+            <th>Statut</th>
+            <th>Action</th>
+          </tr>
+          {% elif section.key == "coffret_pricing" %}
+          <tr>
+            <th>Configuration</th>
+            <th>Tarif HT</th>
+            <th>Statut</th>
+            <th>Action</th>
+          </tr>
+          {% elif section.key == "cabling_pricing" %}
+          <tr>
+            <th>Câblage</th>
+            <th>Tarif HT / panneau</th>
+            <th>Statut</th>
+            <th>Action</th>
+          </tr>
+          {% elif section.key == "installation_pricing" %}
+          <tr>
+            <th>Configuration</th>
+            <th>Méthode</th>
+            <th>Tarif HT</th>
+            <th>Statut</th>
+            <th>Action</th>
+          </tr>
+          {% elif section.key == "vat_pricing" %}
+          <tr>
+            <th>Appliquée à</th>
+            <th>TVA</th>
+            <th>Statut</th>
+            <th>Action</th>
+          </tr>
+          {% endif %}
+        </thead>
+        <tbody>
+          {% for rule in section.rules %}
+          <tr class="pumping-rule-row {% if not rule.active %}is-inactive{% endif %}" data-section="{{ section.key }}">
+            {% if section.key == "pump_configuration" %}
+              <td><strong>{{ rule.display_pump_cv }}</strong></td>
+              <td>{{ rule.display_panel_count }}</td>
+              <td>{{ rule.display_panel_power_w }}</td>
+              <td>{{ rule.display_drive_power_kw }}</td>
+              <td>{{ rule.display_phase }}</td>
+              <td>{{ rule.display_drive_brand }}</td>
+              <td><span class="status{% if not rule.active %} inactive{% endif %}">{{ rule.display_active }}</span></td>
+              <td>{{ render_editor(rule, section, "Modifier", "save_rule") }}</td>
+            {% elif section.key == "structure_pricing" %}
+              <td><strong>{{ rule.display_panel_power_w }}</strong></td>
+              <td>{{ rule.display_unit_price_ht }}</td>
+              <td><span class="status{% if not rule.active %} inactive{% endif %}">{{ rule.display_active }}</span></td>
+              <td>{{ render_editor(rule, section, "Modifier", "save_rule") }}</td>
+            {% elif section.key == "coffret_pricing" %}
+              <td><strong>{{ rule.display_phase }} {{ rule.display_min_cv }} → {{ rule.display_max_cv }}</strong></td>
+              <td>{{ rule.display_unit_price_ht }}</td>
+              <td><span class="status{% if not rule.active %} inactive{% endif %}">{{ rule.display_active }}</span></td>
+              <td>{{ render_editor(rule, section, "Modifier", "save_rule") }}</td>
+            {% elif section.key == "cabling_pricing" %}
+              <td><strong>Câblage DC et accessoires</strong></td>
+              <td>{{ rule.display_unit_price_ht }}</td>
+              <td><span class="status{% if not rule.active %} inactive{% endif %}">{{ rule.display_active }}</span></td>
+              <td>{{ render_editor(rule, section, "Modifier", "save_rule") }}</td>
+            {% elif section.key == "installation_pricing" %}
+              <td><strong>{{ rule.display_min_cv }} → {{ rule.display_max_cv }}</strong></td>
+              <td>{{ rule.display_pricing_mode }}</td>
+              <td>{{ rule.display_unit_price_ht }}</td>
+              <td><span class="status{% if not rule.active %} inactive{% endif %}">{{ rule.display_active }}</span></td>
+              <td>{{ render_editor(rule, section, "Modifier", "save_rule") }}</td>
+            {% elif section.key == "vat_pricing" %}
+              <td><strong>{{ rule.display_applies_to }}</strong></td>
+              <td>{{ rule.display_vat_rate }}</td>
+              <td><span class="status{% if not rule.active %} inactive{% endif %}">{{ rule.display_active }}</span></td>
+              <td>{{ render_editor(rule, section, "Modifier", "save_rule") }}</td>
+            {% endif %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if section.addable %}
+    <details class="panel pumping-rule-add-panel compact-add">
+      <summary>+ Ajouter une règle</summary>
+      <form class="parameter-edit-form pumping-rule-add-form" method="post">
+        <input type="hidden" name="action" value="add_rule">
+        <input type="hidden" name="rule_type" value="{{ section.key }}">
+
+        <div class="edit-row">
+          <label>
+            <span>Titre</span>
+            <input type="text" name="title" placeholder="Ex. 25 CV">
+          </label>
+          <label>
+            <span>Actif</span>
+            <select name="active">
+              <option value="on" selected>Oui</option>
+              <option value="off">Non</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="pumping-rule-fields">
+          {% for field in section.fields %}
+            {{ render_rule_field({}, field, field.key in ["pump_cv", "panel_count", "panel_power_w", "drive_power_kw", "phase", "drive_brand"]) }}
+          {% endfor %}
+        </div>
+
+        <div class="dialog-actions dialog-actions-left">
+          <button class="admin-button" type="submit">Ajouter la règle</button>
+        </div>
+      </form>
+    </details>
+    {% endif %}
+  </section>
+  {% endfor %}
+</div>
+{% endblock %}

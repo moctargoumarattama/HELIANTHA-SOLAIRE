@@ -133,3 +133,16 @@ def test_panel_fallback_value_is_used_when_no_catalog_panel_is_available():
     assert source["source_type"] == "heliantha"
     assert source["value"] == pytest.approx(610)
     assert panel_line["reference"] == "PV-DEFAULT"
+
+def test_admin_calculation_page_hides_pompage_rules_section(tmp_path):
+    app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "admin-hide-pompage-rules.db")})
+    client = app.test_client()
+    client.post("/admin/login", data={"password": "heliantha2026"})
+
+    html = client.get("/admin/parametres-calcul").get_data(as_text=True)
+
+    assert "Rendement pompe" not in html
+    assert "Rendement variateur solaire" not in html
+    assert "Pertes hydrauliques" not in html
+    assert "Coefficient securite pompage" not in html
+    assert "Marge de sécurité pompage" not in html

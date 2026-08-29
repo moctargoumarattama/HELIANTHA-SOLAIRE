@@ -41,7 +41,7 @@ LOAD_LABELS = {
 }
 
 NUMBER_RE = re.compile(
-    r"(\d+(?:[.,]\d+)?)\s*(kwh\/mois|kwh\/j|kwh|m3\/j|m3|kw|w|m2|m|dh|jours?|jour|personnes?|km|v)?",
+    r"(\d+(?:[.,]\d+)?)\s*(kwh\/mois|kwh\/j|kwh|m3\/j|m3|cv|chevaux?|kw|w|m2|m|dh|jours?|jour|personnes?|km|v)?",
     re.IGNORECASE,
 )
 
@@ -121,6 +121,11 @@ def extract_entities(message: str, state: dict, synonyms: list[dict] | None = No
             continue
         unit = normalize(match.group(2) or "")
         window = text[max(0, match.start() - 24): match.end() + 36]
+        if unit in {"cv", "chevaux", "cheval"} and (project == "pumping" or contains_any(window, ["pompe", "pompage"])):
+            data["existing_pump_cv"] = value
+            data["pump_existing"] = True
+            answered_fields.update({"existing_pump_cv", "pump_existing"})
+            continue
         key = infer_number_key(window, last_question, project, unit)
         if not key:
             continue
@@ -158,6 +163,9 @@ def infer_number_key(window: str, last_question: str | None, project: str | None
         return "bill"
     if unit == "m2":
         return "roof_area"
+    if unit in {"cv", "chevaux", "cheval"}:
+        if project == "pumping" or contains_any(window, ["pompe", "pompage"]):
+            return "existing_pump_cv"
     if unit in {"kw", "w"}:
         if project == "ev" or contains_any(window, ["borne", "recharge"]):
             return "charger_power"
@@ -217,6 +225,9 @@ def infer_number_key(window: str, last_question: str | None, project: str | None
         if contains_any(window, ["pompe"]) or last_question == "pump_power":
             return "pump_power"
         return "peak_kw"
+    if contains_any(window, ["cv", "chevaux", "cheval"]):
+        if project == "pumping" or contains_any(window, ["pompe", "pompage"]):
+            return "existing_pump_cv"
     if contains_any(window, ["mois", "mensuel", "mensuelle"]):
         return "monthly_kwh"
     if contains_any(window, ["kwh/j", "par jour", "quotidienne"]):

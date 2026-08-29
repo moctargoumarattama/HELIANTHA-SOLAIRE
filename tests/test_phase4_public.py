@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 from app import create_app
 from app.public_presenters import build_public_quote_payload, company_profile
@@ -73,6 +74,72 @@ def test_public_offer_selection_is_saved_and_reused(tmp_path):
     assert payload["recommended_offer"]["level"] == "essential"
 
 
+def test_public_pumping_existing_pump_payload_keeps_rule_fields_only(tmp_path):
+    app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "public-pump-rule.db")})
+    client = app.test_client()
+    created = create_quote(client, "pumping", {"pump_existing": True, "existing_pump_cv": 15})
+
+    with app.app_context():
+        from app.db import get_quote_by_number, list_company_settings
+
+        quote = get_quote_by_number(created["quote_number"])
+        payload = build_public_quote_payload(quote, company_profile(list_company_settings()))
+
+    assert payload["final_results"]["pump_rule_mode"] == "existing_pump_cv"
+    assert "flow_m3_h" not in payload["final_results"]
+    assert "hmt_m" not in payload["final_results"]
+    assert "flow_m3_h" not in payload["offers"][0]["diagram"]
+    assert "hmt_m" not in payload["offers"][0]["diagram"]
+    assert all(
+        "débit" not in str(item.get("label", "")).lower()
+        and "hauteur" not in str(item.get("label", "")).lower()
+        for item in payload["metrics"]
+    )
+
+
+def test_public_pumping_existing_pump_page_hides_hydraulic_text(tmp_path):
+    app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "public-pump-page.db")})
+    client = app.test_client()
+    created = create_quote(client, "pumping", {"pump_existing": True, "existing_pump_cv": 15})
+
+    response = client.get(created["public_url"])
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert "flow_m3_h" not in html
+    assert "hmt_m" not in html
+    assert "Débit" not in html
+    assert "Hauteur de pompage" not in html
+
+
+def test_public_pumping_existing_pump_step_uses_compact_picker():
+    app_js = Path("static/js/app.js").read_text(encoding="utf-8")
+    assert 'type: "pump-cv-picker"' in app_js
+    assert "renderPumpCvStep" in app_js
+    assert "pump-cv-sheet" in app_js
+    assert 'choiceField("existing_pump_cv"' not in app_js
+
+
+def test_public_pumping_existing_pump_picker_has_ten_values():
+    app_js = Path("static/js/app.js").read_text(encoding="utf-8")
+    for value in ["2 CV", "3 CV", "5,5 CV", "7,5 CV", "10 CV", "15 CV", "20 CV", "30 CV", "40 CV", "50 CV"]:
+        assert value in app_js
+
+
+def test_public_pumping_existing_pump_wizard_text_is_clean():
+    app_js = Path("static/js/app.js").read_text(encoding="utf-8")
+
+    assert "Voir mon estimation" in app_js
+    assert "Vérifiez vos informations" in app_js
+    assert "HeliAntha" in app_js
+    assert "estimation" in app_js
+    assert "Les puissances proposées sont indicatives" not in app_js
+    assert "Toutes les valeurs sont modifiables" not in app_js
+    assert "Le moteur réel travaille" not in app_js
+    assert "Calculer ma solution" not in app_js
+    assert "Choisir ce projet" not in app_js
+
+
 def test_visit_request_is_saved_and_updates_quote_status(tmp_path):
     app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "public-visit.db")})
     client = app.test_client()
@@ -135,11 +202,11 @@ def test_admin_pdf_and_bilan_hide_placeholder_lines(tmp_path):
 
     assert pdf_response.status_code == 200
     assert "PUMP-4.0" in pdf_html
-    assert "DRV-4.0" in pdf_html
-    assert "PV-590-HS" in pdf_html
+    assert "SI23-D5-5R5" in pdf_html
+    assert "CS6W-590TB-AG" in pdf_html
     assert "A confirmer" not in pdf_html
-    assert "51 209.50 DH" in pdf_html
-    assert "61 451.40 DH" in pdf_html
+    assert "31 756.60 DH" in pdf_html
+    assert "37 199.76 DH" in pdf_html
 
     assert detail_response.status_code == 200
     assert "Nomenclature technique (BOM)" in detail_html

@@ -120,13 +120,17 @@ class BOMBuilder:
         quantity = float(selection.get("quantity") or 1)
         if quantity.is_integer():
             quantity = int(quantity)
-        unit_price = _money(product.get("sale_price"))
+        unit_price = _money(selection.get("unit_price") if selection.get("unit_price") is not None else product.get("sale_price"))
         reasons = [str(item) for item in selection.get("reasons") or []]
-        source_type = "heliantha" if product.get("demo") else "catalog"
-        source_name = "HeliAntha" if product.get("demo") else " ".join(str(product.get(key) or "") for key in ("brand", "model")).strip()
+        source_type = selection.get("source_type") or product.get("source_type") or ("heliantha" if product.get("demo") else "catalog")
+        source_name = selection.get("source_name") or product.get("source_name") or ("HeliAntha" if product.get("demo") else " ".join(str(product.get(key) or "") for key in ("brand", "model")).strip())
         source_name = source_name or product.get("reference") or "Produit catalogue"
+        source_reference = selection.get("source_reference") or product.get("source_reference") or product.get("reference") or ""
+        financial_category = selection.get("financial_category") or product.get("financial_category") or product.get("category") or "other"
+        vat_rate = selection.get("vat_rate") if selection.get("vat_rate") is not None else product.get("vat_rate")
         return {
             "category": product.get("category") or "other",
+            "financial_category": financial_category,
             "component": component,
             "product_id": product.get("id"),
             "reference": product.get("reference") or "",
@@ -138,9 +142,9 @@ class BOMBuilder:
             "unit": product.get("unit") or "piece",
             "unit_price": unit_price,
             "total_price": _money(Decimal(str(quantity)) * Decimal(str(unit_price))),
-            "price_status": "catalog_price" if product.get("sale_price") not in (None, "") else "to_confirm",
+            "price_status": selection.get("price_status") or ("catalog_price" if unit_price else "to_confirm"),
             "currency": product.get("currency") or "DH",
-            "vat_rate": product.get("vat_rate"),
+            "vat_rate": vat_rate,
             "technical_reason": " ; ".join(reasons),
             "selection_reasons": reasons,
             "selection_score": selection.get("selection_score", selection.get("score")),
@@ -149,7 +153,7 @@ class BOMBuilder:
             "source": {
                 "source_type": source_type,
                 "source_name": source_name,
-                "source_reference": product.get("reference") or "",
+                "source_reference": source_reference,
                 "product_id": product.get("id"),
             },
             "source_type": source_type,
@@ -175,6 +179,11 @@ class BOMBuilder:
         if quantity.is_integer():
             quantity = int(quantity)
         unit_price = _money(line.get("unit_price"))
+        source = deepcopy(line.get("source") or {})
+        source_type = line.get("source_type") or source.get("source_type") or "fallback"
+        source_name = line.get("source_name") or source.get("source_name") or "Valeur de secours HeliAntha Smart Quote"
+        source_reference = line.get("source_reference") or source.get("source_reference") or line.get("reference") or ""
+        financial_category = line.get("financial_category") or line.get("category") or "other"
         line.update({
             "component": line.get("component") or line.get("category") or "fallback",
             "product_id": None,
@@ -183,20 +192,23 @@ class BOMBuilder:
             "total_price": _money(Decimal(str(quantity)) * Decimal(str(unit_price))),
             "price_status": line.get("price_status") or ("fallback_price" if unit_price else "to_confirm"),
             "currency": line.get("currency") or "DH",
+            "financial_category": financial_category,
             "technical_reason": line.get("technical_reason") or line.get("role") or "Valeur technique de secours.",
             "selection_reasons": line.get("selection_reasons") or ["Aucun produit catalogue compatible n'a été confirmé."],
             "compatibility_status": line.get("compatibility_status") or "manual_validation_required",
-            "source": line.get("source") or {
-                "source_type": "fallback",
-                "source_name": "Valeur de secours HeliAntha Smart Quote",
-                "source_reference": line.get("reference") or "",
+            "source": source or {
+                "source_type": source_type,
+                "source_name": source_name,
+                "source_reference": source_reference,
                 "product_id": None,
             },
-            "source_type": line.get("source_type") or "fallback",
+            "source_type": source_type,
             "demo": bool(line.get("demo", True)),
             "technical_specs": deepcopy(line.get("technical_specs") or {}),
             "product_snapshot": None,
         })
+        line["source_name"] = source_name
+        line["source_reference"] = source_reference
         return line
 
     @staticmethod
@@ -278,7 +290,7 @@ class BOMBuilder:
                 item("protection_battery", "protections", "Protection batterie", "PROTECTION_SIZING_REQUIRED", "La protection batterie reste à dimensionner."),
                 item("cable_battery", "cables", "Câblage batterie", "CABLE_SIZING_REQUIRED", "La section du câble batterie reste à confirmer.", specs={"section_theoretical_mm2": None, "section_selected_mm2": None}),
             ])
-        if project == "pumping":
+        if project == "pumping" and not final.get("pumping_rule_key"):
             placeholders.extend([
                 item("protection_motor", "protections", "Protection et sectionnement moteur", "PROTECTION_SIZING_REQUIRED", "La protection du moteur reste à dimensionner."),
                 item("cable_motor", "cables", "Câble pompe / moteur", "CABLE_SIZING_REQUIRED", "La section du câble moteur reste à confirmer.", quantity=max(distance, 1), unit="m" if distance else "lot", specs={"length_m": distance or None, "section_theoretical_mm2": None, "section_selected_mm2": None}),

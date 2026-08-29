@@ -10,6 +10,30 @@ from .defaults import PROJECT_LABELS
 
 
 MAIN_COMPONENT_ORDER = ("panels", "inverters", "batteries", "pumps", "drives", "thermal", "ev_chargers")
+PUMP_EXISTING_PUBLIC_KEYS_TO_HIDE = {
+    "water_need_m3_day",
+    "flow_m3_h",
+    "static_level_m",
+    "dynamic_level_m",
+    "reservoir_height_m",
+    "horizontal_distance_m",
+    "hydraulic_losses_m",
+    "hmt_m",
+    "hydraulic_power_kw",
+    "pump_theoretical_kw",
+}
+PUMP_EXISTING_PUBLIC_METRIC_KEYWORDS = (
+    "débit",
+    "debit",
+    "hmt",
+    "hauteur",
+    "profondeur",
+    "besoin en eau",
+    "m³/j",
+    "m3/j",
+    "m³/h",
+    "m3/h",
+)
 
 
 def format_decimal_fr(value: Any, decimals: int = 2) -> str:
@@ -139,12 +163,15 @@ def _main_components(equipment: list[dict[str, Any]]) -> list[dict[str, Any]]:
             continue
         title = " ".join(part for part in (item.get("brand"), item.get("model")) if part) or item.get("description") or "Matériel à confirmer"
         quantity = item.get("quantity") or 1
+        power_cv = item.get("power_cv")
         capacity = item.get("capacity_kwh")
         power_kw = item.get("power_kw")
         power_w = item.get("power_w")
         summary = ""
         if category == "panels" and power_w:
             summary = f"{int(quantity)} × {format_decimal_fr(power_w, 0)} W"
+        elif category == "pumps" and power_cv:
+            summary = f"{format_decimal_fr(power_cv, 1)} CV"
         elif category == "batteries" and capacity:
             summary = f"{int(quantity)} × {format_decimal_fr(capacity)} kWh"
         elif power_kw:
@@ -169,7 +196,7 @@ def _main_components(equipment: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _diagram_data(project: str, offer: dict[str, Any], final: dict[str, Any]) -> dict[str, Any]:
     components = {item["category"]: item for item in _main_components(offer.get("selected_equipment") or [])}
-    return {
+    diagram = {
         "project": project,
         "panel": components.get("panels"),
         "inverter": components.get("inverters"),
@@ -183,6 +210,35 @@ def _diagram_data(project: str, offer: dict[str, Any], final: dict[str, Any]) ->
         "hmt_m": final.get("hmt_m"),
         "autonomy_days": final.get("autonomy_days"),
     }
+    if _is_existing_pump_public_mode(project, final):
+        diagram.pop("flow_m3_h", None)
+        diagram.pop("hmt_m", None)
+    return diagram
+
+
+def _is_existing_pump_public_mode(project: str, final: dict[str, Any]) -> bool:
+    return project == "pumping" and str(final.get("pump_rule_mode") or "").strip().lower() == "existing_pump_cv"
+
+
+def _sanitize_public_final_results(project: str, final: dict[str, Any]) -> dict[str, Any]:
+    sanitized = deepcopy(final)
+    if _is_existing_pump_public_mode(project, sanitized):
+        for key in PUMP_EXISTING_PUBLIC_KEYS_TO_HIDE:
+            sanitized.pop(key, None)
+    return sanitized
+
+
+def _sanitize_public_metrics(project: str, final: dict[str, Any], metrics: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not _is_existing_pump_public_mode(project, final):
+      return metrics
+    cleaned = []
+    for item in metrics or []:
+        label = str(item.get("label") or "").strip().lower()
+        value = str(item.get("value") or "").strip().lower()
+        if any(keyword in label or keyword in value for keyword in PUMP_EXISTING_PUBLIC_METRIC_KEYWORDS):
+            continue
+        cleaned.append(item)
+    return cleaned
 
 
 def _normalize_offer(project: str, offer: dict[str, Any], final: dict[str, Any], currency: str) -> dict[str, Any]:
@@ -197,7 +253,9 @@ def _normalize_offer(project: str, offer: dict[str, Any], final: dict[str, Any],
 def build_public_quote_payload(quote: dict[str, Any], company: dict[str, str]) -> dict[str, Any]:
     result = quote.get("result") or {}
     final = result.get("final_results") or quote.get("calculation_detail", {}).get("final_results", {}) or {}
+    final = _sanitize_public_final_results(quote.get("project", ""), final)
     compatibility = quote.get("compatibility") or quote.get("calculation_detail", {}).get("compatibility", {}) or {}
+    metrics = _sanitize_public_metrics(quote.get("project", ""), final, result.get("metrics") or [])
     raw_offers = result.get("offers") or []
     unique_offers = []
     seen = set()
@@ -220,6 +278,9 @@ def build_public_quote_payload(quote: dict[str, Any], company: dict[str, str]) -
     warnings = []
     seen_texts = set()
     for item in quote.get("calculation_detail", {}).get("warnings", []):
+        code = str(item.get("code") or "").strip().upper()
+        if _is_existing_pump_public_mode(quote.get("project", ""), final) and code.startswith("PUMP_"):
+            continue
         text = client_warning_text(item)
         if text in seen_texts:
             continue
@@ -249,7 +310,7 @@ def build_public_quote_payload(quote: dict[str, Any], company: dict[str, str]) -
         "project_label": PROJECT_LABELS.get(quote.get("project", ""), quote.get("project", "")),
         "title": result.get("title") or "",
         "summary": result.get("summary") or "",
-        "metrics": result.get("metrics") or [],
+        "metrics": metrics,
         "confidence": int(result.get("confidence") or (quote.get("reliability") or {}).get("score") or 0),
         "confidence_label": result.get("confidence_label") or "",
         "confidence_items": confidence_items,

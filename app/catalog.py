@@ -18,7 +18,7 @@ from urllib.parse import urlparse
 
 CATALOG_CATEGORIES = {
     "panels": {
-        "label": "Panneaux photovoltaques",
+        "label": "Panneaux photovoltaïques",
         "aliases": ("panel", "panneau", "panneaux", "module", "modules", "pv", "solar_panel"),
     },
     "batteries": {
@@ -85,128 +85,43 @@ CATALOG_CATEGORIES = {
 
 TECHNICAL_FIELDS = {
     "panels": [
-        {"key": "surface_m2", "label": "Surface du module", "kind": "number", "unit": "m2", "required": True},
-        {"key": "voc_v", "label": "Tension a vide Voc", "kind": "number", "unit": "V"},
-        {"key": "vmp_v", "label": "Tension MPP Vmp", "kind": "number", "unit": "V"},
-        {"key": "isc_a", "label": "Courant de court-circuit Isc", "kind": "number", "unit": "A"},
-        {"key": "imp_a", "label": "Courant MPP Imp", "kind": "number", "unit": "A"},
-        {"key": "efficiency_percent", "label": "Rendement du panneau", "kind": "percent", "unit": "%"},
-        {"key": "temperature_coefficient_voc", "label": "Coeff. temperature Voc", "kind": "number", "unit": "%/C"},
-        {"key": "temperature_coefficient_pmax", "label": "Coeff. temperature Pmax", "kind": "number", "unit": "%/C"},
-        {"key": "length_mm", "label": "Longueur", "kind": "number", "unit": "mm"},
-        {"key": "width_mm", "label": "Largeur", "kind": "number", "unit": "mm"},
-        {"key": "weight_kg", "label": "Poids", "kind": "number", "unit": "kg"},
-        {"key": "technology", "label": "Technologie cellule", "kind": "text", "unit": ""},
-        {"key": "max_system_voltage_v", "label": "Tension systeme max", "kind": "number", "unit": "V"},
-        {"key": "warranty_years", "label": "Garantie produit", "kind": "integer", "unit": "ans"},
-        {"key": "bifacial", "label": "Module bifacial", "kind": "boolean", "unit": ""},
-        {"key": "temperature_coefficient", "label": "Coeff. temperature generique", "kind": "number", "unit": "%/C"},
+        {"key": "power_w", "label": "Puissance du panneau", "kind": "number", "unit": "W", "required": True},
     ],
     "batteries": [
-        {"key": "nominal_voltage_v", "label": "Tension nominale", "kind": "number", "unit": "V"},
-        {"key": "capacity_ah", "label": "Capacite Ah", "kind": "number", "unit": "Ah"},
-        {"key": "usable_energy_kwh", "label": "Energie utile", "kind": "number", "unit": "kWh"},
-        {"key": "depth_of_discharge", "label": "Profondeur de decharge utile", "kind": "percent", "unit": "%", "required": True},
-        {"key": "dod_percent", "label": "DoD constructeur", "kind": "percent", "unit": "%"},
-        {"key": "round_trip_efficiency", "label": "Rendement aller-retour", "kind": "percent", "unit": "%", "required": True},
-        {"key": "efficiency_percent", "label": "Rendement batterie", "kind": "percent", "unit": "%"},
-        {"key": "max_charge_current_a", "label": "Courant charge max", "kind": "number", "unit": "A"},
-        {"key": "max_discharge_current_a", "label": "Courant decharge max", "kind": "number", "unit": "A"},
-        {"key": "continuous_power_kw", "label": "Puissance continue", "kind": "number", "unit": "kW"},
-        {"key": "peak_power_kw", "label": "Puissance de pointe", "kind": "number", "unit": "kW"},
-        {"key": "cycles", "label": "Nombre de cycles", "kind": "integer", "unit": "cycles"},
-        {"key": "communication", "label": "Communication", "kind": "text", "unit": ""},
-        {"key": "parallel_max", "label": "Maximum parallele", "kind": "integer", "unit": "modules"},
-        {"key": "series_max", "label": "Maximum serie", "kind": "integer", "unit": "modules"},
-        {"key": "warranty_years", "label": "Garantie", "kind": "integer", "unit": "ans"},
-        {"key": "rack_mountable", "label": "Montage en rack", "kind": "boolean", "unit": ""},
+        {"key": "capacity_kwh", "label": "Capacité", "kind": "number", "unit": "kWh", "required": True},
     ],
     "inverters": [
-        {"key": "type", "label": "Type d'onduleur", "kind": "choice", "choices": ("on_grid", "off_grid", "hybrid", "pump_drive")},
-        {"key": "rated_power_kw", "label": "Puissance nominale AC", "kind": "number", "unit": "kW"},
-        {"key": "max_ac_power_kw", "label": "Puissance AC max", "kind": "number", "unit": "kW"},
-        {"key": "max_dc_power_kw", "label": "Puissance DC max", "kind": "number", "unit": "kW"},
-        {"key": "max_dc_voltage_v", "label": "Tension DC maximale", "kind": "number", "unit": "V"},
-        {"key": "mppt_min_voltage_v", "label": "Tension MPPT min", "kind": "number", "unit": "V"},
-        {"key": "mppt_max_voltage_v", "label": "Tension MPPT max", "kind": "number", "unit": "V"},
-        {"key": "startup_voltage_v", "label": "Tension de demarrage", "kind": "number", "unit": "V"},
-        {"key": "number_of_mppt", "label": "Nombre de MPPT", "kind": "integer", "unit": "MPPT"},
-        {"key": "mppt_count", "label": "Nombre de MPPT (alias)", "kind": "integer", "unit": "MPPT"},
-        {"key": "max_input_current_per_mppt_a", "label": "Courant max par MPPT", "kind": "number", "unit": "A"},
-        {"key": "max_input_current_a", "label": "Courant entree max", "kind": "number", "unit": "A"},
-        {"key": "max_short_circuit_current_a", "label": "Courant court-circuit max", "kind": "number", "unit": "A"},
-        {"key": "efficiency_percent", "label": "Rendement onduleur", "kind": "percent", "unit": "%"},
-        {"key": "phases", "label": "Phases", "kind": "choice", "choices": ("monophase", "triphase")},
-        {"key": "battery_compatible", "label": "Compatible batterie", "kind": "boolean", "unit": ""},
-        {"key": "nominal_battery_voltage_v", "label": "Tension batterie nominale", "kind": "number", "unit": "V"},
-        {"key": "battery_voltage_min_v", "label": "Tension batterie min", "kind": "number", "unit": "V"},
-        {"key": "battery_voltage_max_v", "label": "Tension batterie max", "kind": "number", "unit": "V"},
-        {"key": "communication", "label": "Communication", "kind": "text", "unit": ""},
+        {"key": "type", "label": "Type", "kind": "choice", "choices": ("on_grid", "off_grid", "hybrid"), "required": True},
+        {"key": "power_kw", "label": "Puissance", "kind": "number", "unit": "kW", "required": True},
+        {"key": "phases", "label": "Phase", "kind": "choice", "choices": ("monophase", "triphase"), "required": True},
     ],
     "pumps": [
-        {"key": "power_hp", "label": "Puissance HP", "kind": "number", "unit": "HP"},
-        {"key": "voltage_v", "label": "Tension nominale", "kind": "number", "unit": "V"},
-        {"key": "phases", "label": "Phases", "kind": "choice", "choices": ("monophase", "triphase")},
-        {"key": "rated_current_a", "label": "Courant nominal", "kind": "number", "unit": "A"},
-        {"key": "flow_m3_h", "label": "Debit nominal", "kind": "number", "unit": "m3/h", "required": True},
-        {"key": "hmt_m", "label": "HMT nominale", "kind": "number", "unit": "m", "required": True},
-        {"key": "min_flow_m3_h", "label": "Debit minimal", "kind": "number", "unit": "m3/h"},
-        {"key": "max_flow_m3_h", "label": "Debit maximal", "kind": "number", "unit": "m3/h"},
-        {"key": "min_head_m", "label": "HMT minimale", "kind": "number", "unit": "m"},
-        {"key": "max_head_m", "label": "HMT maximale", "kind": "number", "unit": "m"},
-        {"key": "pump_efficiency", "label": "Rendement pompe", "kind": "percent", "unit": "%"},
-        {"key": "efficiency_percent", "label": "Rendement constructeur", "kind": "percent", "unit": "%"},
-        {"key": "pump_type", "label": "Type de pompe", "kind": "text", "unit": ""},
-        {"key": "connection_size", "label": "Diametre de raccordement", "kind": "text", "unit": ""},
-        {"key": "pump_curve", "label": "Courbe pompe (debit/HMT)", "kind": "pump_curve", "unit": "m3/h : m"},
+        {"key": "power_hp", "label": "Puissance", "kind": "number", "unit": "CV", "required": True},
+        {"key": "phases", "label": "Phase", "kind": "choice", "choices": ("monophase", "triphase")},
     ],
     "drives": [
-        {"key": "drive_efficiency", "label": "Rendement variateur", "kind": "percent", "unit": "%"},
-        {"key": "motor_power_kw", "label": "Puissance moteur couverte", "kind": "number", "unit": "kW"},
-        {"key": "max_dc_voltage_v", "label": "Tension DC maximale", "kind": "number", "unit": "V"},
-        {"key": "input_voltage_min_v", "label": "Tension PV min", "kind": "number", "unit": "V"},
-        {"key": "input_voltage_max_v", "label": "Tension PV max", "kind": "number", "unit": "V"},
-        {"key": "mppt_voltage_min_v", "label": "Tension MPPT min", "kind": "number", "unit": "V"},
-        {"key": "mppt_voltage_max_v", "label": "Tension MPPT max", "kind": "number", "unit": "V"},
-        {"key": "output_voltage_v", "label": "Tension de sortie", "kind": "number", "unit": "V"},
-        {"key": "phases", "label": "Phases sortie", "kind": "choice", "choices": ("monophase", "triphase")},
-        {"key": "max_output_current_a", "label": "Courant sortie max", "kind": "number", "unit": "A"},
+        {"key": "power_kw", "label": "Puissance", "kind": "number", "unit": "kW", "required": True},
+        {"key": "phases", "label": "Phase", "kind": "choice", "choices": ("monophase", "triphase"), "required": True},
     ],
     "ev_chargers": [
-        {"key": "phases", "label": "Phases", "kind": "choice", "choices": ("monophase", "triphase"), "required": True},
-        {"key": "connector", "label": "Connecteur", "kind": "choice", "choices": ("Type 1", "Type 2", "CCS", "CHAdeMO"), "required": True},
-        {"key": "nominal_voltage_v", "label": "Tension nominale", "kind": "number", "unit": "V"},
-        {"key": "max_current_a", "label": "Courant maximal", "kind": "number", "unit": "A"},
-        {"key": "smart_charging", "label": "Recharge intelligente", "kind": "boolean", "unit": ""},
-        {"key": "ocpp", "label": "Compatible OCPP", "kind": "boolean", "unit": ""},
-        {"key": "ip_rating", "label": "Indice IP", "kind": "text", "unit": ""},
+        {"key": "power_kw", "label": "Puissance", "kind": "number", "unit": "kW", "required": True},
+        {"key": "phases", "label": "Phase", "kind": "choice", "choices": ("monophase", "triphase")},
+        {"key": "connector", "label": "Connecteur", "kind": "choice", "choices": ("Type 1", "Type 2", "CCS", "CHAdeMO")},
     ],
     "thermal": [
-        {"key": "surface_m2", "label": "Surface du capteur", "kind": "number", "unit": "m2"},
-        {"key": "collector_efficiency", "label": "Rendement du capteur", "kind": "percent", "unit": "%"},
-        {"key": "tank_volume_l", "label": "Volume ballon", "kind": "number", "unit": "L"},
-        {"key": "max_people", "label": "Capacite usagers indicative", "kind": "integer", "unit": "personnes"},
-        {"key": "electric_backup", "label": "Appoint electrique", "kind": "boolean", "unit": ""},
+        {"key": "tank_volume_l", "label": "Volume du ballon", "kind": "number", "unit": "L", "required": True},
     ],
     "protections": [
-        {"key": "poles", "label": "Nombre de poles", "kind": "integer", "unit": ""},
-        {"key": "breaking_capacity_ka", "label": "Pouvoir de coupure", "kind": "number", "unit": "kA"},
-        {"key": "protection_type", "label": "Type de protection", "kind": "text", "unit": ""},
-        {"key": "voltage_v", "label": "Tension nominale", "kind": "number", "unit": "V"},
-        {"key": "current_a", "label": "Courant nominal", "kind": "number", "unit": "A"},
-        {"key": "dc_or_ac", "label": "Famille", "kind": "choice", "choices": ("dc", "ac")},
+        {"key": "protection_type", "label": "Type", "kind": "choice", "choices": ("Disjoncteur", "Parafoudre", "Fusible", "Sectionneur", "Coffret", "Autre"), "required": True},
+        {"key": "current_a", "label": "Courant", "kind": "number", "unit": "A"},
+        {"key": "dc_or_ac", "label": "Courant électrique", "kind": "choice", "choices": ("dc", "ac")},
     ],
     "cables": [
-        {"key": "section_mm2", "label": "Section", "kind": "number", "unit": "mm2", "required": True},
-        {"key": "conductor", "label": "Conducteur", "kind": "choice", "choices": ("cuivre", "aluminium")},
-        {"key": "solar_rated", "label": "Homologue solaire", "kind": "boolean", "unit": ""},
-        {"key": "current_a", "label": "Courant admissible", "kind": "number", "unit": "A"},
-        {"key": "voltage_v", "label": "Tension nominale", "kind": "number", "unit": "V"},
+        {"key": "dc_or_ac", "label": "Type", "kind": "choice", "choices": ("dc", "ac")},
+        {"key": "section_mm2", "label": "Section", "kind": "number", "unit": "mm²", "required": True},
     ],
     "structures": [
-        {"key": "material", "label": "Materiau", "kind": "text", "unit": ""},
-        {"key": "panel_capacity", "label": "Nombre de panneaux supportes", "kind": "integer", "unit": "panneaux"},
-        {"key": "roof_type", "label": "Type de support", "kind": "text", "unit": ""},
+        {"key": "structure_type", "label": "Type de structure", "kind": "text", "unit": ""},
     ],
     "accessories": [],
     "other": [],
@@ -466,19 +381,12 @@ def validate_product(
         errors.update(exc.errors)
 
     normalized: dict[str, Any] = {"reference": reference, "category": category}
-    for key in (
-        "subcategory",
-        "brand",
-        "model",
-        "description",
-        "technology",
-        "supplier",
-        "unit",
-        "warranty",
-        "datasheet_url",
-    ):
+    for key in ("brand", "model"):
         normalized[key] = str(candidate.get(key) or "").strip()
-    normalized["unit"] = normalized["unit"] or "piece"
+    if not normalized["brand"]:
+        errors["brand"] = "La marque est obligatoire."
+    datasheet_url = str(candidate.get("datasheet_url") or existing.get("datasheet_url") or "").strip()
+    normalized["datasheet_url"] = datasheet_url
 
     for key, label in COMMON_NUMERIC_FIELDS.items():
         try:
@@ -487,10 +395,6 @@ def validate_product(
             errors[key] = str(exc)
     normalized["stock"] = 0 if normalized.get("stock") is None else normalized["stock"]
 
-    try:
-        normalized["efficiency"] = normalize_ratio(candidate.get("efficiency"), field_label="Rendement")
-    except ValueError as exc:
-        errors["efficiency"] = str(exc)
     try:
         default_vat = existing.get("vat_rate") if existing.get("vat_rate") is not None else 0.20
         normalized["vat_rate"] = normalize_ratio(candidate.get("vat_rate"), field_label="TVA", default=default_vat)
@@ -502,7 +406,6 @@ def validate_product(
         errors["currency"] = "La devise doit contenir entre 2 et 5 lettres."
     normalized["currency"] = currency
 
-    datasheet_url = normalized["datasheet_url"]
     if datasheet_url:
         parsed_url = urlparse(datasheet_url)
         if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
@@ -528,6 +431,45 @@ def validate_product(
         ) if category else {}
     except ProductValidationError as exc:
         errors.update(exc.errors)
+
+    specs = normalized.get("technical_specs") or {}
+    if category == "panels":
+        if normalized.get("power_w") is None and specs.get("power_w") is not None:
+            normalized["power_w"] = specs["power_w"]
+    elif category == "batteries":
+        if normalized.get("capacity_kwh") is None and specs.get("capacity_kwh") is not None:
+            normalized["capacity_kwh"] = specs["capacity_kwh"]
+        if normalized.get("voltage") is None and specs.get("nominal_voltage_v") is not None:
+            normalized["voltage"] = specs["nominal_voltage_v"]
+    elif category == "inverters":
+        if normalized.get("power_kw") is None and specs.get("power_kw") is not None:
+            normalized["power_kw"] = specs["power_kw"]
+        if normalized.get("voltage") is None and specs.get("nominal_battery_voltage_v") is not None:
+            normalized["voltage"] = specs["nominal_battery_voltage_v"]
+    elif category == "pumps":
+        pump_power_kw = specs.get("power_kw")
+        pump_power_hp = specs.get("power_hp")
+        if pump_power_kw is None and pump_power_hp is not None:
+            pump_power_kw = round(float(pump_power_hp) * 0.7355, 3)
+        if normalized.get("power_kw") is None and pump_power_kw is not None:
+            normalized["power_kw"] = pump_power_kw
+        if normalized.get("voltage") is None and specs.get("voltage_v") is not None:
+            normalized["voltage"] = specs["voltage_v"]
+    elif category == "drives":
+        if normalized.get("power_kw") is None and specs.get("power_kw") is not None:
+            normalized["power_kw"] = specs["power_kw"]
+        if normalized.get("voltage") is None and specs.get("output_voltage_v") is not None:
+            normalized["voltage"] = specs["output_voltage_v"]
+    elif category == "ev_chargers":
+        if normalized.get("power_kw") is None and specs.get("power_kw") is not None:
+            normalized["power_kw"] = specs["power_kw"]
+        if normalized.get("voltage") is None and specs.get("nominal_voltage_v") is not None:
+            normalized["voltage"] = specs["nominal_voltage_v"]
+        if normalized.get("current_amp") is None and specs.get("max_current_a") is not None:
+            normalized["current_amp"] = specs["max_current_a"]
+    elif category == "thermal":
+        if normalized.get("capacity_l") is None and specs.get("tank_volume_l") is not None:
+            normalized["capacity_l"] = specs["tank_volume_l"]
 
     if errors:
         raise ProductValidationError(errors)

@@ -30,12 +30,30 @@ def test_advisor_short_yes_depends_on_last_question(tmp_path):
     state = {
         "project_type": "pumping",
         "last_question_id": "pump_existing",
-        "collected_data": {"water_need": 20},
+        "collected_data": {},
     }
     payload = post_message(client, "oui", state=state).get_json()
 
     assert payload["state"]["collected_data"]["pump_existing"] is True
-    assert "profondeur" in payload["reply"].lower()
+    assert "cv" in payload["reply"].lower() or "puissance" in payload["reply"].lower()
+    assert any("cv" in action["label"].lower() for action in payload["actions"])
+
+
+def test_advisor_existing_pump_cv_does_not_reask_hydraulics(tmp_path):
+    app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "advisor-existing-cv.db")})
+    client = app.test_client()
+
+    state = {
+        "project_type": "pumping",
+        "last_question_id": "existing_pump_cv",
+        "pending_question_id": "existing_pump_cv",
+        "collected_data": {"pump_existing": True},
+    }
+    payload = post_message(client, "15 cv", state=state).get_json()
+
+    assert payload["state"]["collected_data"]["existing_pump_cv"] == 15
+    assert "profondeur" not in payload["reply"].lower()
+    assert "débit" not in payload["reply"].lower()
 
 
 def test_advisor_can_change_project_without_staying_blocked(tmp_path):
@@ -81,7 +99,7 @@ def test_advisor_calculates_real_quote_when_ready(tmp_path):
     client = app.test_client()
     state = {
         "project_type": "pumping",
-        "collected_data": {"water_need": 25, "depth": 60, "city": "Marrakech"},
+        "collected_data": {"pump_existing": True, "existing_pump_cv": 15},
     }
 
     payload = client.post("/api/advisor/calculate", json={"state": state}).get_json()

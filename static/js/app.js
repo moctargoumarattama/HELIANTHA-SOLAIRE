@@ -29,6 +29,51 @@ const DEVICE_LIBRARY = {
   ],
 };
 
+const WIZARD_PROJECT_META = window.HELIANTHA_WIZARD_PROJECTS || {
+  pumping: {
+    engine_project: "pumping",
+    aliases: [],
+    payload_fields: ["pump_existing", "existing_pump_cv", "water_need", "hours", "depth", "elevation", "distance", "city"],
+    summary_fields: ["pump_existing", "existing_pump_cv", "water_need", "hours", "depth", "elevation", "distance", "city"],
+    supports_loads: false,
+  },
+  off_grid: {
+    engine_project: "offgrid",
+    aliases: ["offgrid"],
+    payload_fields: ["energy_mode", "daily_kwh", "peak_kw", "autonomy", "city", "notes", "loads"],
+    summary_fields: ["energy_mode", "daily_kwh", "peak_kw", "autonomy", "city", "loads"],
+    supports_loads: true,
+  },
+  photovoltaic: {
+    engine_project: "ongrid",
+    aliases: ["ongrid"],
+    payload_fields: ["building", "monthly_kwh", "bill", "day_profile", "network", "roof_area", "city"],
+    summary_fields: ["building", "monthly_kwh", "bill", "day_profile", "network", "roof_area", "city"],
+    supports_loads: false,
+  },
+  hybrid: {
+    engine_project: "hybrid",
+    aliases: [],
+    payload_fields: ["energy_mode", "daily_kwh", "monthly_kwh", "bill", "peak_kw", "priority_kwh", "autonomy", "objective", "city", "loads"],
+    summary_fields: ["energy_mode", "daily_kwh", "monthly_kwh", "bill", "peak_kw", "priority_kwh", "autonomy", "objective", "city", "loads"],
+    supports_loads: true,
+  },
+  thermal: {
+    engine_project: "thermal",
+    aliases: [],
+    payload_fields: ["people", "building", "daily_hot_water_l", "thermal_target_temp", "thermal_inlet_temp", "city"],
+    summary_fields: ["people", "building", "daily_hot_water_l", "thermal_target_temp", "thermal_inlet_temp", "city"],
+    supports_loads: false,
+  },
+  ev_charging: {
+    engine_project: "ev",
+    aliases: ["ev"],
+    payload_fields: ["vehicle", "vehicle_battery", "daily_km", "consumption_kwh_100km", "phases", "available_power", "charger_power", "vehicle_ac_max", "distance", "city"],
+    summary_fields: ["vehicle", "vehicle_battery", "daily_km", "consumption_kwh_100km", "phases", "available_power", "charger_power", "vehicle_ac_max", "distance", "city"],
+    supports_loads: false,
+  },
+};
+
 const PROJECTS = {
   pumping: {
     label: "Pompage solaire",
@@ -36,40 +81,33 @@ const PROJECTS = {
     description: "Dimensionnez une solution pour forage, irrigation ou alimentation en eau.",
     steps: [
       {
-        id: "need",
-        type: "fields",
-        title: "Votre besoin en eau",
-        description: "Ces informations permettent d’estimer la puissance hydraulique et la taille du champ solaire.",
-        fields: [
-          numberField("water_need", "Besoin en eau", "m³ / jour", "30"),
-          numberField("hours", "Pompage souhaité", "heures / jour", "6"),
-        ],
-      },
-      {
         id: "existing_pump",
         type: "fields",
         title: "Avez-vous déjà une pompe ?",
-        description: "S’il existe déjà un matériel sur site, nous pouvons l’intégrer à l’étude.",
+        description: "Indiquez votre situation pour préparer votre installation solaire.",
         fields: [
           choiceField("has_existing_pump", "Pompe existante", [
             { value: "no", label: "Non, j’ai besoin d’une recommandation" },
             { value: "yes", label: "Oui, une pompe existe déjà" },
           ], "no"),
-          numberField("existing_pump_kw", "Puissance de la pompe existante", "kW", "", { condition: (answers) => answers.has_existing_pump === "yes" }),
-          numberField("voltage", "Tension connue", "V", "", { condition: (answers) => answers.has_existing_pump === "yes" }),
-          selectField("phases", "Type de réseau", [
-            ["", "Je ne connais pas"],
-            ["monophase", "Monophasé"],
-            ["triphase", "Triphasé"],
-          ], "", { condition: (answers) => answers.has_existing_pump === "yes" }),
         ],
+      },
+      {
+        id: "existing_pump_cv",
+        type: "pump-cv-picker",
+        showIf: (state) => state.answers.has_existing_pump === "yes",
+        title: "Quelle est la puissance de votre pompe ?",
+        description: "Choisissez la puissance indiquée sur votre pompe.",
       },
       {
         id: "site",
         type: "fields",
-        title: "Votre forage et le transport de l’eau",
-        description: "Nous avons besoin d’une hauteur de pompage, d’une distance et d’une localisation.",
+        showIf: (state) => state.answers.has_existing_pump !== "yes",
+        title: "Votre besoin en eau",
+        description: "Nous utilisons ces informations uniquement si vous n’avez pas encore de pompe.",
         fields: [
+          numberField("water_need", "Besoin en eau", "m³ / jour", "30"),
+          numberField("hours", "Pompage souhaité", "heures / jour", "6"),
           numberField("depth", "Profondeur / niveau dynamique", "m", "55"),
           numberField("elevation", "Hauteur jusqu’au réservoir", "m", "15"),
           numberField("distance", "Distance horizontale", "m", "80"),
@@ -80,10 +118,10 @@ const PROJECTS = {
       recapStep(),
     ],
   },
-  offgrid: {
-    label: "Site autonome",
+  off_grid: {
+    label: "Site sans réseau",
     icon: "🏠",
-    description: "Installation Off-Grid avec batteries et autonomie.",
+    description: "Installation hors réseau avec batteries et autonomie.",
     steps: [
       energyModeStep("loads"),
       loadsStep(),
@@ -113,8 +151,8 @@ const PROJECTS = {
       recapStep(),
     ],
   },
-  ongrid: {
-    label: "Installation photovoltaïque",
+  photovoltaic: {
+    label: "Réduire ma consommation",
     icon: "☀️",
     description: "Réduire la consommation électrique du bâtiment.",
     steps: [
@@ -228,8 +266,8 @@ const PROJECTS = {
       recapStep(),
     ],
   },
-  ev: {
-    label: "Recharge véhicule électrique",
+  ev_charging: {
+    label: "Recharge électrique",
     icon: "🚗",
     description: "Une borne adaptée au véhicule, au réseau et à l’usage réel.",
     steps: [
@@ -268,6 +306,21 @@ const PROJECTS = {
     ],
   },
 };
+
+const PUMP_CV_OPTIONS = [
+  { value: "2", label: "2 CV" },
+  { value: "3", label: "3 CV" },
+  { value: "5.5", label: "5,5 CV" },
+  { value: "7.5", label: "7,5 CV" },
+  { value: "10", label: "10 CV" },
+  { value: "15", label: "15 CV" },
+  { value: "20", label: "20 CV" },
+  { value: "30", label: "30 CV" },
+  { value: "40", label: "40 CV" },
+  { value: "50", label: "50 CV" },
+];
+const PUMP_CV_LABELS = Object.fromEntries(PUMP_CV_OPTIONS.map((option) => [option.value, option.label]));
+const PUMP_CV_STORAGE_VALUE = (value) => String(value ?? "");
 
 const state = loadState();
 const wizard = document.querySelector("#wizard");
@@ -326,7 +379,7 @@ function loadsStep(options = {}) {
     title: options.hybrid ? "Décrivez vos charges et vos priorités" : "Décrivez vos équipements",
     description: options.hybrid
       ? "Ajoutez les appareils importants. Vous pouvez marquer ceux qui doivent rester alimentés pendant une coupure."
-      : "Ajoutez vos appareils pour estimer automatiquement votre consommation quotidienne et la puissance simultanée.",
+      : "Ajoutez vos appareils pour préparer l'estimation de votre projet.",
   };
 }
 
@@ -351,18 +404,36 @@ function recapStep() {
   return {
     id: "recap",
     type: "recap",
-    title: "Vérifiez votre projet",
-    description: "Avant de calculer, nous vous montrons un résumé clair des informations utilisées.",
+    title: "Vérifiez vos informations",
+    description: "Tout est prêt. Vérifiez simplement vos informations avant de continuer.",
   };
 }
 
 function bindLanding() {
   document.querySelectorAll(".js-start").forEach((button) => {
-    button.addEventListener("click", () => openWizard());
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      const target = document.querySelector("#solutions");
+      if (target) {
+        target.scrollIntoView({ behavior: "smooth", block: "start" });
+        target.setAttribute("tabindex", "-1");
+        target.focus({ preventScroll: true });
+      }
+      const menu = document.querySelector("#mobile-menu");
+      const toggle = document.querySelector("#mobile-menu-toggle");
+      if (menu && toggle) {
+        menu.hidden = true;
+        menu.classList.remove("open");
+        toggle.setAttribute("aria-expanded", "false");
+      }
+    });
   });
 
   document.querySelectorAll("[data-project]").forEach((button) => {
-    button.addEventListener("click", () => openWizard(button.dataset.project));
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      openWizard(button.dataset.project);
+    });
   });
 
   document.querySelectorAll("[data-close]").forEach((button) => {
@@ -424,6 +495,7 @@ function defaultState() {
     mobileFieldIndex: 0,
     mobileLoadIndex: 0,
     mobileLoadCategory: "",
+    pumpCvSheetOpen: false,
     answers: {},
     contact: {},
     loads: [],
@@ -432,9 +504,64 @@ function defaultState() {
   };
 }
 
+function normalizeProjectKey(project) {
+  const value = String(project || "").trim();
+  if (!value) {
+    return "";
+  }
+  if (PROJECTS[value]) {
+    return value;
+  }
+  for (const [key, meta] of Object.entries(WIZARD_PROJECT_META)) {
+    if ((meta.aliases || []).includes(value)) {
+      return key;
+    }
+  }
+  return "";
+}
+
+function getProjectMeta(project) {
+  const key = normalizeProjectKey(project);
+  return key ? WIZARD_PROJECT_META[key] || null : null;
+}
+
+function projectSupportsLoads(project) {
+  return Boolean(getProjectMeta(project)?.supports_loads);
+}
+
+function projectUsesLoadLibrary(project, answers) {
+  return projectSupportsLoads(project) && String((answers || {}).energy_mode || "") === "loads";
+}
+
+function getProjectFields(project, kind) {
+  const meta = getProjectMeta(project);
+  const fields = meta?.[kind];
+  return Array.isArray(fields) ? fields : [];
+}
+
+function pruneProjectAnswers(project, answers) {
+  const allowed = new Set(getProjectFields(project, "payload_fields"));
+  if (!allowed.size) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(answers || {}).filter(([key, value]) => allowed.has(key) && !(typeof value === "string" && value.trim() === ""))
+  );
+}
+
+function pruneProjectLoads(project, loads, answers = {}) {
+  return projectUsesLoadLibrary(project, answers) && Array.isArray(loads) ? loads : [];
+}
+
 function loadState() {
   try {
-    return { ...defaultState(), ...JSON.parse(sessionStorage.getItem(STORAGE_KEY) || "{}") };
+    const loaded = { ...defaultState(), ...JSON.parse(sessionStorage.getItem(STORAGE_KEY) || "{}") };
+    loaded.project = normalizeProjectKey(loaded.project) || "";
+    loaded.answers = pruneProjectAnswers(loaded.project, loaded.answers);
+    loaded.loads = pruneProjectLoads(loaded.project, loaded.loads, loaded.answers);
+    loaded.contact = loaded.contact || {};
+    loaded.result = loaded.result || null;
+    return loaded;
   } catch {
     return defaultState();
   }
@@ -447,6 +574,7 @@ function persistState() {
     mobileFieldIndex: state.mobileFieldIndex,
     mobileLoadIndex: state.mobileLoadIndex,
     mobileLoadCategory: state.mobileLoadCategory,
+    pumpCvSheetOpen: state.pumpCvSheetOpen,
     answers: state.answers,
     contact: state.contact,
     loads: state.loads,
@@ -454,15 +582,55 @@ function persistState() {
   }));
 }
 
-function openWizard(project = "") {
-  if (project) {
-    state.project = project;
-    state.stepIndex = 0;
-  } else {
-    state.stepIndex = -1;
+function setActiveProject(project, { reset = false } = {}) {
+  const normalized = normalizeProjectKey(project);
+  if (!normalized) {
+    return false;
   }
+  const current = normalizeProjectKey(state.project);
+  const shouldReset = reset || current !== normalized;
+  state.project = normalized;
+  state.stepIndex = 0;
   state.mobileFieldIndex = 0;
   state.mobileLoadIndex = 0;
+  state.mobileLoadCategory = "";
+  state.pumpCvSheetOpen = false;
+  if (shouldReset) {
+    state.answers = {};
+    state.contact = {};
+    state.loads = [];
+    state.result = null;
+    state.analysisStartedAt = null;
+  } else {
+    state.answers = pruneProjectAnswers(normalized, state.answers);
+    state.loads = pruneProjectLoads(normalized, state.loads, state.answers);
+  }
+  if (!projectSupportsLoads(normalized)) {
+    state.loads = [];
+  }
+  return shouldReset;
+}
+
+function openWizard(project = "") {
+  const normalized = normalizeProjectKey(project);
+  if (project && !normalized) {
+    toast("Projet non reconnu.");
+    return;
+  }
+  if (normalized) {
+    setActiveProject(normalized, { reset: Boolean(project) });
+  } else if (!normalizeProjectKey(state.project)) {
+    setActiveProject("pumping");
+  } else {
+    state.project = normalizeProjectKey(state.project);
+    state.stepIndex = 0;
+    state.mobileFieldIndex = 0;
+    state.mobileLoadIndex = 0;
+    state.mobileLoadCategory = "";
+    state.pumpCvSheetOpen = false;
+    state.answers = pruneProjectAnswers(state.project, state.answers);
+    state.loads = pruneProjectLoads(state.project, state.loads, state.answers);
+  }
   state.open = true;
   state.result = null;
   wizard.classList.add("open");
@@ -473,12 +641,18 @@ function openWizard(project = "") {
 
 function applyWizardPrefill(prefill = {}) {
   if (prefill.project) {
-    state.project = prefill.project;
-    state.stepIndex = Math.max(0, state.stepIndex || 0);
+    const normalized = normalizeProjectKey(prefill.project);
+    if (normalized) {
+      setActiveProject(normalized, { reset: true });
+    }
   }
-  state.answers = { ...state.answers, ...(prefill.answers || {}) };
+  const targetProject = normalizeProjectKey(state.project);
+  state.answers = {
+    ...pruneProjectAnswers(targetProject, state.answers),
+    ...pruneProjectAnswers(targetProject, prefill.answers || {}),
+  };
   state.contact = { ...state.contact, ...(prefill.contact || {}) };
-  state.loads = Array.isArray(prefill.loads) ? prefill.loads : state.loads;
+  state.loads = pruneProjectLoads(targetProject, Array.isArray(prefill.loads) ? prefill.loads : state.loads, state.answers);
   if (prefill.result) {
     state.result = prefill.result;
   }
@@ -488,6 +662,7 @@ function applyWizardPrefill(prefill = {}) {
 
 function closeWizard() {
   state.open = false;
+  state.pumpCvSheetOpen = false;
   wizard.classList.remove("open");
   wizard.setAttribute("aria-hidden", "true");
   document.body.style.overflow = "";
@@ -495,21 +670,27 @@ function closeWizard() {
 }
 
 function getProjectConfig() {
-  return PROJECTS[state.project] || null;
+  return PROJECTS[normalizeProjectKey(state.project)] || null;
 }
 
 function getSteps() {
-  if (!state.project) {
+  const project = normalizeProjectKey(state.project);
+  if (!project) {
     return [];
   }
-  return (getProjectConfig()?.steps || []).filter((step) => !step.showIf || step.showIf(state));
+  return (PROJECTS[project]?.steps || []).filter((step) => !step.showIf || step.showIf(state));
 }
 
 function getCurrentStep() {
-  if (state.stepIndex < 0 || !state.project) {
-    return { id: "project", type: "project", title: "Quel est votre projet ?" };
+  const steps = getSteps();
+  if (!steps.length) {
+    return null;
   }
-  return getSteps()[state.stepIndex];
+  const index = Math.min(Math.max(Number(state.stepIndex || 0), 0), steps.length - 1);
+  if (index !== state.stepIndex) {
+    state.stepIndex = index;
+  }
+  return steps[index] || null;
 }
 
 function isCompactWizard() {
@@ -552,6 +733,8 @@ function renderWizardShell() {
     return;
   }
 
+  body.innerHTML = "";
+  aside.innerHTML = "";
   renderAside();
   renderStep();
 }
@@ -559,46 +742,173 @@ function renderWizardShell() {
 function renderAside() {
   const project = getProjectConfig();
   const totals = computeLoads();
-  const steps = getSteps();
-  const currentIndex = state.stepIndex;
+  const currentProject = normalizeProjectKey(state.project);
   const items = [
-    project ? `<div class="aside-project"><span class="aside-project-icon">${project.icon}</span><div><strong>${project.label}</strong><div class="field-hint">${project.description}</div></div></div>` : `<div class="aside-project"><span class="aside-project-icon">☀️</span><div><strong>HeliAntha Smart Quote</strong><div class="field-hint">Choisissez votre projet et avançons étape par étape.</div></div></div>`,
+    project ? `<div class="aside-project"><span class="aside-project-icon">${project.icon}</span><div><strong>${project.label}</strong><div class="field-hint">${project.description}</div></div></div>` : `<div class="aside-project"><span class="aside-project-icon">??</span><div><strong>HeliAntha Smart Quote</strong><div class="field-hint">Choisissez votre projet et avançons étape par étape.</div></div></div>`,
   ];
 
-  const summary = [];
-  if (state.answers.city) summary.push(["Ville", state.answers.city]);
-  if (state.answers.daily_kwh) summary.push(["Consommation", `${formatNumber(state.answers.daily_kwh)} kWh/j`]);
-  if (totals.daily_kwh > 0) summary.push(["Équipements", `${formatNumber(totals.daily_kwh)} kWh/j`]);
-  if (state.answers.monthly_kwh) summary.push(["Mensuel", `${formatNumber(state.answers.monthly_kwh)} kWh/mois`]);
-  if (state.answers.water_need) summary.push(["Besoin en eau", `${formatNumber(state.answers.water_need)} m³/j`]);
-  if (state.answers.available_power) summary.push(["Puissance dispo", `${formatNumber(state.answers.available_power)} kW`]);
-  if (state.contact.name) summary.push(["Contact", state.contact.name]);
+  const summary = buildProjectSummary(currentProject, totals);
 
   aside.innerHTML = `
-    <h3>Votre étude</h3>
-    ${items.join("")}
-    ${project ? `
-      <div class="aside-steps">
-        ${steps.map((step, index) => `
-          <article class="aside-step ${index < currentIndex ? "done" : ""} ${index === currentIndex ? "active" : ""}">
-            <span>${index + 1}</span>
-            <div>
-              <strong>${step.title}</strong>
-              <small>${step.type === "recap" ? "Résumé final" : step.type === "loads" ? "Appareils et estimation" : "Étape guidée"}</small>
-            </div>
-          </article>
-        `).join("")}
-      </div>
-    ` : ""}
+    <div class="aside-guide">
+      <h3>Votre ?tude</h3>
+      ${items.join("")}
+    </div>
     <ul class="aside-list">
-      ${summary.length ? summary.map(([label, value]) => `<li><span>${label}</span><strong>${value}</strong></li>`).join("") : `<li><span>Progression</span><strong>Les réponses seront résumées ici</strong></li>`}
+      ${summary.length ? summary.map(([label, value]) => `<li><span>${label}</span><strong>${value}</strong></li>`).join("") : ""}
     </ul>
-    <p class="aside-note">Les données saisies restent mémorisées pendant votre parcours pour vous permettre de revenir en arrière sans tout ressaisir.</p>
   `;
+}
+
+function buildProjectSummary(project, totals) {
+  const summary = [];
+  const projectMeta = getProjectMeta(project);
+  if (!projectMeta) {
+    return summary;
+  }
+
+  for (const fieldName of getProjectFields(project, "summary_fields")) {
+    if (fieldName === "loads") {
+      if (projectUsesLoadLibrary(project, state.answers) && state.loads.length) {
+        summary.push(["Appareils", `${state.loads.length} appareil(s)`]);
+      }
+      continue;
+    }
+
+    const value = getSummaryValue(fieldName, project, totals);
+    if (value === null || value === undefined || value === "") {
+      continue;
+    }
+    const fieldLabel = getFieldLabel(project, fieldName);
+    summary.push([fieldLabel, value]);
+  }
+
+  if (state.contact.name) summary.push(["Contact", state.contact.name]);
+  if (state.contact.phone) summary.push(["Téléphone", state.contact.phone]);
+  if (state.contact.email) summary.push(["E-mail", state.contact.email]);
+  if (state.contact.location) summary.push(["Localisation", state.contact.location]);
+  return summary;
+}
+
+function getFieldLabel(project, fieldName) {
+  const definition = getFieldDefinition(project, fieldName);
+  if (definition?.label) {
+    return definition.label;
+  }
+  const fallback = {
+    pump_existing: "Pompe existante",
+    existing_pump_cv: "Puissance de la pompe",
+    water_need: "Besoin en eau",
+    hours: "Pompage souhaité",
+    depth: "Profondeur",
+    elevation: "Hauteur jusqu’au réservoir",
+    distance: "Distance horizontale",
+    city: "Ville du projet",
+    energy_mode: "Mode de saisie",
+    daily_kwh: "Consommation quotidienne",
+    monthly_kwh: "Consommation mensuelle",
+    peak_kw: "Puissance simultanée",
+    autonomy: "Autonomie",
+    objective: "Objectif principal",
+    priority_kwh: "Charges prioritaires",
+    building: "Type de bâtiment",
+    bill: "Facture moyenne",
+    day_profile: "Profil de consommation",
+    network: "Type de réseau",
+    roof_area: "Surface disponible",
+    people: "Nombre d’utilisateurs",
+    daily_hot_water_l: "Besoin journalier",
+    thermal_target_temp: "Température souhaitée",
+    thermal_inlet_temp: "Température d’entrée",
+    vehicle: "Véhicule",
+    vehicle_battery: "Capacité batterie",
+    daily_km: "Kilométrage quotidien",
+    consumption_kwh_100km: "Consommation",
+    phases: "Réseau",
+    available_power: "Puissance disponible",
+    charger_power: "Puissance de borne",
+    vehicle_ac_max: "Limite AC",
+  };
+  return fallback[fieldName] || fieldName;
+}
+
+function getFieldDefinition(project, fieldName) {
+  const config = PROJECTS[normalizeProjectKey(project)];
+  if (!config) {
+    return null;
+  }
+  for (const step of config.steps || []) {
+    if (step.name === fieldName) {
+      return step;
+    }
+    for (const field of step.fields || []) {
+      if (field.name === fieldName) {
+        return field;
+      }
+    }
+  }
+  return null;
+}
+
+function getSummaryValue(fieldName, project, totals) {
+  if (fieldName === "energy_mode") {
+    return {
+      loads: "Bibliothèque d’appareils",
+      direct: "Saisie directe",
+    }[state.answers.energy_mode] || state.answers.energy_mode || "";
+  }
+  if (fieldName === "pump_existing") {
+    return state.answers.pump_existing === true || state.answers.pump_existing === "true" || state.answers.pump_existing === "yes"
+      ? "Oui, j’ai déjà une pompe"
+      : state.answers.pump_existing === false || state.answers.pump_existing === "false" || state.answers.pump_existing === "no"
+        ? "Non, j’ai besoin d’une recommandation"
+        : "";
+  }
+  if (fieldName === "loads") {
+    return projectSupportsLoads(project) ? `${state.loads.length} appareil(s)` : "";
+  }
+  if (fieldName === "priority_kwh") {
+    return totals.priority_kwh > 0 ? `${formatNumber(totals.priority_kwh)} kWh / jour` : "";
+  }
+
+  const definition = getFieldDefinition(project, fieldName);
+  const value = state.answers[fieldName];
+  if (value === null || value === undefined || value === "") {
+    return "";
+  }
+  if (definition?.type === "select" || definition?.type === "choice" || definition?.type === "choice-step") {
+    const options = definition.options || [];
+    const option = options.find((item) => String(item.value) === String(value));
+    return option ? option.label : String(value);
+  }
+  if (definition?.type === "number") {
+    const formatted = formatNumber(value);
+    return definition.unit ? `${formatted} ${definition.unit}` : formatted;
+  }
+  return String(value);
 }
 
 function renderStep() {
   const current = getCurrentStep();
+  if (!current) {
+    document.querySelector("#step-label").textContent = "Projet non reconnu";
+    document.querySelector("#progress-label").textContent = "0 %";
+    document.querySelector("#progress-bar").style.width = "0%";
+    renderProgressSteps(1, 0);
+    backButton.style.visibility = "hidden";
+    nextButton.textContent = "Continuer";
+    nextButton.disabled = true;
+    body.innerHTML = `
+      <section class="wizard-step">
+        <span class="eyebrow">Configuration indisponible</span>
+        <h2>Projet non reconnu</h2>
+        <p>Merci de sélectionner un projet valide pour continuer.</p>
+      </section>
+    `;
+    return;
+  }
+  nextButton.disabled = false;
+  backButton.disabled = false;
   const steps = getSteps();
   const total = steps.length || 1;
   const stepNumber = current.id === "project" ? 1 : state.stepIndex + 1;
@@ -635,17 +945,22 @@ function renderStep() {
 
   backButton.style.visibility = current.id === "project" ? "hidden" : "visible";
   nextButton.textContent = current.id === "recap"
-    ? "Calculer ma solution"
+    ? "Voir mon estimation"
     : ((isMobilePager && state.mobileFieldIndex < maxFieldPage) || (isMobileLoadPager && state.mobileLoadIndex < maxLoadPage))
       ? "Suivant"
       : "Continuer";
 
   if (current.type === "project") {
-    renderProjectStep();
+    state.stepIndex = 0;
+    renderWizardShell();
     return;
   }
   if (current.type === "choice-step") {
     renderChoiceStep(current);
+    return;
+  }
+  if (current.type === "pump-cv-picker") {
+    renderPumpCvStep(current);
     return;
   }
   if (current.type === "loads") {
@@ -677,12 +992,12 @@ function renderProjectStep() {
       <p>Choisissez le besoin principal. Le questionnaire s’adaptera automatiquement.</p>
       <div class="project-grid">
         ${Object.entries(PROJECTS).map(([key, project]) => `
-          <button class="project-card ${state.project === key ? "active" : ""}" type="button" data-pick-project="${key}">
+          <button class="project-card ${normalizeProjectKey(state.project) === key ? "active" : ""}" type="button" data-pick-project="${key}">
             <span class="project-icon">${project.icon}</span>
             <strong>${project.label}</strong>
             <p>${project.description}</p>
-            <span class="project-choice-state">${state.project === key ? "✓ Sélectionné" : "Choisir ce projet"}</span>
-            <span class="project-action">${key === "ev" ? "Choisir ma borne" : "Estimer mon installation"}</span>
+            ${normalizeProjectKey(state.project) === key ? `<span class="project-choice-state" aria-hidden="true">?</span>` : ""}
+            <span class="project-action">${key === "ev_charging" ? "Choisir ma borne" : "Estimer mon installation"}</span>
           </button>
         `).join("")}
       </div>
@@ -691,13 +1006,7 @@ function renderProjectStep() {
 
   body.querySelectorAll("[data-pick-project]").forEach((button) => {
     button.addEventListener("click", () => {
-      state.project = button.dataset.pickProject;
-      state.stepIndex = 0;
-      state.mobileFieldIndex = 0;
-      state.mobileLoadIndex = 0;
-      state.mobileLoadCategory = "";
-      state.answers = state.answers || {};
-      renderWizardShell();
+      openWizard(button.dataset.pickProject);
       persistState();
     });
   });
@@ -713,7 +1022,7 @@ function renderChoiceStep(step) {
       <div class="choice-grid">
         ${step.options.map((option) => `
           <button type="button" class="choice-card ${currentValue === option.value ? "active" : ""}" data-choice-name="${step.name}" data-choice-value="${option.value}">
-            <span class="choice-state">${currentValue === option.value ? "✓ Sélectionné" : "Option"}</span>
+            ${currentValue === option.value ? `<span class="choice-state" aria-hidden="true">?</span>` : ""}
             <strong>${option.label}</strong>
             <p>${option.description}</p>
           </button>
@@ -725,8 +1034,15 @@ function renderChoiceStep(step) {
   body.querySelectorAll("[data-choice-name]").forEach((button) => {
     button.addEventListener("click", () => {
       state.answers[step.name] = button.dataset.choiceValue;
-      if (button.dataset.choiceName === "energy_mode" && button.dataset.choiceValue === "loads" && !state.loads.length) {
-        state.loads.push(defaultCustomLoad("Lampe LED", 4, 12, 5, true, step.hybrid));
+      if (button.dataset.choiceName === "energy_mode") {
+        if (button.dataset.choiceValue === "loads" && !state.loads.length) {
+          state.loads.push(defaultCustomLoad("Lampe LED", 4, 12, 5, true, step.hybrid));
+        }
+        if (button.dataset.choiceValue === "direct") {
+          state.loads = [];
+          state.mobileLoadIndex = 0;
+          state.mobileLoadCategory = "";
+        }
       }
       renderWizardShell();
       persistState();
@@ -744,7 +1060,6 @@ function renderFieldsStep(step) {
       <span class="eyebrow">${getProjectConfig().icon} ${getProjectConfig().label}</span>
       <h2>${step.title}</h2>
       <p>${step.description}</p>
-      <p class="field-hint wizard-note">Toutes les valeurs sont modifiables.</p>
       ${pages.length > 1 ? `<div class="wizard-page-badge">Page ${pageIndex + 1} sur ${pages.length}</div>` : ""}
       <div class="form-grid wizard-page-grid">
         ${fields.map((field) => renderField(field, store)).join("")}
@@ -762,6 +1077,116 @@ function renderFieldsStep(step) {
       persistState();
     });
   });
+}
+
+function renderPumpCvStep(step) {
+  const currentValue = String(state.answers.existing_pump_cv || "");
+  const currentLabel = PUMP_CV_LABELS[currentValue] || "Choisir la puissance";
+  const sheetOpen = Boolean(state.pumpCvSheetOpen);
+
+  body.innerHTML = `
+    <section class="wizard-step pump-cv-step">
+      <span class="eyebrow">${getProjectConfig().icon} ${getProjectConfig().label}</span>
+      <h2>${step.title}</h2>
+      <p>${step.description}</p>
+
+      <div class="field full pump-cv-field">
+        <label for="pump-cv-trigger">Puissance de la pompe</label>
+        <button
+          id="pump-cv-trigger"
+          class="pump-cv-trigger"
+          type="button"
+          data-pump-cv-trigger
+          aria-haspopup="dialog"
+          aria-expanded="${sheetOpen ? "true" : "false"}"
+        >
+          <span class="pump-cv-trigger-value">${escapeHtml(currentLabel)}</span>
+          <span class="pump-cv-trigger-chevron" aria-hidden="true">▾</span>
+        </button>
+        <input type="hidden" name="existing_pump_cv" value="${escapeHtml(currentValue)}" data-pump-cv-value>
+      </div>
+    </section>
+    ${renderPumpCvSheet(sheetOpen, currentValue)}
+  `;
+
+  const trigger = body.querySelector("[data-pump-cv-trigger]");
+  const hiddenInput = body.querySelector("[data-pump-cv-value]");
+  const sheet = body.querySelector("[data-pump-cv-sheet]");
+  const closeButtons = body.querySelectorAll("[data-pump-cv-close]");
+  const options = body.querySelectorAll("[data-pump-cv-option]");
+
+  const openSheet = () => {
+    state.pumpCvSheetOpen = true;
+    persistState();
+    renderWizardShell();
+  };
+
+  const closeSheet = () => {
+    state.pumpCvSheetOpen = false;
+    persistState();
+    renderWizardShell();
+  };
+
+  const selectValue = (value) => {
+    state.answers.existing_pump_cv = value;
+    state.pumpCvSheetOpen = false;
+    persistState();
+    renderWizardShell();
+  };
+
+  trigger?.addEventListener("click", openSheet);
+  trigger?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      openSheet();
+    }
+  });
+  hiddenInput?.addEventListener("change", () => {
+    state.answers.existing_pump_cv = hiddenInput.value;
+    persistState();
+  });
+  closeButtons.forEach((button) => button.addEventListener("click", closeSheet));
+  sheet?.addEventListener("click", (event) => {
+    if (event.target === sheet) {
+      closeSheet();
+    }
+  });
+  options.forEach((button) => {
+    button.addEventListener("click", () => selectValue(button.dataset.pumpCvOption || ""));
+  });
+}
+
+function renderPumpCvSheet(open, currentValue) {
+  const current = String(currentValue || "");
+  return `
+    <div class="pump-cv-sheet-shell ${open ? "is-open" : ""}" data-pump-cv-sheet ${open ? "" : "hidden"}>
+      <div class="pump-cv-sheet-backdrop" data-pump-cv-close></div>
+      <section class="pump-cv-sheet" role="dialog" aria-modal="true" aria-labelledby="pump-cv-sheet-title">
+        <header class="pump-cv-sheet-header">
+          <div>
+            <span class="eyebrow">Pompage solaire</span>
+            <h3 id="pump-cv-sheet-title">Choisir la puissance de la pompe</h3>
+          </div>
+          <button type="button" class="pump-cv-sheet-close" data-pump-cv-close aria-label="Fermer">×</button>
+        </header>
+        <div class="pump-cv-sheet-options" role="radiogroup" aria-label="Puissance de la pompe">
+          ${PUMP_CV_OPTIONS.map((option) => `
+            <button
+              type="button"
+              class="pump-cv-sheet-option ${current === option.value ? "active" : ""}"
+              data-pump-cv-option="${option.value}"
+              role="radio"
+              aria-checked="${current === option.value ? "true" : "false"}"
+            >
+              <span class="pump-cv-option-mark" aria-hidden="true">${current === option.value ? "●" : "○"}</span>
+              <span>${option.label}</span>
+            </button>
+          `).join("")}
+        </div>
+        <button type="button" class="admin-button secondary pump-cv-sheet-close-button" data-pump-cv-close>Fermer</button>
+      </section>
+    </div>
+  `;
 }
 
 function renderField(field, store) {
@@ -787,7 +1212,7 @@ function renderField(field, store) {
         <div class="choice-grid">
           ${field.options.map((option) => `
             <button type="button" class="choice-card ${String(value || field.value || "") === String(option.value) ? "active" : ""}" data-inline-choice="${field.name}" data-inline-value="${option.value}">
-              <span class="choice-state">${String(value || field.value || "") === String(option.value) ? "✓ Sélectionné" : "Option"}</span>
+              ${String(value) === String(option.value) ? `<span class="choice-state" aria-hidden="true">?</span>` : ""}
               <strong>${option.label}</strong>
             </button>
           `).join("")}
@@ -966,7 +1391,7 @@ function renderLoadsStep(step) {
       <div class="load-library">
         <article class="load-summary">
           <h3>Bibliothèque d’appareils</h3>
-          <p class="field-hint">Les puissances proposées sont indicatives et restent modifiables.</p>
+          <p class="field-hint">Ajoutez vos appareils pour préparer l’estimation de votre projet.</p>
           <div class="load-category-grid">
             ${Object.entries(DEVICE_LIBRARY).map(([category, devices]) => `
               <section class="load-card load-category">
@@ -1139,38 +1564,48 @@ function renderRecapStep() {
   body.innerHTML = `
     <section class="wizard-step">
       <span class="eyebrow">${getProjectConfig().icon} ${getProjectConfig().label}</span>
-      <h2>Vérifiez votre projet</h2>
-      <p>Le moteur va maintenant utiliser ces données pour calculer votre solution.</p>
+      <h2>Vérifiez vos informations</h2>
+      <p>Tout est prêt. Vérifiez simplement vos informations avant de continuer.</p>
       <article class="recap-card">
         <div class="recap-header">
           <strong>${getProjectConfig().icon} ${getProjectConfig().label}</strong>
-          <span>${state.contact.location || state.answers.city || "Localisation à confirmer"}</span>
+          ${state.contact.location || state.answers.city ? `<span>${state.contact.location || state.answers.city}</span>` : ""}
         </div>
         <dl class="summary-list">
           ${items.map(([label, value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`).join("")}
         </dl>
       </article>
-      <div class="helper-card">
-        <p class="field-hint">Si une donnée exacte n’est pas encore connue, HeliAntha affichera une estimation indicative et précisera les points à confirmer.</p>
-      </div>
     </section>
   `;
 }
 
 function buildRecapItems(payload) {
   const data = payload.data || {};
-  const items = [
-    ["Projet", getProjectConfig().label],
-    ["Localisation", data.city || state.contact.location || "À confirmer"],
-  ];
-  if (data.daily_kwh) items.push(["Consommation", `${formatNumber(data.daily_kwh)} kWh / jour`]);
-  if (data.monthly_kwh) items.push(["Consommation mensuelle", `${formatNumber(data.monthly_kwh)} kWh / mois`]);
-  if (data.peak_kw) items.push(["Puissance simultanée", `${formatNumber(data.peak_kw)} kW`]);
-  if (data.autonomy) items.push(["Autonomie", `${formatNumber(data.autonomy)} jour(s)`]);
-  if (data.water_need) items.push(["Besoin en eau", `${formatNumber(data.water_need)} m³ / jour`]);
-  if (data.available_power) items.push(["Puissance disponible", `${formatNumber(data.available_power)} kW`]);
+  const existingPumpMode = state.project === "pumping" && String(data.has_existing_pump || state.answers.has_existing_pump || "") === "yes";
+  const items = existingPumpMode
+    ? [
+        ["Projet", getProjectConfig().label],
+        ["Situation", "Pompe déjà installée"],
+        ["Puissance de la pompe", `${String(data.existing_pump_cv || state.answers.existing_pump_cv || "").replace(".", ",")} CV`],
+      ]
+    : [["Projet", getProjectConfig().label]];
+
+  if (!existingPumpMode && (data.city || state.contact.location)) {
+    items.push(["Localisation", data.city || state.contact.location]);
+  }
+  if (!existingPumpMode) {
+    if (data.daily_kwh) items.push(["Consommation", `${formatNumber(data.daily_kwh)} kWh / jour`]);
+    if (data.monthly_kwh) items.push(["Consommation mensuelle", `${formatNumber(data.monthly_kwh)} kWh / mois`]);
+    if (data.peak_kw) items.push(["Puissance simultanée", `${formatNumber(data.peak_kw)} kW`]);
+    if (data.autonomy) items.push(["Autonomie", `${formatNumber(data.autonomy)} jour(s)`]);
+    if (data.water_need) items.push(["Besoin en eau", `${formatNumber(data.water_need)} m² / jour`]);
+    if (data.available_power) items.push(["Puissance disponible", `${formatNumber(data.available_power)} kW`]);
+  }
   if (state.contact.name) items.push(["Contact", state.contact.name]);
   if (state.contact.phone) items.push(["Téléphone", state.contact.phone]);
+  if (state.contact.email) items.push(["E-mail", state.contact.email]);
+  if (state.contact.location) items.push(["Localisation", state.contact.location]);
+  if (state.contact.comment) items.push(["Commentaire", state.contact.comment]);
   return items;
 }
 
@@ -1241,6 +1676,14 @@ async function onSubmitWizard(event) {
   if (current.type === "choice-step") {
     if (!state.answers[current.name]) {
       state.answers[current.name] = current.defaultValue;
+    }
+  }
+
+  if (current.type === "pump-cv-picker") {
+    syncCurrentInputs();
+    if (!state.answers.existing_pump_cv) {
+      toast("Choisissez la puissance de votre pompe.");
+      return;
     }
   }
 
@@ -1321,13 +1764,15 @@ function validateCurrentStep(step) {
 }
 
 function buildApiPayload() {
-  const data = { ...state.answers };
+  const project = normalizeProjectKey(state.project);
+  const projectMeta = getProjectMeta(project);
+  const data = pruneProjectAnswers(project, state.answers);
   const totals = computeLoads();
 
   if (state.answers.energy_mode === "loads") {
     data.daily_kwh = roundTo(totals.daily_kwh, 2);
     data.peak_kw = roundTo(totals.peak_kw, 2);
-    if (state.project === "hybrid" && totals.priority_kwh > 0) {
+    if (project === "hybrid" && totals.priority_kwh > 0) {
       data.priority_kwh = roundTo(totals.priority_kwh, 2);
     }
   }
@@ -1335,12 +1780,13 @@ function buildApiPayload() {
   if (!data.city && state.contact.location) {
     data.city = state.contact.location;
   }
-  if (state.loads.length) {
+  if (projectUsesLoadLibrary(project, state.answers) && state.loads.length) {
     data.loads = state.loads;
   }
 
   return {
-    project: state.project,
+    project: projectMeta?.engine_project || project,
+    project_type: project,
     data,
     contact: { ...state.contact },
   };
@@ -1387,7 +1833,7 @@ function renderAnalysisStep() {
     <section class="wizard-step">
       <span class="eyebrow">Analyse en cours</span>
       <h2>Analyse de votre projet</h2>
-      <p>Le moteur réel travaille à partir de vos données. Nous ne créons pas de chiffres fictifs côté interface.</p>
+      <p>HeliAntha prépare votre estimation à partir des informations saisies.</p>
       <div class="analysis-grid">
         ${analysisSteps.map((item, index) => `
           <article class="analysis-card ${index === 0 ? "active" : ""}" data-analysis-index="${index}">
@@ -1474,7 +1920,6 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
 }
-
 function toast(message) {
   const element = document.querySelector("#toast");
   element.textContent = message;

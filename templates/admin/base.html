@@ -27,6 +27,7 @@
       <a class="admin-nav-link{% if request.endpoint == 'main.admin_quotes' %} active{% endif %}" href="{{ url_for('main.admin_quotes') }}">Devis</a>
       <a class="admin-nav-link{% if request.endpoint == 'main.admin_catalog' %} active{% endif %}" href="{{ url_for('main.admin_catalog') }}">Catalogue</a>
       <a class="admin-nav-link{% if request.endpoint == 'main.admin_calculation_parameters' %} active{% endif %}" href="{{ url_for('main.admin_calculation_parameters') }}">Paramètres de calcul</a>
+      <a class="admin-nav-link{% if request.endpoint == 'main.admin_pumping_rules' %} active{% endif %}" href="{{ url_for('main.admin_pumping_rules') }}">Règles Pompage solaire</a>
       <a class="admin-nav-link{% if request.endpoint == 'main.admin_pricing' %} active{% endif %}" href="{{ url_for('main.admin_pricing') }}">Tarification</a>
       <a class="admin-nav-link{% if request.endpoint == 'main.admin_advisor' %} active{% endif %}" href="{{ url_for('main.admin_advisor') }}">Conseiller</a>
       <a class="admin-nav-link{% if request.endpoint == 'main.admin_users' %} active{% endif %}" href="{{ url_for('main.admin_users') }}">Utilisateurs</a>

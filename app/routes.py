@@ -34,6 +34,7 @@ from .db import (
     list_calculation_parameter_history,
     list_company_settings,
     list_pricing_rules,
+    list_pumping_solar_rules,
     list_products,
     list_quotes,
     list_users,
@@ -51,16 +52,19 @@ from .db import (
     save_quote,
     save_quote_client_event,
     save_visit_request,
+    create_pumping_solar_rule,
     delete_user,
     set_product_active,
     update_calculation_parameter,
     update_company_setting,
     update_advisor_unknown_status,
     update_pricing_rule,
+    update_pumping_solar_rule,
     update_quote_selected_offer,
     update_quote_status,
 )
 from .defaults import CATEGORY_PRESENTATION, PROJECT_LABELS, PUBLIC_PROJECTS, QUOTE_STATUSES, SOURCE_TYPES
+from .pumping_rules import PUMPING_RULE_SECTIONS, group_rules, normalize_pump_cv, parse_number
 from .parameter_views import (
     SOURCE_OPTIONS,
     filter_and_group_parameters,
@@ -74,6 +78,7 @@ from .services.advisor.intents import detect_intents
 from .services.advisor.knowledge import search_knowledge
 from .services.advisor.learning import similar_occurrence_count
 from .services.advisor.rules import contains_any, detect_project, normalize
+from .wizard_projects import engine_project_for, normalize_wizard_project, wizard_projects_payload
 
 
 bp = Blueprint("main", __name__)
@@ -92,25 +97,19 @@ CATALOG_STOCK_OPTIONS = [
     {"value": "available", "label": "Stock disponible"},
     {"value": "empty", "label": "Stock a confirmer / nul"},
 ]
-PWA_CACHE_NAME = "heliantha-pwa-v2"
+PWA_CACHE_NAME = "heliantha-pwa-v3"
 PWA_CORE_PATHS = [
     "/",
     "/assets/helin.jpeg",
     "/static/css/app.css",
     "/static/css/admin.css",
-    "/static/js/app.js",
+    "/static/js/app.js?v=20260829-1",
     "/static/js/public-result.js",
     "/static/js/advisor.js",
     "/static/js/pwa.js?v=20260828-2",
 ]
 
 PRICING_RULE_PRESENTATION = {
-    "margin_rate": {
-        "title": "Marge commerciale",
-        "group": "Prix de vente",
-        "icon": "💼",
-        "help": "Part ajoutée pour couvrir la marge HeliAntha.",
-    },
     "vat_rate": {
         "title": "TVA",
         "group": "Prix de vente",
@@ -159,33 +158,10 @@ PRICING_RULE_PRESENTATION = {
         "icon": "✅",
         "help": "Contrôle et démarrage de l’installation.",
     },
-    "study_fee": {
-        "title": "Frais d’étude",
-        "group": "Services",
-        "icon": "📋",
-        "help": "Montant ajouté si l’étude doit être facturée.",
-    },
-    "travel_fixed": {
-        "title": "Déplacement minimum",
-        "group": "Déplacement",
-        "icon": "🚗",
-        "help": "Frais minimum de déplacement.",
-    },
-    "travel_cost_per_km": {
-        "title": "Prix par kilomètre",
-        "group": "Déplacement",
-        "icon": "📍",
-        "help": "Coût ajouté selon la distance du projet.",
-    },
-    "other_costs": {
-        "title": "Autres frais",
-        "group": "Autres",
-        "icon": "➕",
-        "help": "Ligne de secours pour un coût fixe supplémentaire.",
-    },
 }
 
-PRICING_GROUP_ORDER = ["Prix de vente", "Compléments techniques", "Services", "Déplacement", "Autres"]
+PRICING_GROUP_ORDER = ["Prix de vente", "Compléments techniques", "Services", "Autres"]
+PRICING_RULES_HIDDEN = {"travel_fixed", "travel_cost_per_km", "margin_rate", "study_fee", "other_costs"}
 
 ADVISOR_STATUS_LABELS = {
     "new": "À vérifier",
@@ -270,9 +246,7 @@ def _financial_summary_rows(financial_breakdown: dict) -> list[dict]:
     return [
         {"label": "Matériel principal", "amount": total("principal_equipment")},
         {"label": "Compléments techniques", "amount": total("accessories", "protections", "cabling", "structure")},
-        {"label": "Services et frais", "amount": total("installation", "labor", "travel", "other_costs")},
-        {"label": "Sous-total avant marge", "amount": float(financial_breakdown.get("subtotal_before_margin") or 0), "emphasis": True},
-        {"label": "Marge commerciale", "amount": float(financial_breakdown.get("commercial_margin") or 0)},
+        {"label": "Services", "amount": total("installation", "labor")},
         {"label": "Total HT", "amount": float(financial_breakdown.get("total_ht") or 0), "emphasis": True},
         {"label": "TVA", "amount": float(financial_breakdown.get("vat") or 0)},
         {"label": "Net à payer", "amount": float(financial_breakdown.get("total_ttc") or 0), "emphasis": True},
@@ -456,6 +430,7 @@ def index():
         company=company,
         public_projects=PUBLIC_PROJECTS,
         project_labels=PROJECT_LABELS,
+        wizard_projects=wizard_projects_payload(),
     )
 
 
@@ -615,22 +590,26 @@ def advisor_calculate():
 @bp.post("/api/calculate")
 def calculate():
     payload = request.get_json(silent=True) or {}
-    project = str(payload.get("project", ""))
-    if project == "iot":
+    project = normalize_wizard_project(payload.get("project_type") or payload.get("project") or "")
+    if not project:
+        return jsonify(error="Projet non reconnu."), 400
+    engine_project = engine_project_for(project)
+    if engine_project == "iot":
         return jsonify(error="IoT / systèmes embarqués est temporairement hors périmètre de cette version."), 400
     data = payload.get("data") or {}
     contact = payload.get("contact") or {}
     try:
-        result = engine.calculate(project, data, context=load_calculation_context())
+        result = engine.calculate(engine_project, data, context=load_calculation_context())
     except ValidationError as exc:
         return jsonify(error=str(exc)), 400
     except Exception:
-        current_app.logger.exception("HeliAntha calculate failed for project=%s", project)
+        current_app.logger.exception("HeliAntha calculate failed for project=%s", engine_project)
         return jsonify(error="Nous n'avons pas pu terminer l'étude. Vérifiez vos informations ou réessayez."), 500
 
     result["quote_number"] = f"HSQ-{datetime.now():%Y%m%d}-{randint(1000, 9999)}"
     result["created_at"] = datetime.now().strftime("%d/%m/%Y à %H:%M")
-    save_quote(result["quote_number"], project, data, contact, result)
+    result["project_type"] = project
+    save_quote(result["quote_number"], engine_project, data, contact, result)
     result["public_url"] = url_for("main.public_quote", quote_number=result["quote_number"])
     return jsonify(result)
 
@@ -851,7 +830,7 @@ def admin_catalog_new():
             return redirect(url_for("main.admin_catalog", saved=product.get("reference")))
     return render_template(
         "admin/catalog_form.html",
-        product=product,
+        product=_catalog_form_view_product(product),
         errors=errors,
         category_options=category_options(),
         technical_fields=technical_fields_by_category(),
@@ -874,7 +853,7 @@ def admin_catalog_edit(product_id):
             return redirect(url_for("main.admin_catalog", saved=product.get("reference")))
     return render_template(
         "admin/catalog_form.html",
-        product=product,
+        product=_catalog_form_view_product(product),
         errors=errors,
         category_options=category_options(),
         technical_fields=technical_fields_by_category(),
@@ -925,19 +904,24 @@ def admin_calculation_parameters():
             updated=param_id,
         ))
 
-    parameters = list_calculation_parameters(admin_visible_only=True)
+    parameters = [
+        param
+        for param in list_calculation_parameters(admin_visible_only=True)
+        if param.get("category") != "Pompage"
+    ]
     groups = filter_and_group_parameters(
         parameters,
         search=request.args.get("q", ""),
         category=request.args.get("category", ""),
     )
+    categories = {key: value for key, value in CATEGORY_PRESENTATION.items() if key != "Pompage"}
     history = _format_parameter_history(list_calculation_parameter_history())
     return render_template(
         "admin/calculation_parameters.html",
         groups=groups,
         parameters=parameters,
         filters=request.args,
-        categories=CATEGORY_PRESENTATION,
+        categories=categories,
         source_options=SOURCE_OPTIONS,
         source_types=SOURCE_TYPES,
         history=history,
@@ -956,6 +940,69 @@ def admin_pricing():
             update_pricing_rule(rule["id"], parsed_value, active)
         return redirect(url_for("main.admin_pricing"))
     return render_template("admin/pricing.html", pricing_groups=_decorate_pricing_rules(list_pricing_rules()))
+
+
+@bp.route("/admin/regles-pompage", methods=["GET", "POST"])
+def admin_pumping_rules():
+    admin_name = session.get("admin_user", "HeliAntha")
+    saved = False
+
+    if request.method == "POST":
+        action = request.form.get("action", "").strip()
+        rule_type = request.form.get("rule_type", "").strip()
+        section = _pumping_rule_section(rule_type)
+        if not section:
+            abort(400)
+
+        rules = list_pumping_solar_rules()
+        rule_id = request.form.get("rule_id", type=int)
+        current = next((row for row in rules if int(row.get("id") or 0) == int(rule_id or 0)), None) if rule_id else None
+        payload = _pumping_rule_payload(rule_type, request.form, current)
+
+        if action == "add_rule":
+            if not section.get("addable"):
+                abort(400)
+            if rule_type == "pump_configuration":
+                target_cv = normalize_pump_cv(payload.get("pump_cv"))
+                if not target_cv:
+                    abort(400)
+                existing = next(
+                    (
+                        row
+                        for row in rules
+                        if str(row.get("rule_type") or "") == "pump_configuration"
+                        and abs(normalize_pump_cv(row.get("pump_cv")) - target_cv) <= 0.05
+                    ),
+                    None,
+                )
+                if existing:
+                    update_pumping_solar_rule(existing["id"], payload, changed_by=admin_name)
+                else:
+                    payload["rule_key"] = f"pump_configuration_{str(target_cv).replace('.', '_')}_{uuid4().hex[:6]}"
+                    payload["title"] = (payload.get("title") or f"{str(target_cv).replace('.', ',')} CV").strip()
+                    payload["sort_order"] = max(
+                        [int(row.get("sort_order") or 0) for row in rules if str(row.get("rule_type") or "") == "pump_configuration"] or [0]
+                    ) + 10
+                    create_pumping_solar_rule(payload, changed_by=admin_name)
+            else:
+                abort(400)
+            saved = True
+        elif action == "save_rule" and current:
+            update_pumping_solar_rule(current["id"], payload, changed_by=admin_name)
+            saved = True
+        else:
+            abort(400)
+
+        if saved:
+            return redirect(url_for("main.admin_pumping_rules", saved=1))
+
+    sections = group_rules(list_pumping_solar_rules())
+    return render_template(
+        "admin/pumping_rules.html",
+        sections=sections,
+        section_definitions=PUMPING_RULE_SECTIONS,
+        saved=bool(request.args.get("saved")),
+    )
 
 
 @bp.get("/admin/referentiel-technique")
@@ -1145,30 +1192,12 @@ def _catalog_form_defaults():
     return {
         "reference": "",
         "category": "",
-        "subcategory": "",
         "brand": "",
         "model": "",
-        "description": "",
-        "power_kw": "",
-        "power_w": "",
-        "voltage": "",
-        "current_amp": "",
-        "capacity_kwh": "",
-        "capacity_l": "",
-        "efficiency": "",
-        "technology": "",
-        "purchase_price": "",
         "sale_price": "",
-        "supplier": "",
         "stock": 0,
-        "unit": "piece",
-        "warranty": "",
         "vat_rate": 0.20,
         "currency": "DH",
-        "datasheet_url": "",
-        "priority": 0,
-        "preferred": 0,
-        "demo": 1,
         "active": 1,
         "technical_specs": {},
     }
@@ -1176,36 +1205,20 @@ def _catalog_form_defaults():
 
 def _product_from_form(form, existing_product=None):
     product = _catalog_form_defaults()
+    if existing_product:
+        product.update(dict(existing_product))
     product.update({
         "reference": form.get("reference", "").strip(),
         "category": form.get("category", "").strip(),
-        "subcategory": form.get("subcategory", "").strip(),
         "brand": form.get("brand", "").strip(),
         "model": form.get("model", "").strip(),
-        "description": form.get("description", "").strip(),
-        "power_kw": form.get("power_kw", "").strip(),
-        "power_w": form.get("power_w", "").strip(),
-        "voltage": form.get("voltage", "").strip(),
-        "current_amp": form.get("current_amp", "").strip(),
-        "capacity_kwh": form.get("capacity_kwh", "").strip(),
-        "capacity_l": form.get("capacity_l", "").strip(),
-        "efficiency": form.get("efficiency", "").strip(),
-        "technology": form.get("technology", "").strip(),
-        "purchase_price": form.get("purchase_price", "").strip(),
         "sale_price": form.get("sale_price", "").strip(),
-        "supplier": form.get("supplier", "").strip(),
         "stock": form.get("stock", "").strip(),
-        "unit": form.get("unit", "piece").strip(),
-        "warranty": form.get("warranty", "").strip(),
         "vat_rate": form.get("vat_rate", "").strip(),
         "currency": form.get("currency", "DH").strip(),
-        "datasheet_url": form.get("datasheet_url", "").strip(),
-        "priority": form.get("priority", "").strip(),
-        "preferred": 1 if form.get("preferred") == "on" else 0,
-        "demo": 1 if form.get("demo") == "on" else 0,
         "active": 1 if form.get("active") == "on" else 0,
     })
-    technical_specs = dict((existing_product or {}).get("technical_specs") or {})
+    technical_specs = {}
     for fields in technical_fields_by_category().values():
         for field in fields:
             form_key = f"spec_{field['key']}"
@@ -1220,6 +1233,23 @@ def _product_from_form(form, existing_product=None):
     return product
 
 
+def _catalog_form_view_product(product: dict | None) -> dict:
+    view = dict(product or {})
+    specs = dict(view.get("technical_specs") or {})
+    for key in ("power_w", "power_kw", "capacity_kwh", "capacity_l", "voltage", "current_amp"):
+        if view.get(key) not in (None, "") and key not in specs:
+            specs[key] = view.get(key)
+    if view.get("category") == "pumps" and "power_hp" not in specs:
+        power_kw = view.get("power_kw")
+        try:
+            if power_kw not in (None, ""):
+                specs["power_hp"] = round(float(power_kw) / 0.7355, 1)
+        except (TypeError, ValueError):
+            pass
+    view["form_specs"] = specs
+    return view
+
+
 def _float_or_none(value):
     if value in (None, ""):
         return None
@@ -1229,11 +1259,64 @@ def _float_or_none(value):
         return None
 
 
+def _pumping_rule_section(rule_type: str) -> dict | None:
+    for section in PUMPING_RULE_SECTIONS:
+        if section["key"] == rule_type:
+            return section
+    return None
+
+
+def _pumping_rule_payload(rule_type: str, form, current: dict | None = None) -> dict[str, object]:
+    section = _pumping_rule_section(rule_type)
+    if not section:
+        return {}
+    payload: dict[str, object] = {}
+    current = current or {}
+
+    for field in section.get("fields") or []:
+        key = field["key"]
+        raw = (form.get(f"field_{key}") or "").strip()
+        kind = field.get("kind")
+        if kind == "number":
+            value = parse_number(raw, None)
+            if value is None and current.get(key) not in (None, ""):
+                value = current.get(key)
+            if value is not None and key in {"panel_count", "sort_order"}:
+                value = int(round(float(value)))
+            if value is not None and key == "pump_cv":
+                value = normalize_pump_cv(value)
+            if value is not None and key == "vat_rate" and float(value) > 1:
+                value = float(value) / 100
+            payload[key] = value
+        elif kind == "select":
+            payload[key] = raw or current.get(key) or ""
+        else:
+            payload[key] = raw or current.get(key) or ""
+
+    if "title" in form or current.get("title"):
+        payload["title"] = (form.get("title") or current.get("title") or "").strip()
+    if "rule_key" in form or current.get("rule_key"):
+        payload["rule_key"] = (form.get("rule_key") or current.get("rule_key") or "").strip()
+    if "notes" in form or current.get("notes"):
+        payload["notes"] = (form.get("notes") or current.get("notes") or "").strip()
+    if "active" in form:
+        payload["active"] = 1 if form.get("active") == "on" else 0
+    elif current.get("active") is not None:
+        payload["active"] = 1 if int(current.get("active") or 0) == 1 else 0
+    if "sort_order" not in payload and current.get("sort_order") is not None:
+        payload["sort_order"] = current.get("sort_order")
+    payload["source_type"] = "heliantha"
+    payload["source_name"] = "HeliAntha"
+    return payload
+
+
 def _decorate_pricing_rules(rules):
     grouped = {group: [] for group in PRICING_GROUP_ORDER}
     grouped["Autres"] = grouped.get("Autres", [])
     for rule in rules:
         item = dict(rule)
+        if item.get("key") in PRICING_RULES_HIDDEN:
+            continue
         presentation = PRICING_RULE_PRESENTATION.get(item.get("key"), {})
         value = float(item.get("value") or 0)
         is_ratio = item.get("unit") == "ratio"

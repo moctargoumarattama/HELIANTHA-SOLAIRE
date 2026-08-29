@@ -124,14 +124,14 @@
         </div>
 
         <div class="project-grid project-grid-short">
-          <button class="project-card" data-project="pumping">
+          <button class="project-card" type="button" data-project="pumping">
             <span class="project-icon">💧</span>
             <strong>Pompage solaire</strong>
             <p>Forage, irrigation, eau.</p>
             <span class="project-action">Estimer mon pompage</span>
           </button>
 
-          <button class="project-card" data-project="offgrid">
+          <button class="project-card" type="button" data-project="off_grid">
             <span class="project-icon">🏠</span>
             <strong>Site sans réseau</strong>
             <small>Off-Grid</small>
@@ -139,7 +139,7 @@
             <span class="project-action">Estimer mon installation</span>
           </button>
 
-          <button class="project-card" data-project="ongrid">
+          <button class="project-card" type="button" data-project="photovoltaic">
             <span class="project-icon">☀️</span>
             <strong>Réduire ma consommation</strong>
             <small>Photovoltaïque</small>
@@ -147,7 +147,7 @@
             <span class="project-action">Estimer mes économies</span>
           </button>
 
-          <button class="project-card" data-project="hybrid">
+          <button class="project-card" type="button" data-project="hybrid">
             <span class="project-icon">🔋</span>
             <strong>Solaire avec batteries</strong>
             <small>Hybride</small>
@@ -155,14 +155,14 @@
             <span class="project-action">Estimer mon installation</span>
           </button>
 
-          <button class="project-card" data-project="thermal">
+          <button class="project-card" type="button" data-project="thermal">
             <span class="project-icon">♨️</span>
             <strong>Chauffage solaire</strong>
             <p>Eau chaude solaire.</p>
             <span class="project-action">Estimer mon besoin</span>
           </button>
 
-          <button class="project-card" data-project="ev">
+          <button class="project-card" type="button" data-project="ev_charging">
             <span class="project-icon">🚗</span>
             <strong>Recharge électrique</strong>
             <p>Une borne adaptée à votre véhicule.</p>
@@ -308,7 +308,6 @@
 
           <footer class="wizard-footer">
             <button type="button" class="button button-ghost" id="back-button">Retour</button>
-            <div class="wizard-footer-note">Vos réponses restent associées à cette simulation uniquement.</div>
             <button type="submit" class="button button-primary" id="next-button">Continuer</button>
           </footer>
         </form>
@@ -320,8 +319,9 @@
 
   <script>
     window.HELIANTHA_COMPANY = {{ company|tojson }};
+    window.HELIANTHA_WIZARD_PROJECTS = {{ wizard_projects|tojson }};
   </script>
-  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}?v=20260829-1"></script>
   <script src="{{ url_for('static', filename='js/advisor.js') }}"></script>
   <script src="{{ url_for('static', filename='js/pwa.js') }}?v=20260828-2"></script>
 </body>

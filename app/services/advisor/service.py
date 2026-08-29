@@ -324,8 +324,23 @@ class AdvisorService:
                 self._question_actions("city", state),
             )
         if question_id == "pump_existing":
-            next_item = question_by_id(state.get("project_type"), "depth") or {"id": "depth", "text": "Quelle est la profondeur du forage ?"}
-            return self._ask_question(session_key, state, next_item, prefix="Ce n'est pas bloquant.")
+            next_item = question_by_id(state.get("project_type"), "existing_pump_cv") or {"id": "existing_pump_cv", "text": "Quelle est la puissance de votre pompe en CV ?"}
+            return self._ask_question(
+                session_key,
+                state,
+                next_item,
+                prefix="Ce n'est pas bloquant.",
+                actions=self._question_actions("existing_pump_cv", state),
+            )
+        if question_id == "existing_pump_cv":
+            next_item = question_by_id(state.get("project_type"), "existing_pump_cv") or {"id": "existing_pump_cv", "text": "Quelle est la puissance de votre pompe en CV ?"}
+            return self._ask_question(
+                session_key,
+                state,
+                next_item,
+                prefix="Merci. Choisissez simplement la puissance.",
+                actions=self._question_actions("existing_pump_cv", state),
+            )
         question = question_by_id(state.get("project_type"), question_id)
         text = "Pas de probleme. Donnez-moi une estimation simple."
         if question:
@@ -346,6 +361,8 @@ class AdvisorService:
         question_id = state.get("last_question_id")
         if question_id == "pump_existing":
             return "Je veux etre sur de bien comprendre. Avez-vous deja une pompe sur place ?"
+        if question_id == "existing_pump_cv":
+            return "Je veux juste la puissance de la pompe en CV."
         if question_id == "network_existing":
             return "Je veux etre sur de bien vous orienter. Le site a-t-il deja le reseau electrique ?"
         if state.get("project_type") == "pumping":
@@ -360,6 +377,19 @@ class AdvisorService:
                 {"label": "Oui", "action": "say:oui"},
                 {"label": "Non", "action": "say:non"},
                 {"label": "Je ne sais pas", "action": "say:je ne sais pas"},
+            ]
+        if question_id == "existing_pump_cv":
+            return [
+                {"label": "2 CV", "action": "say:2 cv"},
+                {"label": "3 CV", "action": "say:3 cv"},
+                {"label": "5,5 CV", "action": "say:5,5 cv"},
+                {"label": "7,5 CV", "action": "say:7,5 cv"},
+                {"label": "10 CV", "action": "say:10 cv"},
+                {"label": "15 CV", "action": "say:15 cv"},
+                {"label": "20 CV", "action": "say:20 cv"},
+                {"label": "30 CV", "action": "say:30 cv"},
+                {"label": "40 CV", "action": "say:40 cv"},
+                {"label": "50 CV", "action": "say:50 cv"},
             ]
         if question_id in {"monthly_kwh", "daily_kwh"}:
             return [
@@ -421,6 +451,8 @@ class AdvisorService:
             return ""
         if "city" in updates:
             return f"J'ai note {updates['city']}."
+        if "existing_pump_cv" in updates:
+            return f"J'ai note la pompe de {updates['existing_pump_cv']:.1f} CV."
         if "pump_power" in updates:
             return f"J'ai note la pompe de {updates['pump_power']:.0f} kW."
         if "bill" in updates:
@@ -538,7 +570,9 @@ class AdvisorService:
             parts.append(f"Puissance : {float(final['pv_power_kwp']):.2f} kWp")
         if final.get("panels"):
             parts.append(f"Panneaux : {int(final['panels'])}")
-        if final.get("pump_power_kw"):
+        if final.get("pump_power_cv"):
+            parts.append(f"Pompe : {float(final['pump_power_cv']):.1f} CV")
+        elif final.get("pump_power_kw"):
             parts.append(f"Pompe : {float(final['pump_power_kw']):.1f} kW")
         if final.get("charger_power_kw"):
             parts.append(f"Borne : {float(final['charger_power_kw']):.1f} kW")

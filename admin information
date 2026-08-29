@@ -165,59 +165,12 @@ Même logique éventuellement pour la température d’eau froide en solaire the
 
 ---
 
-### Donc ta page devrait être beaucoup plus légère
-
-Je viserais quelque chose comme :
-
-```text
-🧮 PARAMÈTRES DE CALCUL
-
-☀️ PHOTOVOLTAÏQUE
-• Marge de dimensionnement         15 %
-• Pertes estimées                  15 %
-• Performance globale              80 %
-• Ensoleillement de secours       5,4 h/j
-
-🔋 BATTERIES
-• Autonomie par défaut              1 jour
-• Part utilisable                  80 %
-• Rendement par défaut             93 %
-• Marge capacité                   10 %
-
-⚡ ONDULEURS
-• Rendement par défaut             96 %
-• Marge de puissance              +25 %
-
-💧 POMPAGE
-• Rendement pompe par défaut       48 %
-• Rendement variateur              95 %
-• Pertes hydrauliques              10 %
-• Marge de sécurité                20 %
-
-🚗 BORNES EV
-• Rendement recharge               90 %
-• Marge de sécurité                10 %
-
-♨️ THERMIQUE
-• Eau chaude/personne              50 L/j
-• Pertes thermiques                20 %
-• Température cible                55 °C
-• Température entrée               15 °C
-```
-
-Et **plus de gravité, densité de l’eau, etc. dans cette page**.
-
-Le principe devient très simple :
-
-**🔒 Constante scientifique → code uniquement**
-**⚙️ Règle choisie par HeliAntha → Paramètres de calcul**
-**📦 Caractéristique d’un matériel → Catalogue**
-**📍 Valeur dépendant du lieu → données de localisation**
-
-C’est cette séparation que je conseillerais. Elle rendra l’administration beaucoup plus propre et évitera que quelqu’un transforme accidentellement la gravité terrestre en `4,5 m/s²` et dimensionne une pompe pour la Lune. 😄
 
 
 
 
 direction@heliantha.ma
 heliatha2026
+
+
+nettoyage en prod de defaut.py pour enlever les donner de teste 
