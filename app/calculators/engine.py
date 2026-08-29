@@ -32,7 +32,7 @@ from app.pumping_rules import (
 )
 from app.parameter_views import format_display_value
 from app.services import BOMBuilder, CompatibilityChecker, PricingEngine as ServicePricingEngine, ProductSelector
-from app.services.compatibility import as_float
+from app.services.compatibility import as_float, normalize_text, spec_value
 
 
 PSH_BY_CITY = {
@@ -554,8 +554,11 @@ class CalculationEngine:
             target = float(field_value or 0)
             if target <= 0:
                 return None
+            candidates: list[dict[str, Any]] = []
             for product in cfg.products:
                 if product.get("category") != category:
+                    continue
+                if int(product.get("active", 1) or 0) != 1:
                     continue
                 if brand and str(product.get("brand") or "").strip().lower() != str(brand).strip().lower():
                     continue
@@ -566,8 +569,50 @@ class CalculationEngine:
                 except (TypeError, ValueError):
                     continue
                 if abs(product_value - target) <= 0.05:
-                    return deepcopy(product)
-            return None
+                    candidates.append(deepcopy(product))
+            if not candidates:
+                return None
+            candidates.sort(key=lambda product: (
+                bool(product.get("demo")),
+                not bool(product.get("preferred")),
+                -int(product.get("priority") or 0),
+                float(product.get("sale_price") or 0),
+                str(product.get("reference") or ""),
+            ))
+            return candidates[0]
+
+        def find_exact_drive_product(drive_power_kw: float, *, brand: str, phase: str) -> dict[str, Any] | None:
+            target = float(drive_power_kw or 0)
+            if target <= 0:
+                return None
+            phase_token = str(phase or "").strip().lower()
+            brand_token = normalize_text(brand)
+            candidates: list[dict[str, Any]] = []
+            for product in cfg.products:
+                if product.get("category") != "drives":
+                    continue
+                if int(product.get("active", 1) or 0) != 1:
+                    continue
+                if brand_token and normalize_text(product.get("brand")) != brand_token:
+                    continue
+                product_phase = normalize_text(spec_value(product, "phases", "phase"))
+                if phase_token and product_phase != phase_token:
+                    continue
+                product_power = as_float(spec_value(product, "power_kw", "rated_power_kw"))
+                if product_power is None:
+                    continue
+                if abs(product_power - target) <= 0.05:
+                    candidates.append(deepcopy(product))
+            if not candidates:
+                return None
+            candidates.sort(key=lambda product: (
+                bool(product.get("demo")),
+                not bool(product.get("preferred")),
+                -int(product.get("priority") or 0),
+                float(product.get("sale_price") or 0),
+                str(product.get("reference") or ""),
+            ))
+            return candidates[0]
 
         def build_rule_selection(
             component: str,
@@ -587,6 +632,7 @@ class CalculationEngine:
             technical_specs: dict[str, Any] | None = None,
             price_status: str | None = None,
             source_type: str = "heliantha",
+            selected_product: dict[str, Any] | None = None,
         ) -> dict[str, Any]:
             return self._manual_rule_selection(
                 component,
@@ -608,6 +654,7 @@ class CalculationEngine:
                 status="compatible",
                 selection_score=100,
                 reasons=[description],
+                selected_product=selected_product,
             )
 
         if project == "ongrid":
@@ -798,45 +845,28 @@ class CalculationEngine:
                 other_vat_rate = float(final.get("rule_other_vat_rate") or 0.20)
 
                 exact_panel = find_exact_catalog_product("panels", "power_w", panel_power_w)
-                if exact_panel:
-                    panel_unit_price = float(exact_panel.get("sale_price") or 0)
-                    panel_reference = exact_panel.get("reference") or pump_rule_key
-                    panel_brand = exact_panel.get("brand") or "HeliAntha Select"
-                    panel_model = exact_panel.get("model") or f"{panel_power_w:.0f} Wc"
-                    panel_description = exact_panel.get("description") or "Panneau photovoltaique catalogue."
-                    panel_source_type = "catalog"
-                    panel_source_name = f"{panel_brand} {panel_model}".strip()
-                    panel_source_reference = exact_panel.get("reference") or pump_rule_key
-                    panel_technical_specs = deepcopy(exact_panel.get("technical_specs") or {})
-                    panel_price_status = "catalog_price"
-                else:
-                    panel_unit_price = float(final.get("panel_sale_price_ht") or 0)
-                    panel_reference = str(final.get("panel_reference") or f"PV-{int(round(panel_power_w))}-RULE")
-                    panel_brand = "HeliAntha Select"
-                    panel_model = f"{panel_power_w:.0f} Wc"
-                    panel_description = "Panneau photovoltaique de la configuration HeliAntha."
-                    panel_source_type = str(final.get("pumping_rule_source_type") or "heliantha")
-                    panel_source_name = str(final.get("pumping_rule_source_name") or "HeliAntha")
-                    panel_source_reference = pump_rule_key
-                    panel_technical_specs = {"power_w": panel_power_w, "rule_key": pump_rule_key}
-                    panel_price_status = "rule_price" if panel_unit_price > 0 else "to_confirm"
+                if not exact_panel:
+                    raise ValidationError("Produit catalogue exact introuvable")
+                panel_unit_price = float(exact_panel.get("sale_price") or 0)
+                panel_price_status = "catalog_price"
                 panel_selection = build_rule_selection(
                     "panel",
                     category="panels",
                     quantity=panels,
                     unit_price_ht=panel_unit_price,
-                    reference=panel_reference,
-                    brand=panel_brand,
-                    model=panel_model,
-                    description=panel_description,
+                    reference=str(exact_panel.get("reference") or pump_rule_key),
+                    brand=str(exact_panel.get("brand") or ""),
+                    model=str(exact_panel.get("model") or ""),
+                    description=str(exact_panel.get("description") or "Panneau photovoltaique catalogue."),
                     role="Panneau photovoltaïque",
                     financial_category="principal_equipment",
                     vat_rate=panel_vat_rate,
-                    source_reference=panel_source_reference,
-                    source_name=panel_source_name,
-                    technical_specs=panel_technical_specs,
+                    source_reference=str(exact_panel.get("reference") or pump_rule_key),
+                    source_name=" ".join(part for part in (str(exact_panel.get("brand") or "").strip(), str(exact_panel.get("model") or "").strip()) if part).strip(),
+                    technical_specs=deepcopy(exact_panel.get("technical_specs") or {}),
                     price_status=panel_price_status,
-                    source_type=panel_source_type,
+                    source_type="catalog",
+                    selected_product=exact_panel,
                 )
                 selections["panel"] = panel_selection
                 panel_product = panel_selection.get("selected_product")
@@ -866,26 +896,28 @@ class CalculationEngine:
                     role="Règle HeliAntha",
                 )
 
-                drive_rule = cfg.pumping_rule("drive_pricing", drive_power_kw=drive_power_kw, phase=phase, drive_brand=drive_brand) or cfg.pumping_rule("drive_pricing", drive_power_kw=drive_power_kw)
-                drive_unit_price = float((drive_rule or {}).get("unit_price_ht") or (final.get("drive_sale_price_ht") or 0))
-                drive_reference = str((drive_rule or {}).get("drive_reference") or final.get("drive_reference") or f"DRV-{drive_brand.upper()}-{drive_power_kw:g}")
-                drive_model = f"{drive_power_kw:g} kW"
+                exact_drive = find_exact_drive_product(drive_power_kw, brand=drive_brand, phase=phase)
+                if not exact_drive:
+                    raise ValidationError("Produit catalogue exact introuvable")
+                drive_unit_price = float(exact_drive.get("sale_price") or 0)
                 drive_selection = build_rule_selection(
                     "pump_drive",
                     category="drives",
                     quantity=1,
                     unit_price_ht=drive_unit_price,
-                    reference=drive_reference,
-                    brand=drive_brand,
-                    model=drive_model,
-                    description=f"Variateur solaire {format_phase(phase)} {drive_brand}",
+                    reference=str(exact_drive.get("reference") or ""),
+                    brand=str(exact_drive.get("brand") or ""),
+                    model=str(exact_drive.get("model") or ""),
+                    description=str(exact_drive.get("description") or f"Variateur solaire {format_phase(phase)} {drive_brand}"),
                     role="Variateur de pompage",
                     financial_category="principal_equipment",
                     vat_rate=other_vat_rate,
-                    source_reference=str((drive_rule or {}).get("rule_key") or pump_rule_key),
-                    source_name=str((drive_rule or {}).get("source_name") or "HeliAntha"),
-                    technical_specs={"drive_power_kw": drive_power_kw, "phase": phase, "brand": drive_brand, "rule_key": pump_rule_key},
-                    price_status="rule_price" if drive_unit_price > 0 else "to_confirm",
+                    source_reference=str(exact_drive.get("reference") or pump_rule_key),
+                    source_name=" ".join(part for part in (str(exact_drive.get("brand") or "").strip(), str(exact_drive.get("model") or "").strip()) if part).strip(),
+                    technical_specs=deepcopy(exact_drive.get("technical_specs") or {}),
+                    price_status="catalog_price",
+                    source_type="catalog",
+                    selected_product=exact_drive,
                 )
                 selections["pump_drive"] = drive_selection
                 drive_product = drive_selection.get("selected_product")
@@ -898,7 +930,7 @@ class CalculationEngine:
                         "unit": "kW",
                         "source_type": "heliantha",
                         "source_name": "Règle HeliAntha",
-                        "source_reference": str((drive_rule or {}).get("rule_key") or pump_rule_key),
+                        "source_reference": str(exact_drive.get("reference") or pump_rule_key),
                     },
                     display_kind="power_kw",
                     unit="kW",
@@ -1415,28 +1447,33 @@ class CalculationEngine:
         status: str = "compatible",
         selection_score: int = 100,
         reasons: list[str] | None = None,
+        selected_product: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         qty = float(quantity or 0)
         if qty.is_integer():
             qty = int(qty)
-        unit_price = float(unit_price_ht or 0)
-        product = {
-            "reference": reference,
-            "category": category,
-            "brand": brand,
-            "model": model,
-            "description": description,
-            "sale_price": unit_price,
-            "unit": "piece",
-            "demo": False,
-            "preferred": False,
-            "priority": 0,
-            "technical_specs": deepcopy(technical_specs or {}),
-            "source_type": source_type,
-            "source_name": source_name,
-            "source_reference": source_reference,
-            "_rule_generated": True,
-        }
+        if selected_product is not None:
+            product = deepcopy(selected_product)
+            unit_price = float(unit_price_ht if unit_price_ht is not None else product.get("sale_price") or 0)
+        else:
+            unit_price = float(unit_price_ht or 0)
+            product = {
+                "reference": reference,
+                "category": category,
+                "brand": brand,
+                "model": model,
+                "description": description,
+                "sale_price": unit_price,
+                "unit": "piece",
+                "demo": False,
+                "preferred": False,
+                "priority": 0,
+                "technical_specs": deepcopy(technical_specs or {}),
+                "source_type": source_type,
+                "source_name": source_name,
+                "source_reference": source_reference,
+                "_rule_generated": True,
+            }
         return {
             "component": component,
             "selected_product": product,

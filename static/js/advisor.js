@@ -313,7 +313,7 @@
   }
 
   function onLauncherDragStart(event) {
-    if (!desktopDragMedia.matches || event.button !== 0) return;
+    if (event.button !== 0) return;
     const rect = launcher.getBoundingClientRect();
     launcherDragState = {
       pointerId: event.pointerId,
@@ -359,14 +359,13 @@
   }
 
   function applyLauncherPosition(forceClamp) {
-    if (!launcher || !desktopDragMedia.matches) {
-      launcher?.removeAttribute("style");
+    if (!launcher) {
       return;
     }
     let stored = {};
     try { stored = JSON.parse(localStorage.getItem(LAUNCHER_POSITION_KEY) || "{}") || {}; } catch {}
     if (stored.left == null || stored.top == null) {
-      launcher.removeAttribute("style");
+      launcher?.removeAttribute("style");
       return;
     }
     const width = launcher.offsetWidth || 180;

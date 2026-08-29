@@ -34,24 +34,26 @@
     </section>
 
     <h2>Configuration retenue</h2>
-    <table>
-      <thead>
-        <tr><th>Référence</th><th>Désignation</th><th>Qté</th><th>PU</th><th>Total</th></tr>
-      </thead>
-      <tbody>
-        {% for item in display_equipment_lines %}
-          <tr>
-            <td>{{ item.reference }}</td>
-            <td>{{ item.brand }} {{ item.model }}</td>
-            <td>{{ item.quantity }}</td>
-            <td>{{ "{:,.2f}".format(item.unit_price or 0).replace(",", " ") }} DH</td>
-            <td>{{ "{:,.2f}".format(item.total_price or 0).replace(",", " ") }} DH</td>
-          </tr>
-        {% else %}
-          <tr><td colspan="5">Aucune ligne matérielle à afficher.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <div class="pdf-table-wrap">
+      <table class="pdf-table">
+        <thead>
+          <tr><th>Référence</th><th>Désignation</th><th>Qté</th><th>PU</th><th>Total</th></tr>
+        </thead>
+        <tbody>
+          {% for item in display_equipment_lines %}
+            <tr>
+              <td data-label="Reference">{{ item.reference }}</td>
+              <td data-label="Designation">{{ item.brand }} {{ item.model }}</td>
+              <td data-label="Qte">{{ item.quantity }}</td>
+              <td data-label="PU">{{ "{:,.2f}".format(item.unit_price or 0).replace(",", " ") }} DH</td>
+              <td data-label="Total">{{ "{:,.2f}".format(item.total_price or 0).replace(",", " ") }} DH</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="5">Aucune ligne matérielle à afficher.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
 
     <h2>Lecture rapide</h2>
     <div class="finance-box compact">

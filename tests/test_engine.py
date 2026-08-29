@@ -38,6 +38,65 @@ def test_pumping_existing_pump_uses_heliatha_rule_table(tmp_path):
     assert "hmt_m" not in result["final_results"]
 
 
+def test_pumping_existing_pump_uses_exact_catalog_products_for_5_5_cv():
+    result = CalculationEngine().calculate("pumping", {
+        "pump_existing": True,
+        "existing_pump_cv": 5.5,
+    })
+
+    panel_line = next(item for item in result["selected_equipment"] if item["component"] == "panel")
+    drive_line = next(item for item in result["selected_equipment"] if item["component"] == "pump_drive")
+
+    assert panel_line["reference"] == "CS6W-590TB-AG"
+    assert panel_line["brand"] == "Canadian Solar"
+    assert panel_line["power_w"] == 590
+    assert panel_line["quantity"] == 12
+    assert panel_line["unit_price"] == pytest.approx(1135.2)
+    assert panel_line["total_price"] == pytest.approx(13622.4)
+    assert panel_line["vat_rate"] == pytest.approx(0.10)
+
+    assert drive_line["reference"] == "SI23-D5-5R5"
+    assert drive_line["brand"] == "VEICHI"
+    assert drive_line["power_kw"] == pytest.approx(5.5)
+    assert drive_line["quantity"] == 1
+    assert drive_line["unit_price"] == pytest.approx(2375.0)
+    assert drive_line["total_price"] == pytest.approx(2375.0)
+    assert drive_line["vat_rate"] == pytest.approx(0.20)
+
+
+@pytest.mark.parametrize(
+    "existing_pump_cv, expected_panel_ref, expected_panel_power_w, expected_drive_ref, expected_drive_power_kw",
+    [
+        (2, "TEST-JA-400-M", 400, "HEL-INVT-2R2-MONO", 2.2),
+        (7.5, "CS6W-590TB-AG", 590, "SI23-D5-7R5", 7.5),
+        (15, "TEST-CS-715", 715, "SI23-T3-015", 15),
+        (20, "TEST-CS-715", 715, "SI23-T3-018", 18),
+        (40, "TEST-CS-715", 715, "SI23-T3-037", 37),
+    ],
+)
+def test_pumping_existing_pump_uses_exact_catalog_refs_for_other_cv_values(
+    existing_pump_cv,
+    expected_panel_ref,
+    expected_panel_power_w,
+    expected_drive_ref,
+    expected_drive_power_kw,
+):
+    result = CalculationEngine().calculate("pumping", {
+        "pump_existing": True,
+        "existing_pump_cv": existing_pump_cv,
+    })
+
+    panel_line = next(item for item in result["selected_equipment"] if item["component"] == "panel")
+    drive_line = next(item for item in result["selected_equipment"] if item["component"] == "pump_drive")
+
+    assert panel_line["reference"] == expected_panel_ref
+    assert panel_line["power_w"] == expected_panel_power_w
+    assert panel_line["unit_price"] > 0
+    assert drive_line["reference"] == expected_drive_ref
+    assert drive_line["power_kw"] == pytest.approx(expected_drive_power_kw)
+    assert drive_line["unit_price"] > 0
+
+
 def test_pumping_existing_pump_without_rule_is_rejected(tmp_path):
     app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "pumping-rule-missing.db")})
     with app.app_context():

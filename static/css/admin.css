@@ -2738,3 +2738,219 @@ body.admin-menu-open{
 .admin-topbar-actions .ghost-button{
   white-space:nowrap;
 }
+
+/* PDF / pre-devis responsive layout */
+.pdf-page{
+  background:linear-gradient(180deg,#edf1ee 0%,#d9dfdb 100%);
+  padding:24px;
+}
+
+.pdf-sheet{
+  width:min(920px,100%);
+  margin:auto;
+  background:#fff;
+  padding:clamp(22px,3vw,40px);
+  border-radius:24px;
+  box-shadow:0 10px 28px rgba(17,45,38,.09);
+}
+
+.pdf-header,
+.pdf-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:18px;
+  align-items:start;
+}
+
+.pdf-header{
+  border-bottom:2px solid var(--ink);
+  padding-bottom:18px;
+  margin-bottom:22px;
+}
+
+.pdf-header>div:last-child{
+  text-align:right;
+}
+
+.pdf-grid > div{
+  border:1px solid var(--line);
+  border-radius:18px;
+  padding:14px 16px;
+  background:linear-gradient(180deg,#fff 0%,#f9fbf8 100%);
+}
+
+.pdf-grid p{
+  margin:0;
+  color:#42524d;
+  line-height:1.6;
+}
+
+.pdf-table-wrap{
+  overflow-x:auto;
+  border:1px solid var(--line);
+  border-radius:18px;
+  background:#fff;
+  box-shadow:inset 0 0 0 1px rgba(223,230,225,.65);
+}
+
+.pdf-table{
+  width:100%;
+  min-width:0;
+  border-collapse:collapse;
+  table-layout:fixed;
+}
+
+.pdf-table thead th{
+  position:static;
+  background:#f3f7f2;
+  color:#3e514b;
+}
+
+.pdf-table th,
+.pdf-table td{
+  padding:12px;
+}
+
+.pdf-table td{
+  font-size:13px;
+}
+
+.pdf-table td:first-child,
+.pdf-table td:nth-child(3),
+.pdf-table td:nth-child(4),
+.pdf-table td:nth-child(5){
+  white-space:nowrap;
+}
+
+.finance-box.compact{
+  width:min(420px,100%);
+  margin:24px 0 0 auto;
+}
+
+@media(max-width:560px){
+  .pdf-page{
+    padding:10px;
+  }
+
+  .pdf-sheet{
+    padding:16px;
+    border-radius:20px;
+    box-shadow:none;
+  }
+
+  .pdf-header,
+  .pdf-grid{
+    grid-template-columns:1fr;
+    gap:12px;
+  }
+
+  .pdf-header>div:last-child{
+    text-align:left;
+  }
+
+  .pdf-grid > div{
+    padding:12px 14px;
+    border-radius:16px;
+  }
+
+  .pdf-table-wrap{
+    overflow:visible;
+    border:0;
+    background:transparent;
+    box-shadow:none;
+  }
+
+  .pdf-table,
+  .pdf-table thead,
+  .pdf-table tbody,
+  .pdf-table tr,
+  .pdf-table th,
+  .pdf-table td{
+    display:block;
+    width:100%;
+  }
+
+  .pdf-table thead{
+    display:none;
+  }
+
+  .pdf-table tbody{
+    display:grid;
+    gap:10px;
+  }
+
+  .pdf-table tr{
+    border:1px solid var(--line);
+    border-radius:16px;
+    padding:10px 12px;
+    background:linear-gradient(180deg,#fff 0%,#fbfcfa 100%);
+    box-shadow:0 10px 22px rgba(17,45,38,.06);
+  }
+
+  .pdf-table td{
+    display:flex;
+    justify-content:space-between;
+    gap:12px;
+    padding:6px 0;
+    border:0;
+    align-items:baseline;
+    white-space:normal;
+  }
+
+  .pdf-table td::before{
+    content:attr(data-label);
+    flex:0 0 40%;
+    color:var(--muted);
+    font-size:11px;
+    font-weight:800;
+    text-transform:uppercase;
+    letter-spacing:.08em;
+  }
+
+  .pdf-table td:first-child{
+    padding-top:0;
+  }
+
+  .pdf-table td:last-child{
+    padding-bottom:0;
+  }
+
+  .finance-box.compact{
+    width:100%;
+    margin:18px 0 0;
+  }
+}
+
+@media print{
+  .pdf-page{
+    padding:0;
+    background:#fff;
+  }
+
+  .pdf-sheet{
+    width:100%;
+    padding:0;
+    border-radius:0;
+    box-shadow:none;
+  }
+
+  .pdf-table-wrap{
+    overflow:visible;
+    box-shadow:none;
+  }
+
+  .pdf-table{
+    min-width:0;
+    table-layout:fixed;
+  }
+}
+
+.prospects-table-wrap .prospect-visit-link{
+  color:inherit;
+  text-decoration:none;
+  cursor:pointer;
+}
+
+.prospects-table-wrap .prospect-visit-link:hover{
+  filter:brightness(.97);
+}

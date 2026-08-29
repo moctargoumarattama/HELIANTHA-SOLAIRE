@@ -1165,6 +1165,7 @@ form {
   overflow: hidden;
   cursor: grab;
   user-select: none;
+  touch-action: none;
   letter-spacing: 0.01em;
   transition: transform 180ms ease, box-shadow 180ms ease, filter 180ms ease;
 }

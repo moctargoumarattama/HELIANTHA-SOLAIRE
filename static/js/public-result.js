@@ -366,7 +366,7 @@ function energyFlowSummary(offer) {
 
   if (project === "pumping") {
     if (isExistingPumpMode()) {
-      return "Le champ photovoltaïque alimente le variateur puis la pompe, selon la configuration HeliAntha retenue.";
+      return "";
     }
     return "Le champ photovoltaïque alimente le variateur puis la pompe.";
   }
@@ -665,7 +665,7 @@ function bindVisitPanel() {
   const cancel = document.querySelector("#visit-cancel");
   const form = document.querySelector("#visit-form");
 
-  if (!panel || !toggle || !form) return;
+  if (!panel || !form) return;
 
   const openPanel = () => {
     panel.hidden = false;

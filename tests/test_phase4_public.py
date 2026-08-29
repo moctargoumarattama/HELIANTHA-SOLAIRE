@@ -110,6 +110,7 @@ def test_public_pumping_existing_pump_page_hides_hydraulic_text(tmp_path):
     assert "hmt_m" not in html
     assert "Débit" not in html
     assert "Hauteur de pompage" not in html
+    assert "Le champ photovoltaïque alimente le variateur puis la pompe, selon la configuration HeliAntha retenue." not in html
 
 
 def test_public_pumping_existing_pump_step_uses_compact_picker():
@@ -168,6 +169,45 @@ def test_visit_request_is_saved_and_updates_quote_status(tmp_path):
     assert visit["time_slot"] == "Matin"
 
 
+def test_visit_panel_bottom_button_is_bound_without_top_toggle(tmp_path):
+    app_js = Path("static/js/public-result.js").read_text(encoding="utf-8")
+
+    assert 'if (!panel || !form) return;' in app_js
+    assert 'if (!panel || !toggle || !form) return;' not in app_js
+    assert '#visit-toggle-bottom' in app_js
+
+
+def test_visit_request_appears_in_admin_prospects_as_technical_visit(tmp_path):
+    app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "public-visit-admin.db")})
+    client = app.test_client()
+    created = create_quote(client, "pumping", {"water_need": 30, "hours": 6, "depth": 50, "elevation": 12, "distance": 60, "city": "Agadir"})
+
+    client.post(
+        f"/api/simulations/{created['quote_number']}/visit",
+        json={
+            "preferred_date": "2026-09-02",
+            "time_slot": "Matin",
+            "address": "Douar test, Agadir",
+            "phone": "0600000000",
+            "comment": "Visite souhaitee en matinnee.",
+        },
+    )
+    client.post("/admin/login", data={"password": "heliantha2026"})
+
+    response = client.get("/admin/prospects")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert 'href="/admin/devis/1#visite-technique"' in html
+    assert "Visite programmée" in html
+
+    detail = client.get("/admin/devis/1")
+    detail_html = detail.get_data(as_text=True)
+    assert detail.status_code == 200
+    assert 'id="visite-technique"' in detail_html
+    assert "Visites techniques" in detail_html
+
+
 def test_public_print_route_renders_from_snapshot(tmp_path):
     app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "public-print.db")})
     client = app.test_client()
@@ -204,6 +244,8 @@ def test_admin_pdf_and_bilan_hide_placeholder_lines(tmp_path):
     assert "PUMP-4.0" in pdf_html
     assert "SI23-D5-5R5" in pdf_html
     assert "CS6W-590TB-AG" in pdf_html
+    assert "PV-590-HS" not in pdf_html
+    assert "DRV-VEICHI-5.5" not in pdf_html
     assert "A confirmer" not in pdf_html
     assert "31 756.60 DH" in pdf_html
     assert "37 199.76 DH" in pdf_html

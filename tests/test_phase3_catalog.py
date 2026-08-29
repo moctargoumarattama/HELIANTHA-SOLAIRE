@@ -340,9 +340,17 @@ def test_admin_quote_detail_renders_phase3_sections(tmp_path):
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "Selection du materiel" in html
     assert "Nomenclature technique (BOM)" in html
-    assert "Compatibilite globale" in html
+    assert "Selection du materiel" not in html
+    assert "Donnees du questionnaire" not in html
+    assert "Parametres utilises" not in html
+    assert "Avertissements" not in html
+    assert "Configuration technique retenue" not in html
+    assert "Compatibilite globale" not in html
+    assert "Hypotheses utilisees" not in html
+    assert "Offres Essentiel / Optimal / Performance" not in html
+    assert "Versions des calculateurs" not in html
+    assert "Referentiel utilise" not in html
 
 
 def test_calculator_versions_expose_phase3_services():

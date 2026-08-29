@@ -41,7 +41,7 @@
           <th>Projet</th>
           <th>Date</th>
           <th>Montant</th>
-          <th>Commercial</th>
+          <th>Visite technique</th>
         </tr>
       </thead>
       <tbody>
@@ -60,7 +60,13 @@
           <td>{{ project_labels.get(q.project, q.project) }}</td>
           <td>{{ q.created_at }}</td>
           <td>{{ "{:,.0f}".format(q.amount_ttc or 0).replace(",", " ") }} DH</td>
-          <td>-</td>
+          <td>
+            {% if q.status == "Visite programmee" %}
+              <a class="status prospect-visit-link" href="{{ url_for('main.admin_quote_detail', quote_id=q.id) }}#visite-technique">Visite programmée</a>
+            {% else %}
+              -
+            {% endif %}
+          </td>
         </tr>
         {% else %}
         <tr data-prospect-empty><td colspan="9">Aucun prospect trouve.</td></tr>
