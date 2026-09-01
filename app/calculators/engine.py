@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from math import ceil
 from typing import Any, Callable
 
-from app.constants import GRAVITY, SECONDS_PER_HOUR, WATER_DENSITY, WATER_HEAT_WH_PER_LITER_C, WATTS_PER_KILOWATT
+from app.constants import WATER_HEAT_WH_PER_LITER_C, WATTS_PER_KILOWATT
 from app.defaults import (
     CALCULATION_PARAMETERS,
     CALCULATOR_VERSIONS,
@@ -33,6 +33,7 @@ from app.pumping_rules import (
 from app.parameter_views import format_display_value
 from app.services import BOMBuilder, CompatibilityChecker, PricingEngine as ServicePricingEngine, ProductSelector
 from app.services.compatibility import as_float, normalize_text, spec_value
+from app.services.pump_selector import NO_STANDARD_PUMP_MESSAGE, select_pump_for_duty
 
 
 PSH_BY_CITY = {
@@ -63,9 +64,20 @@ class ValidationError(ValueError):
     pass
 
 
+def _parse_number(value: Any) -> float:
+    if isinstance(value, str):
+        normalized = value.strip().replace("\u00a0", "").replace(" ", "")
+        if "," in normalized:
+            if "." in normalized and normalized.rfind(",") > normalized.rfind("."):
+                normalized = normalized.replace(".", "")
+            normalized = normalized.replace(",", ".")
+        value = normalized
+    return float(value)
+
+
 def number(data: dict[str, Any], key: str, default: float = 0) -> float:
     try:
-        value = float(data.get(key, default) or default)
+        value = _parse_number(data.get(key, default) or default)
     except (TypeError, ValueError) as exc:
         raise ValidationError(f"La valeur « {key} » doit être un nombre.") from exc
     if value < 0:
@@ -154,7 +166,11 @@ class ContextView:
         self.products = [p for p in products if int(p.get("active", 1) or 0) == 1]
         self.parameters = self._merge(default_params, context.get("technical_parameters") or {})
         self.pricing = self._merge(default_pricing, context.get("pricing_rules") or {})
-        self.pumping_rules = self._merge(default_pumping_rules, context.get("pumping_solar_rules") or {})
+        self.pumping_rules = (
+            deepcopy(context.get("pumping_solar_rules") or {})
+            if "pumping_solar_rules" in context
+            else default_pumping_rules
+        )
         self.reference = dict(context.get("technical_reference") or TECHNICAL_REFERENCE)
 
     @staticmethod
@@ -383,7 +399,6 @@ class CalculationEngine:
             "hybrid": self._hybrid,
             "ev": self._ev,
             "thermal": self._thermal,
-            "iot": self._iot,
         }
         if project not in calculators:
             raise ValidationError("Type de projet non reconnu.")
@@ -614,6 +629,26 @@ class CalculationEngine:
             ))
             return candidates[0]
 
+        def find_catalog_product_by_identity(product_id: Any, reference: str = "") -> dict[str, Any] | None:
+            try:
+                target_id = int(product_id or 0)
+            except (TypeError, ValueError):
+                target_id = 0
+            reference_token = str(reference or "").strip()
+            for product in cfg.products:
+                if int(product.get("active", 1) or 0) != 1:
+                    continue
+                if target_id > 0:
+                    try:
+                        current_id = int(product.get("id") or 0)
+                    except (TypeError, ValueError):
+                        current_id = 0
+                    if current_id == target_id:
+                        return deepcopy(product)
+                if reference_token and str(product.get("reference") or "").strip() == reference_token:
+                    return deepcopy(product)
+            return None
+
         def build_rule_selection(
             component: str,
             *,
@@ -834,21 +869,183 @@ class CalculationEngine:
 
         elif project == "pumping":
             pump_rule_key = final.get("pumping_rule_key")
-            if pump_rule_key:
-                pump_cv = float(final.get("existing_pump_cv") or final.get("pump_power_cv") or 0)
+            pump_rule_mode = str(final.get("pump_rule_mode") or "").strip().lower()
+            recommended_curve_mode = pump_rule_mode == "recommended_curve"
+            pump_cv = float(final.get("selected_pump_cv") or final.get("existing_pump_cv") or 0)
+            pump_cv_label = f"{pump_cv:.1f}".rstrip("0").rstrip(".")
+            pump_designation = f"Pompe solaire {pump_cv_label} CV" if pump_cv > 0 else "Pompe solaire"
+            selected_pump = None
+
+            if recommended_curve_mode:
+                selected_pump = find_catalog_product_by_identity(
+                    final.get("selected_pump_id"),
+                    str(final.get("selected_pump_reference_internal") or ""),
+                )
+                if not selected_pump:
+                    raise ValidationError("Pompe catalogue introuvable pour le besoin sélectionné.")
+                pump_snapshot = deepcopy(selected_pump)
+                pump_snapshot["reference"] = ""
+                pump_snapshot["description"] = pump_designation
+                pump_snapshot["technical_specs"] = deepcopy(pump_snapshot.get("technical_specs") or {})
+                if pump_cv > 0:
+                    pump_snapshot["technical_specs"]["power_hp"] = pump_cv
+                if final.get("pump_price_tax_basis"):
+                    pump_snapshot["technical_specs"]["price_tax_basis"] = final.get("pump_price_tax_basis")
+                pump_selection = build_rule_selection(
+                    "pump",
+                    category="pumps",
+                    quantity=1,
+                    unit_price_ht=float(selected_pump.get("sale_price") or final.get("selected_pump_price") or 0),
+                    reference="",
+                    brand=str(selected_pump.get("brand") or ""),
+                    model=str(selected_pump.get("model") or ""),
+                    description=pump_designation,
+                    role="Pompe solaire",
+                    financial_category="principal_equipment",
+                    vat_rate=(
+                        selected_pump.get("vat_rate")
+                        if selected_pump.get("vat_rate") is not None
+                        else final.get("pump_vat_rate")
+                    ),
+                    source_reference="",
+                    source_name=" ".join(
+                        part
+                        for part in (
+                            str(selected_pump.get("brand") or "").strip(),
+                            str(selected_pump.get("model") or "").strip(),
+                        )
+                        if part
+                    ).strip() or "Catalogue pompes HeliAntha",
+                    technical_specs=deepcopy(pump_snapshot.get("technical_specs") or {}),
+                    price_status="catalog_price" if float(selected_pump.get("sale_price") or 0) > 0 else "to_confirm",
+                    source_type="catalog",
+                    selected_product=pump_snapshot,
+                )
+                selections["pump"] = pump_selection
+                resolved_sources["pump_power_cv"] = self._resolved_source(
+                    "Puissance pompe recommandée",
+                    {
+                        "key": "selected_pump_cv",
+                        "value": pump_cv,
+                        "display_kind": "cv",
+                        "unit": "CV",
+                        "source_type": "heliantha",
+                        "source_name": "Table HeliAntha Débit/HMT",
+                        "source_reference": "catalogue_pompes",
+                    },
+                    display_kind="cv",
+                    unit="CV",
+                    key="selected_pump_cv",
+                    category="Pompage",
+                    role="Table HeliAntha",
+                )
+                final_updates.update({
+                    "pump_power_cv": pump_cv,
+                    "pump_power_kw": float(final.get("pump_power_kw") or round(pump_cv * 0.7355, 2) or 0),
+                    "selected_pump_price": float(selected_pump.get("sale_price") or final.get("selected_pump_price") or 0),
+                    "pump_vat_rate": (
+                        selected_pump.get("vat_rate")
+                        if selected_pump.get("vat_rate") is not None
+                        else final.get("pump_vat_rate")
+                    ),
+                    "pump_price_tax_basis": str(
+                        final.get("pump_price_tax_basis")
+                        or spec_value(selected_pump, "price_tax_basis")
+                        or ""
+                    ),
+                })
+
+            if pump_rule_mode == "no_standard_pump":
+                technical_configuration["sections"].append({
+                    "title": "Configuration pompage à valider",
+                    "items": [
+                        {"label": "Débit demandé", "value": f"{float(final.get('flow_m3_h') or 0):g} m³/h", "details": "Besoin saisi par le client."},
+                        {"label": "HMT demandée", "value": f"{float(final.get('hmt_m') or 0):g} m", "details": "Besoin saisi par le client."},
+                        {"label": "Pompe standard", "value": "Aucune pompe standard ne couvre ce besoin", "details": "Configuration HeliAntha personnalisée nécessaire."},
+                    ],
+                })
+                compat_items["configuration"] = {
+                    "status": "manual_validation_required",
+                    "checks": [
+                        {
+                            "status": "manual",
+                            "message": NO_STANDARD_PUMP_MESSAGE,
+                        }
+                    ],
+                    "warnings": [],
+                    "details": {},
+                }
+                intermediate_updates["catalogue_selection_completed"] = True
+                intermediate_updates["catalogue_status"] = "manual_validation_required"
+
+            if not pump_rule_key and recommended_curve_mode:
+                technical_configuration["sections"].append({
+                    "title": "Configuration pompage retenue",
+                    "items": [
+                        {"label": "Pompe recommandée", "value": f"{pump_cv_label} CV", "details": "Sélection par courbes Débit/HMT HeliAntha."},
+                        {"label": "Débit demandé", "value": f"{float(final.get('flow_m3_h') or 0):g} m³/h", "details": "Besoin saisi par le client."},
+                        {"label": "HMT demandée", "value": f"{float(final.get('hmt_m') or 0):g} m", "details": "Besoin saisi par le client."},
+                        {"label": "Configuration solaire", "value": "À définir", "details": "Aucune règle solaire HeliAntha n'existe encore pour ce CV exact."},
+                    ],
+                })
+                compat_items["configuration"] = {
+                    "status": "manual_validation_required",
+                    "checks": [
+                        {
+                            "status": "manual",
+                            "message": "Pompe identifiée, configuration solaire HeliAntha à définir pour ce CV.",
+                        }
+                    ],
+                    "warnings": [],
+                    "details": {},
+                }
+                reliability = self._apply_reliability_adjustments(
+                    self._reliability("pumping", data, [("flow_m3_h", 24), ("hmt_m", 24)]),
+                    [("Courbes HeliAntha", 2, "passed"), ("Règle solaire à définir", -2, "warning")],
+                )
+                intermediate_updates["catalogue_selection_completed"] = True
+                intermediate_updates["catalogue_status"] = "manual_validation_required"
+                intermediate_updates["catalogue_reliability_score"] = reliability["score"]
+                final.update(final_updates)
+
+            elif pump_rule_key:
                 panels = int(float(final.get("panels") or 0))
-                panel_power_w = float(final.get("panel_power_w") or cfg.p("pv_panel_default_w", 590))
-                drive_power_kw = float(final.get("solar_drive_kw") or final.get("drive_power_kw") or 0)
+                panel_power_w = float(final.get("panel_power_w") or 0)
+                drive_power_kw = float(final.get("solar_drive_kw") or 0)
                 phase = str(final.get("phase") or "").strip().lower()
-                drive_brand = str(final.get("drive_brand") or "").strip() or "HeliAntha"
+                drive_brand = str(final.get("drive_brand") or "").strip()
+                if panels <= 0 or panel_power_w <= 0 or drive_power_kw <= 0 or not phase or not drive_brand:
+                    raise ValidationError("Produit catalogue exact introuvable")
                 panel_vat_rate = float(final.get("rule_panel_vat_rate") or 0.10)
                 other_vat_rate = float(final.get("rule_other_vat_rate") or 0.20)
+
+                if recommended_curve_mode and selected_pump:
+                    pump_selection = selections.get("pump")
+                    pump_product = (pump_selection or {}).get("selected_product")
+                else:
+                    pump_product = None
+                    resolved_sources["pump_power_cv"] = self._resolved_source(
+                        "Puissance pompe existante",
+                        {
+                            "key": "existing_pump_cv",
+                            "value": pump_cv,
+                            "display_kind": "cv",
+                            "unit": "CV",
+                            "source_type": "heliantha",
+                            "source_name": "Donnée client",
+                            "source_reference": "existing_pump_cv",
+                        },
+                        display_kind="cv",
+                        unit="CV",
+                        key="existing_pump_cv",
+                        category="Pompage",
+                        role="Donnée client",
+                    )
 
                 exact_panel = find_exact_catalog_product("panels", "power_w", panel_power_w)
                 if not exact_panel:
                     raise ValidationError("Produit catalogue exact introuvable")
                 panel_unit_price = float(exact_panel.get("sale_price") or 0)
-                panel_price_status = "catalog_price"
                 panel_selection = build_rule_selection(
                     "panel",
                     category="panels",
@@ -864,12 +1061,11 @@ class CalculationEngine:
                     source_reference=str(exact_panel.get("reference") or pump_rule_key),
                     source_name=" ".join(part for part in (str(exact_panel.get("brand") or "").strip(), str(exact_panel.get("model") or "").strip()) if part).strip(),
                     technical_specs=deepcopy(exact_panel.get("technical_specs") or {}),
-                    price_status=panel_price_status,
+                    price_status="catalog_price",
                     source_type="catalog",
                     selected_product=exact_panel,
                 )
                 selections["panel"] = panel_selection
-                panel_product = panel_selection.get("selected_product")
                 panel_power_source = {
                     "key": "pumping_rule_panel_power",
                     "value": panel_power_w,
@@ -886,7 +1082,6 @@ class CalculationEngine:
                     "pv_power_kwp": installed_kwp or final.get("pv_power_kwp"),
                     "installed_power_kwp": installed_kwp or final.get("pv_power_kwp"),
                 })
-                final.update(final_updates)
                 resolved_sources["pv_panel_default_w"] = self._resolved_source(
                     "Puissance panneau utilisée",
                     panel_power_source,
@@ -920,7 +1115,6 @@ class CalculationEngine:
                     selected_product=exact_drive,
                 )
                 selections["pump_drive"] = drive_selection
-                drive_product = drive_selection.get("selected_product")
                 resolved_sources["pumping_drive_power_kw"] = self._resolved_source(
                     "Puissance variateur retenue",
                     {
@@ -1098,28 +1292,9 @@ class CalculationEngine:
                     role="Règle HeliAntha",
                 )
 
-                resolved_sources["pump_power_cv"] = self._resolved_source(
-                    "Puissance pompe existante",
-                    {
-                        "key": "existing_pump_cv",
-                        "value": pump_cv,
-                        "display_kind": "cv",
-                        "unit": "CV",
-                        "source_type": "heliantha",
-                        "source_name": "Donnée client",
-                        "source_reference": "existing_pump_cv",
-                    },
-                    display_kind="cv",
-                    unit="CV",
-                    key="existing_pump_cv",
-                    category="Pompage",
-                    role="Donnée client",
-                )
-                pump_energy_kw = float(final.get("pump_power_kw") or round(pump_cv * 0.7355, 2) or 0)
                 final_updates.update({
-                    "pump_power_kw": pump_energy_kw,
+                    "pump_power_kw": float(final.get("pump_power_kw") or round(pump_cv * 0.7355, 2) or 0),
                     "pump_power_cv": pump_cv,
-                    "existing_pump_cv": pump_cv,
                     "pumping_rule_key": pump_rule_key,
                     "pumping_rule_title": final.get("pumping_rule_title") or pump_rule_key,
                     "drive_brand": drive_brand,
@@ -1128,12 +1303,18 @@ class CalculationEngine:
                     "rule_panel_vat_rate": panel_vat_rate,
                     "rule_other_vat_rate": other_vat_rate,
                 })
+                if not recommended_curve_mode:
+                    final_updates["existing_pump_cv"] = pump_cv
                 final.update(final_updates)
 
                 technical_configuration["sections"].append({
                     "title": "Configuration pompage retenue",
                     "items": [
-                        {"label": "Pompe", "value": f"{pump_cv:.1f} CV", "details": "Pompe déjà installée chez le client."},
+                        {
+                            "label": "Pompe recommandée" if recommended_curve_mode else "Pompe",
+                            "value": f"{pump_cv_label} CV",
+                            "details": "Sélection par courbes Débit/HMT HeliAntha." if recommended_curve_mode else "Pompe déjà installée chez le client.",
+                        },
                         {"label": "Panneaux", "value": f"{panels} × {panel_power_w:.0f} W", "details": "Règle HeliAntha appliquée."},
                         {"label": "Variateur", "value": f"{drive_power_kw:g} kW", "details": f"{format_phase(phase)} · {drive_brand}"},
                         {"label": "Structure", "value": f"{panels} × {float(structure_unit_price):.0f} DH", "details": "Tarif par panneau."},
@@ -1145,7 +1326,18 @@ class CalculationEngine:
                     ],
                 })
                 calculation_blocks.append(self._calc_block("Règle HeliAntha appliquée", [
-                    self._calc_item("Pompe existante", pump_cv, "CV", decimals=1, formula=f"Pompe renseignée = {self._format_decimal(pump_cv, 1)} CV", source=resolved_sources["pump_power_cv"]),
+                    self._calc_item(
+                        "Pompe recommandée" if recommended_curve_mode else "Pompe existante",
+                        pump_cv,
+                        "CV",
+                        decimals=1,
+                        formula=(
+                            f"Courbes HeliAntha => {self._format_decimal(pump_cv, 1)} CV"
+                            if recommended_curve_mode
+                            else f"Pompe renseignée = {self._format_decimal(pump_cv, 1)} CV"
+                        ),
+                        source=resolved_sources["pump_power_cv"],
+                    ),
                     self._calc_item("Panneaux retenus", panels, "panneaux", decimals=0, formula=f"Configuration HeliAntha = {panels} panneaux"),
                     self._calc_item("Puissance panneau", panel_power_w, "W", decimals=0, formula=f"Règle HeliAntha = {self._format_decimal(panel_power_w, 0)} W", source=resolved_sources["pv_panel_default_w"]),
                     self._calc_item("Variateur retenu", drive_power_kw, "kW", formula=f"Règle HeliAntha = {self._format_decimal(drive_power_kw)} kW", source=resolved_sources["pumping_drive_power_kw"]),
@@ -1165,7 +1357,11 @@ class CalculationEngine:
                     "details": {},
                 }
                 reliability = self._apply_reliability_adjustments(
-                    self._reliability("pumping", data, [("water_need", 16), ("hours", 10), ("city", 10)]),
+                    self._reliability(
+                        "pumping",
+                        data,
+                        [("flow_m3_h", 24), ("hmt_m", 24)] if recommended_curve_mode else [("pump_existing", 8), ("existing_pump_cv", 18)],
+                    ),
                     [("Règle HeliAntha", 2, "passed"), ("Catalogue vérifié", 0, "ok")],
                 )
                 intermediate_updates["catalogue_selection_completed"] = True
@@ -1173,85 +1369,6 @@ class CalculationEngine:
                 intermediate_updates["pumping_rule_key"] = pump_rule_key
                 intermediate_updates["pumping_rule_title"] = final.get("pumping_rule_title") or pump_rule_key
                 intermediate_updates["catalogue_reliability_score"] = reliability["score"]
-
-            if not pump_rule_key:
-                pump_selection = selector.select_pump(
-                    float(final.get("pump_power_kw") or 0),
-                    flow_m3_h=as_float(final.get("flow_m3_h")),
-                    hmt_m=as_float(final.get("hmt_m")),
-                )
-                selections["pump"] = pump_selection
-                pump_product = pump_selection.get("selected_product")
-                drive_selection = selector.select_pump_drive(pump_product, float(final.get("pump_power_kw") or 0))
-                selections["pump_drive"] = drive_selection
-                drive_product = drive_selection.get("selected_product")
-                pump_eff_source = cfg.product_value_or_parameter(
-                    pump_product,
-                    ("pump_efficiency", "efficiency_percent", "efficiency"),
-                    "pump_efficiency",
-                    cfg.p("pump_efficiency", 0.48),
-                )
-                drive_eff_source = cfg.product_value_or_parameter(
-                    drive_product,
-                    ("drive_efficiency", "efficiency"),
-                    "pump_drive_efficiency",
-                    cfg.p("pump_drive_efficiency", 0.95),
-                )
-                resolved_sources["pump_efficiency"] = self._resolved_source(
-                    "Rendement pompe utilise",
-                    pump_eff_source,
-                    display_kind="percent",
-                    key="pump_efficiency",
-                    category="Pompage",
-                    role="Produit ou valeur de secours",
-                )
-                resolved_sources["pump_drive_efficiency"] = self._resolved_source(
-                    "Rendement variateur utilise",
-                    drive_eff_source,
-                    display_kind="percent",
-                    key="pump_drive_efficiency",
-                    category="Pompage",
-                    role="Produit ou valeur de secours",
-                )
-                panel_selection = selector.select_panel(float(final.get("pv_target_kwp") or final.get("pv_power_kwp") or 0))
-                selections["panel"] = panel_selection
-                panel_product = panel_selection.get("selected_product") or cfg.panel()
-                panel_power_source = cfg.product_value_or_parameter(
-                    panel_product,
-                    "power_w",
-                    "pv_panel_default_w",
-                    float(final.get("panel_power_w") or cfg.p("pv_panel_default_w", 590)),
-                )
-                panels = int(panel_selection.get("quantity") or final.get("panels") or 0)
-                installed_kwp = panels * panel_power_source["value"] / WATTS_PER_KILOWATT if panels else float(final.get("pv_power_kwp") or 0)
-                final_updates.update({
-                    "panel_power_w": panel_power_source["value"],
-                    "panels": panels or final.get("panels"),
-                    "pv_power_kwp": installed_kwp or final.get("pv_power_kwp"),
-                    "installed_power_kwp": installed_kwp or final.get("pv_power_kwp"),
-                })
-                resolved_sources["pv_panel_default_w"] = self._resolved_source(
-                    "Puissance panneau utilisee",
-                    panel_power_source,
-                    display_kind="power_w",
-                    key="pv_panel_default_w",
-                    category="Photovoltaique",
-                    role="Produit ou valeur de secours",
-                )
-                maybe_support("protection_dc", "protections", "Protection DC du champ photovoltaique.", tokens=("dc",))
-                maybe_support("protection_motor", "protections", "Protection moteur et variateur.")
-                maybe_support("cable_dc", "cables", "Cable DC photovoltaique de liaison.")
-                maybe_support("cable_motor", "cables", "Cable moteur / variateur.")
-                maybe_support("structure", "structures", "Support des modules photovoltaiques.", quantity=max(1, panels))
-                compat_items["pump_drive"] = drive_selection.get("compatibility") or {}
-                technical_configuration["sections"].append({
-                    "title": "Configuration pompage retenue",
-                    "items": [
-                        {"label": "Pompe retenue", "value": self._product_label(pump_product), "details": "; ".join(pump_selection.get("reasons") or [])},
-                        {"label": "Variateur retenu", "value": self._product_label(drive_product), "details": "; ".join(drive_selection.get("reasons") or [])},
-                        {"label": "Panneau retenu", "value": self._product_label(panel_product), "details": "; ".join(panel_selection.get("reasons") or [])},
-                    ],
-                })
 
         elif project == "ev":
             charger_selection = selector.select_ev_charger(
@@ -1395,7 +1512,12 @@ class CalculationEngine:
         if product.get("demo"):
             adjustments.append((f"{label} prepare par HeliAntha", -4, "fallback"))
         stock_value = product.get("stock")
-        if stock_value not in (None, "") and float(stock_value or 0) <= 0:
+        if (
+            component != "pump"
+            and product.get("category") != "pumps"
+            and stock_value not in (None, "")
+            and float(stock_value or 0) <= 0
+        ):
             adjustments.append((f"{label} stock a confirmer", -2, "warning"))
         return adjustments
 
@@ -1628,28 +1750,12 @@ class CalculationEngine:
         }
 
     def _pumping(self, d: dict[str, Any], cfg: ContextView) -> CalculationResult:
-        water = max(number(d, "water_need", 20), 1)
-        hours = max(number(d, "hours", 6), 1)
-        depth = number(d, "depth", number(d, "dynamic_level", 40))
-        static_level = number(d, "static_level", 0)
-        dynamic_level = number(d, "dynamic_level", depth)
-        reservoir_height = number(d, "reservoir_height", number(d, "elevation", 10))
-        distance = number(d, "distance", 30)
-        city = text(d, "city")
-        hydraulic_losses_source = cfg.parameter_source("pump_hydraulic_losses_rate", 0.10)
-        pump_safety_source = cfg.parameter_source("pump_safety_factor", 0.20)
-        psh_source = cfg.psh_source(city)
-        pump_efficiency_source = cfg.parameter_source("pump_efficiency", 0.48)
-        drive_efficiency_source = cfg.parameter_source("pump_drive_efficiency", 0.95)
-        flow = water / hours
-        base_hmt = max(dynamic_level or depth, depth) + reservoir_height
-        hydraulic_losses = distance * 0.03 + base_hmt * hydraulic_losses_source["value"]
-        hmt = base_hmt + hydraulic_losses
-        hydraulic_kw = (flow / SECONDS_PER_HOUR) * WATER_DENSITY * GRAVITY * hmt / WATTS_PER_KILOWATT
-        existing_pump_kw = number(d, "existing_pump_kw", 0)
+        pump_existing = d.get("pump_existing") in (True, 1, "1", "true", "yes", "oui")
         existing_pump_cv = normalize_pump_cv(d.get("existing_pump_cv") or d.get("pump_power_cv") or d.get("pump_cv"))
         pump_rule = cfg.pumping_rule("pump_configuration", pump_cv=existing_pump_cv) if existing_pump_cv else None
-        if existing_pump_cv:
+        if pump_existing:
+            if not existing_pump_cv:
+                raise ValidationError("La puissance CV de la pompe existante est obligatoire.")
             if not pump_rule:
                 raise ValidationError("Cette puissance nécessite une configuration personnalisée HeliAntha.")
             panel_count = int(float(pump_rule.get("panel_count") or 0))
@@ -1792,7 +1898,7 @@ class CalculationEngine:
                 self._calc_block("Configuration solaire", [
                     self._calc_item("Puissance solaire", panel_kwp, "kWp", formula=f"{panel_count} x {self._format_decimal(panel_power_w, 0)} / 1000 = {self._format_decimal(panel_kwp)} kWp"),
                     self._calc_item("Phase", format_phase(pump_rule.get("phase")), formula=f"Phase retenue = {format_phase(pump_rule.get('phase'))}"),
-                    self._calc_item("Marque", str(pump_rule.get("drive_brand") or "HeliAntha"), formula=f"Marque retenue = {str(pump_rule.get('drive_brand') or 'HeliAntha')}"),
+                    self._calc_item("Marque", str(pump_rule.get("drive_brand") or ""), formula=f"Marque retenue = {str(pump_rule.get('drive_brand') or '')}"),
                 ]),
             ]
             reliability = self._apply_reliability_adjustments(
@@ -1834,264 +1940,344 @@ class CalculationEngine:
                 resolved_sources,
                 "pumping",
             )
-        pump = None
-        drive = None
-        for _ in range(2):
-            theoretical_kw = hydraulic_kw / max(pump_efficiency_source["value"] * drive_efficiency_source["value"], 0.1)
-            pump_kw = existing_pump_kw or round_up(max(theoretical_kw * (1 + pump_safety_source["value"]), 0.75), 0.5)
-            pump = cfg.product("pumps", "power_kw", pump_kw)
-            drive = cfg.product("drives", "power_kw", pump_kw * 1.1) or cfg.product("drives")
-            pump_efficiency_source = cfg.product_value_or_parameter(
-                pump,
-                ("efficiency", "pump_efficiency"),
-                "pump_efficiency",
-                pump_efficiency_source["value"],
+        flow_m3_h = number(d, "flow_m3_h", 0)
+        hmt_m = number(d, "hmt_m", 0)
+        try:
+            selection = select_pump_for_duty(cfg.products, flow_m3_h, hmt_m)
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from exc
+        if not selection:
+            return self._recommended_pump_no_standard(d, flow_m3_h, hmt_m)
+
+        selected_pump = selection["product"]
+        selected_pump_cv = float(selection["selected_pump_cv"])
+        selected_rule = cfg.pumping_rule("pump_configuration", pump_cv=selected_pump_cv)
+        if selected_rule:
+            solar_result = self._pumping(
+                {"pump_existing": True, "existing_pump_cv": selected_pump_cv},
+                cfg,
             )
-            drive_efficiency_source = cfg.product_value_or_parameter(
-                drive,
-                ("efficiency", "drive_efficiency", "pump_drive_efficiency"),
-                "pump_drive_efficiency",
-                drive_efficiency_source["value"],
+            return self._recommended_pump_result(
+                solar_result,
+                d,
+                selected_pump,
+                selection,
+                flow_m3_h,
+                hmt_m,
             )
-        theoretical_kw = hydraulic_kw / max(pump_efficiency_source["value"] * drive_efficiency_source["value"], 0.1)
-        pump_kw = existing_pump_kw or round_up(max(theoretical_kw * (1 + pump_safety_source["value"]), 0.75), 0.5)
-        psh = psh_source["value"]
-        pump_energy = pump_kw * hours
-        pv_ratio_source = cfg.parameter_source("pv_performance_ratio", 0.80)
-        pv_energy_theoretical = pump_energy / max(psh * pv_ratio_source["value"], 0.1)
-        pv_base_required_kwp = max(pv_energy_theoretical, pump_kw)
-        panel = cfg.panel()
-        pv_bundle = self._pv_target_bundle(pv_base_required_kwp, panel, cfg)
-        panel_power_source = pv_bundle["panel_power_source"]
-        panel_w = pv_bundle["panel_w"]
-        panels = pv_bundle["panels"]
-        pv_kwp = pv_bundle["installed_kwp"]
-        pv_target_kwp = pv_bundle["pv_target_kwp"]
-        equipment = [self._line(panel, panels, "Champ photovoltaïque")]
-        if pump and not existing_pump_kw:
-            equipment.append(self._line(pump, 1, "Pompe recommandée"))
-        if drive:
-            equipment.append(self._line(drive, 1, "Variateur solaire"))
-        warnings = []
-        if existing_pump_kw:
-            warnings.append(warning("PUMP_EXISTING", "info", "Le client possède déjà une pompe : le dimensionnement utilise la puissance fournie.", "existing_pump_kw", existing_pump_kw, "Vérifier la plaque signalétique avant commande."))
-        if not d.get("depth") and not d.get("dynamic_level"):
-            warnings.append(warning("PUMP_DEPTH_ESTIMATED", "warning", "La profondeur/niveau dynamique est estimé.", "depth", depth, "Mesurer le forage pour fiabiliser la HMT."))
-        if not city:
-            warnings.append(warning("CITY_MISSING", "warning", "La ville n'est pas renseignée : productible solaire par défaut utilisé.", "city", "", "Renseigner la localisation du projet."))
-        elif psh_source["source_type"] != "local_data":
-            warnings.append(warning("PSH_FALLBACK_USED", "warning", "Aucune donnée locale d'ensoleillement n'a été trouvée pour cette ville : la valeur de secours est utilisée.", "city", city, "Prévoir une donnée locale HeliAntha ou une mesure site."))
-        if pump_efficiency_source["source_type"] != "manufacturer":
-            warnings.append(warning("PUMP_EFFICIENCY_FALLBACK_USED", "warning", "Le rendement de pompe provient d'une valeur de secours et non d'une fiche produit précise.", "pump_efficiency", pump_efficiency_source["value"], "Renseigner le rendement réel de la pompe si disponible."))
-        if drive_efficiency_source["source_type"] != "manufacturer":
-            warnings.append(warning("DRIVE_EFFICIENCY_FALLBACK_USED", "info", "Le rendement du variateur provient d'une valeur de secours globale.", "pump_drive_efficiency", drive_efficiency_source["value"], "Renseigner le rendement réel du variateur si disponible."))
-        if panel_power_source["source_type"] != "manufacturer":
-            warnings.append(warning("PV_PANEL_FALLBACK_USED", "warning", "Aucun panneau catalogue précis n'a été utilisé : le calcul s'appuie sur une puissance panneau de secours.", "pv_panel_default_w", panel_power_source["value"], "Vérifier le catalogue avant validation finale."))
-        if pump is None and not existing_pump_kw:
-            warnings.append(warning("PUMP_CATALOG_MISSING", "critical", "Aucune pompe catalogue n'a été trouvée pour cette puissance cible.", "pump_power_kw", pump_kw, "Compléter le catalogue pompes."))
-        elif pump and not existing_pump_kw and float(pump.get("power_kw") or 0) + 1e-6 < pump_kw:
-            warnings.append(warning("PUMP_CATALOG_LIMIT", "warning", "La pompe catalogue disponible est inférieure à la puissance calculée.", "pump_power_kw", pump_kw, "Prévoir une pompe supérieure ou compléter le catalogue."))
-        if drive is None:
-            warnings.append(warning("DRIVE_CATALOG_MISSING", "warning", "Aucun variateur catalogue compatible n'a été trouvé.", "pump_power_kw", pump_kw, "Compléter le catalogue variateurs."))
-        elif float(drive.get("power_kw") or 0) + 1e-6 < pump_kw:
-            warnings.append(warning("DRIVE_CATALOG_LIMIT", "warning", "Le variateur catalogue disponible est inférieur à la puissance pompe calculée.", "pump_power_kw", pump_kw, "Prévoir un variateur supérieur ou compléter le catalogue."))
-        if panels >= 40:
-            warnings.append(warning("PV_PANEL_COUNT_HIGH", "warning", "Le nombre de panneaux retenu est élevé pour un projet de pompage.", "panels", panels, "Vérifier les hypothèses hydrauliques et le productible solaire."))
-        final = {
-            "water_need_m3_day": water,
-            "flow_m3_h": flow,
-            "static_level_m": static_level,
-            "dynamic_level_m": dynamic_level,
-            "reservoir_height_m": reservoir_height,
-            "horizontal_distance_m": distance,
-            "hydraulic_losses_m": hydraulic_losses,
-            "hmt_m": hmt,
-            "hydraulic_power_kw": hydraulic_kw,
-            "pump_theoretical_kw": theoretical_kw,
-            "pump_power_kw": pump_kw,
-            "pv_energy_theoretical_kwp": pv_energy_theoretical,
-            "pv_theoretical_kwp": pv_base_required_kwp,
-            "pv_target_kwp": pv_target_kwp,
-            "pv_power_kwp": pv_kwp,
-            "pv_loss_method": "performance_ratio_only",
-            "pv_performance_ratio_used": pv_ratio_source["value"],
-            "pv_safety_margin_used": pv_bundle["pv_margin_source"]["value"],
-            "panel_power_w": panel_w,
-            "panel_count_theoretical": pv_bundle["panel_count_theoretical"],
-            "panels": panels,
-            "installed_power_kwp": pv_kwp,
-            "solar_drive_kw": float(drive.get("power_kw") or pump_kw * 1.2) if drive else round_up(pump_kw * 1.2, 0.5),
-            "protections": "Coffret DC, sectionneur, parafoudre et protection pompe à valider.",
-            "cabling": "Câble solaire DC et câble pompe dimensionnés après visite.",
-        }
-        metrics = [
-            {"label": "Besoin eau", "value": f"{water:.0f} m³/j"},
-            {"label": "HMT estimée", "value": f"{hmt:.0f} m"},
-            {"label": "Débit cible", "value": f"{flow:.1f} m³/h"},
-            {"label": "Pompe retenue", "value": f"{pump_kw:.1f} kW"},
-            {"label": "Champ PV", "value": f"{pv_kwp:.2f} kWc"},
-            {"label": "Modules", "value": f"{panels} × {panel_w:.0f} W"},
-        ]
-        used_keys = [
-            "pump_hydraulic_losses_rate",
-            "pump_safety_factor",
-            "pump_efficiency",
-            "pump_drive_efficiency",
-            "pv_performance_ratio",
-            "pv_safety_margin",
-        ]
-        if psh_source["source_type"] != "local_data":
-            used_keys.append("productible_default_psh")
-        if panel_power_source["source_reference"] == "pv_panel_default_w":
-            used_keys.append("pv_panel_default_w")
-        resolved_sources = {
-            "pump_hydraulic_losses_rate": self._resolved_source(
-                "Pertes hydrauliques estimées",
-                hydraulic_losses_source,
-                display_kind="percent",
-                key="pump_hydraulic_losses_rate",
-                category="Pompage",
-                role="Règle HeliAntha",
-            ),
-            "pump_safety_factor": self._resolved_source(
-                "Marge de sécurité pompage",
-                pump_safety_source,
-                display_kind="percent",
-                key="pump_safety_factor",
-                category="Pompage",
-                role="Règle HeliAntha",
-            ),
-            "pump_efficiency": self._resolved_source(
-                "Rendement pompe utilisé",
-                pump_efficiency_source,
-                display_kind="percent",
-                key="pump_efficiency",
-                category="Pompage",
-                role="Produit ou valeur de secours",
-            ),
-            "pump_drive_efficiency": self._resolved_source(
-                "Rendement variateur utilisé",
-                drive_efficiency_source,
-                display_kind="percent",
-                key="pump_drive_efficiency",
-                category="Pompage",
-                role="Produit ou valeur de secours",
-            ),
-            "pv_performance_ratio": self._resolved_source(
-                "Performance globale photovoltaïque",
-                pv_ratio_source,
-                display_kind="percent",
-                key="pv_performance_ratio",
-                category="Photovoltaïque",
-                role="Paramètre de secours",
-            ),
-            "pv_safety_margin": self._resolved_source(
-                "Marge de dimensionnement photovoltaïque",
-                pv_bundle["pv_margin_source"],
-                display_kind="percent",
-                key="pv_safety_margin",
-                category="Photovoltaïque",
-                role="Règle HeliAntha",
-            ),
-            "productible_default_psh": self._resolved_source(
-                "Ensoleillement utilisé",
-                psh_source,
-                display_kind="psh",
-                key="productible_default_psh",
-                category="Photovoltaïque",
-                role="Donnée locale ou secours",
-            ),
-            "pv_panel_default_w": self._resolved_source(
-                "Puissance panneau utilisée",
-                panel_power_source,
-                display_kind="power_w",
-                key="pv_panel_default_w",
-                category="Photovoltaïque",
-                role="Produit ou valeur de secours",
-            ),
-            "gravity": self._constant_source(
-                "Gravité terrestre utilisée",
-                GRAVITY,
-                "app.constants.GRAVITY",
-                display_kind="gravity",
-                unit="m/s2",
-            ),
-            "water_density": self._constant_source(
-                "Densité de l'eau utilisée",
-                WATER_DENSITY,
-                "app.constants.WATER_DENSITY",
-                display_kind="density",
-                unit="kg/m3",
-            ),
-        }
-        reliability = self._apply_reliability_adjustments(
-            self._reliability("pumping", d, [("water_need", 16), ("hours", 10), ("depth", 16), ("elevation", 10), ("distance", 8), ("city", 10)]),
-            [
-                ("PSH de secours", -5, "fallback") if psh_source["source_type"] != "local_data" else None,
-                ("Panneau de secours", -5, "fallback") if panel_power_source["source_type"] != "manufacturer" else None,
-                ("Rendement pompe de secours", -4, "fallback") if pump_efficiency_source["source_type"] != "manufacturer" else None,
-            ],
+        return self._recommended_pump_without_solar_rule(
+            d,
+            selected_pump,
+            selection,
+            flow_m3_h,
+            hmt_m,
         )
+
+    def _recommended_pump_no_standard(
+        self,
+        inputs: dict[str, Any],
+        flow_m3_h: float,
+        hmt_m: float,
+    ) -> CalculationResult:
+        final = {
+            "pump_existing": False,
+            "pump_rule_mode": "no_standard_pump",
+            "no_standard_pump": True,
+            "solar_rule_defined": False,
+            "flow_m3_h": flow_m3_h,
+            "hmt_m": hmt_m,
+            "standard_pump_message": NO_STANDARD_PUMP_MESSAGE,
+        }
+        warnings = [
+            warning(
+                "NO_STANDARD_PUMP",
+                "warning",
+                NO_STANDARD_PUMP_MESSAGE,
+                "flow_m3_h",
+                flow_m3_h,
+                "Préparer une configuration HeliAntha personnalisée.",
+            )
+        ]
         calculation_blocks = [
             self._calc_block("Besoin client", [
-                self._calc_item("Besoin en eau", water, "m3/j", formula=f"Besoin saisi = {self._format_decimal(water)} m3/j"),
-                self._calc_item("Heures de pompage", hours, "h/j", formula=f"Pompage prévu = {self._format_decimal(hours)} h/j"),
-                self._calc_item("Débit cible", flow, "m3/h", formula=f"{self._format_decimal(water)} / {self._format_decimal(hours)} = {self._format_decimal(flow)} m3/h"),
+                self._calc_item("Débit demandé", flow_m3_h, "m3/h", formula="Valeur saisie par le client"),
+                self._calc_item("HMT demandée", hmt_m, "m", formula="Valeur saisie par le client"),
             ]),
-            self._calc_block("Calcul hydraulique", [
-                self._calc_item("HMT de base", base_hmt, "m", formula=f"Max niveau dynamique/profondeur + hauteur réservoir = {self._format_decimal(base_hmt)} m"),
-                self._calc_item("Pertes hydrauliques", hydraulic_losses, "m", formula=f"{self._format_decimal(distance)} x 0.03 + {self._format_decimal(base_hmt)} x {self._format_decimal(hydraulic_losses_source['value'])} = {self._format_decimal(hydraulic_losses)} m", source=resolved_sources["pump_hydraulic_losses_rate"]),
-                self._calc_item("HMT totale", hmt, "m", formula=f"{self._format_decimal(base_hmt)} + {self._format_decimal(hydraulic_losses)} = {self._format_decimal(hmt)} m"),
-                self._calc_item("Puissance hydraulique", hydraulic_kw, "kW", formula=f"({self._format_decimal(flow)} / 3600) x 1000 x 9.81 x {self._format_decimal(hmt)} / 1000 = {self._format_decimal(hydraulic_kw)} kW"),
-                self._calc_item("Puissance pompe théorique", theoretical_kw, "kW", formula=f"{self._format_decimal(hydraulic_kw)} / ({self._format_decimal(pump_efficiency_source['value'])} x {self._format_decimal(drive_efficiency_source['value'])}) = {self._format_decimal(theoretical_kw)} kW"),
-                self._calc_item("Puissance pompe cible", pump_kw, "kW", formula=f"{self._format_decimal(theoretical_kw)} x {self._format_decimal(1 + pump_safety_source['value'])} = {self._format_decimal(pump_kw)} kW", source=resolved_sources["pump_safety_factor"]),
-            ]),
-            self._calc_block("Données locales", [
-                self._calc_item("PSH utilisée", psh, "h/j", formula=f"PSH = {self._format_decimal(psh)} h/j", source=resolved_sources["productible_default_psh"]),
-                self._calc_item("Performance globale PV", pv_ratio_source["value"] * 100, "%", formula=f"PR = {self._format_decimal(pv_ratio_source['value'] * 100)} %", source=resolved_sources["pv_performance_ratio"]),
-                self._calc_item("Marge PV", pv_bundle["pv_margin_source"]["value"] * 100, "%", formula=f"Marge PV = {self._format_decimal(pv_bundle['pv_margin_source']['value'] * 100)} %", source=resolved_sources["pv_safety_margin"]),
-                self._calc_item("Puissance panneau utilisée", panel_power_source["value"], "W", decimals=0, formula=f"Panneau = {self._format_decimal(panel_power_source['value'], 0)} W", source=resolved_sources["pv_panel_default_w"]),
-            ]),
-            self._calc_block("Calcul photovoltaïque", [
-                self._calc_item("Énergie pompe journalière", pump_energy, "kWh/j", formula=f"{self._format_decimal(pump_kw)} x {self._format_decimal(hours)} = {self._format_decimal(pump_energy)} kWh/j"),
-                self._calc_item("Puissance PV théorique énergie", pv_energy_theoretical, "kWp", formula=f"{self._format_decimal(pump_energy)} / ({self._format_decimal(psh)} x {self._format_decimal(pv_ratio_source['value'])}) = {self._format_decimal(pv_energy_theoretical)} kWp"),
-                self._calc_item("Base PV retenue", pv_base_required_kwp, "kWp", formula=f"max({self._format_decimal(pv_energy_theoretical)}, {self._format_decimal(pump_kw)}) = {self._format_decimal(pv_base_required_kwp)} kWp"),
-                self._calc_item("Puissance PV cible", pv_target_kwp, "kWp", formula=f"{self._format_decimal(pv_base_required_kwp)} x {self._format_decimal(1 + pv_bundle['pv_margin_source']['value'])} = {self._format_decimal(pv_target_kwp)} kWp"),
-                self._calc_item("Nombre théorique de panneaux", pv_bundle["panel_count_theoretical"], "", formula=f"{self._format_decimal(pv_target_kwp * 1000)} / {self._format_decimal(panel_power_source['value'], 0)} = {self._format_decimal(pv_bundle['panel_count_theoretical'])}"),
-                self._calc_item("Nombre retenu", panels, "panneaux", decimals=0, formula=f"Arrondi supérieur de {self._format_decimal(pv_bundle['panel_count_theoretical'])} = {panels}"),
-                self._calc_item("Puissance installée", pv_kwp, "kWp", formula=f"{panels} x {self._format_decimal(panel_power_source['value'], 0)} / 1000 = {self._format_decimal(pv_kwp)} kWp"),
+            self._calc_block("Sélection sur courbe HeliAntha", [
+                self._calc_item("Pompe standard", "Aucune", formula="Aucune pompe active ne couvre le couple Débit + HMT"),
+                self._calc_item("Suite", "Configuration personnalisée", formula="Aucun CV inventé, aucun fallback"),
             ]),
         ]
         return CalculationResult(
             "pumping",
             "Pompage solaire",
-            f"Une solution conçue pour délivrer environ {water:g} m³ d'eau par jour.",
-            dict(d),
-            ["Rendements et pertes hydrauliques provisoires.", "La correction globale photovoltaïque est actuellement portée par le Performance Ratio seul.", "Validation terrain nécessaire avant devis définitif."],
-            cfg.used_parameters(used_keys),
+            NO_STANDARD_PUMP_MESSAGE,
+            dict(inputs),
+            [
+                "Recherche sur les points Débit/HMT des fiches HeliAntha.",
+                "Aucune pompe standard active ne couvre le besoin saisi.",
+                "Aucun CV inventé et aucun fallback automatique.",
+            ],
+            {},
             {
-                "base_hmt_m": base_hmt,
-                "hydraulic_losses_m": hydraulic_losses,
-                "pump_energy_kwh_day": pump_energy,
-                "pv_energy_theoretical_kwp": pv_energy_theoretical,
-                "pv_power_theoretical_kwp": pv_base_required_kwp,
-                "pv_power_with_margin_kwp": pv_target_kwp,
-                "panel_count_theoretical": pv_bundle["panel_count_theoretical"],
+                "no_standard_pump": True,
                 "calculation_blocks": calculation_blocks,
             },
             warnings,
             final,
-            equipment,
+            [],
             CALCULATOR_VERSIONS["PumpCalculator"],
-            metrics,
-            reliability,
+            [
+                {"label": "Pompe recommandée", "value": "Configuration personnalisée HeliAntha"},
+                {"label": "Débit demandé", "value": f"{flow_m3_h:g} m³/h"},
+                {"label": "HMT demandée", "value": f"{hmt_m:g} m"},
+            ],
+            self._apply_reliability_adjustments(
+                self._reliability("pumping", inputs, [("flow_m3_h", 24), ("hmt_m", 24)]),
+                [("Aucune pompe standard", -6, "warning")],
+            ),
             self._steps([
-                ("Besoin journalier en eau", f"{water:.2f} m³/j", "Saisie client ou valeur provisoire."),
-                ("HMT", f"{hmt:.1f} m", "Niveau dynamique + hauteur réservoir + pertes de charge."),
-                ("Puissance hydraulique", f"{hydraulic_kw:.2f} kW", "ρ × g × débit × HMT."),
-                ("Puissance pompe", f"{pump_kw:.2f} kW", "Puissance hydraulique / rendements + marge."),
-                ("Champ PV", f"{pv_kwp:.2f} kWc", "Besoin énergie / (PSH × PR), base mini instantanée, puis marge PV."),
-                ("Equipement", f"{panels} panneaux et pompe {pump_kw:.1f} kW", "Sélection catalogue actif."),
+                ("Débit + HMT", f"{flow_m3_h:g} m³/h + {hmt_m:g} m", "Besoin saisi directement."),
+                ("Table HeliAntha", "Aucune pompe standard suffisante", "Aucun fallback et aucune puissance inventée."),
+                ("Suite", "Configuration personnalisée", "Validation HeliAntha nécessaire."),
+            ]),
+            {},
+            "pumping",
+        )
+
+    def _recommended_pump_result(
+        self,
+        result: CalculationResult,
+        inputs: dict[str, Any],
+        pump: dict[str, Any],
+        selection: dict[str, Any],
+        flow_m3_h: float,
+        hmt_m: float,
+    ) -> CalculationResult:
+        specs = pump.get("technical_specs") or {}
+        selected_cv = float(selection["selected_pump_cv"])
+        duty = selection["duty"]
+        price = selection.get("current_price")
+        tax_basis = str(specs.get("price_tax_basis") or "unconfirmed")
+        pump_power_kw = float(pump.get("power_kw") or specs.get("power_kw") or 0)
+        result.inputs = dict(inputs)
+        result.summary = (
+            f"Pompe recommandée de {selected_cv:g} CV pour "
+            f"{flow_m3_h:g} m³/h à {hmt_m:g} m HMT."
+        )
+        result.assumptions = [
+            "Sélection sur les points Débit/HMT des fiches HeliAntha.",
+            "Départage au plus petit CV suffisant, puis au prix Admin le plus bas à CV égal.",
+            "Aucune interpolation hydraulique et aucune marge automatique.",
+        ]
+        result.final_results.pop("existing_pump_cv", None)
+        result.final_results.update({
+            "pump_existing": False,
+            "selected_pump_id": pump.get("id"),
+            "selected_pump_reference_internal": pump.get("reference"),
+            "selected_pump_cv": selected_cv,
+            "pump_power_cv": selected_cv,
+            "pump_power_kw": pump_power_kw,
+            "selected_pump_price": price,
+            "pump_vat_rate": pump.get("vat_rate"),
+            "pump_price_tax_basis": tax_basis,
+            "flow_m3_h": flow_m3_h,
+            "hmt_m": hmt_m,
+            "solar_rule_defined": True,
+            "pump_rule_mode": "recommended_curve",
+        })
+        result.intermediate_results.update({
+            "selected_pump_id": pump.get("id"),
+            "selected_pump_cv": selected_cv,
+            "available_hmt_m": duty["available_hmt_m"],
+            "flow_interval_start_m3_h": duty["interval_start_m3_h"],
+            "flow_interval_end_m3_h": duty["interval_end_m3_h"],
+            "flow_interval_policy": duty["policy"],
+            "same_cv_candidate_count": selection["same_cv_candidate_count"],
+            "calculation_blocks": [
+                self._calc_block("Besoin client", [
+                    self._calc_item("Débit demandé", flow_m3_h, "m3/h", formula="Valeur saisie par le client"),
+                    self._calc_item("HMT demandée", hmt_m, "m", formula="Valeur saisie par le client"),
+                ]),
+                self._calc_block("Sélection sur courbe HeliAntha", [
+                    self._calc_item("Intervalle de débit", f"{duty['interval_start_m3_h']:g} → {duty['interval_end_m3_h']:g} m3/h", formula="Aucune interpolation"),
+                    self._calc_item("HMT disponible retenue", duty["available_hmt_m"], "m", formula="Plus faible HMT des bornes de l'intervalle"),
+                    self._calc_item("Pompe retenue", selected_cv, "CV", formula="Plus petit CV suffisant, puis prix Admin"),
+                ]),
+                self._calc_block("Configuration solaire HeliAntha", [
+                    self._calc_item("Panneaux retenus", result.final_results.get("panels"), "panneaux", decimals=0, formula="Règle exacte du CV retenu"),
+                    self._calc_item("Puissance panneau", result.final_results.get("panel_power_w"), "W", decimals=0, formula="Règle exacte du CV retenu"),
+                    self._calc_item("Variateur retenu", result.final_results.get("solar_drive_kw"), "kW", formula="Règle exacte du CV retenu"),
+                ]),
+            ],
+        })
+        result.resolved_sources["pump_power_cv"] = self._resolved_source(
+            "Puissance de la pompe recommandée",
+            {
+                "key": "selected_pump_cv",
+                "value": selected_cv,
+                "display_kind": "cv",
+                "unit": "CV",
+                "source_type": "manufacturer",
+                "source_name": "Table Débit/HMT HeliAntha",
+                "source_reference": "",
+            },
+            display_kind="cv",
+            unit="CV",
+            key="selected_pump_cv",
+            category="Pompage",
+            role="Sélection hydraulique",
+        )
+        result.metrics = [
+            {"label": "Pompe recommandée", "value": f"{selected_cv:g} CV"},
+            {"label": "Débit demandé", "value": f"{flow_m3_h:g} m³/h"},
+            {"label": "HMT demandée", "value": f"{hmt_m:g} m"},
+            {"label": "Panneaux", "value": f"{int(result.final_results.get('panels') or 0)} × {float(result.final_results.get('panel_power_w') or 0):g} W"},
+            {"label": "Variateur", "value": f"{float(result.final_results.get('solar_drive_kw') or 0):g} kW"},
+        ]
+        result.reliability = self._apply_reliability_adjustments(
+            self._reliability("pumping", inputs, [("flow_m3_h", 24), ("hmt_m", 24)]),
+            [("Courbe HeliAntha", 2, "passed"), ("Prix Admin courant", 0, "ok")],
+        )
+        result.reasoning_steps = self._steps([
+            ("Débit + HMT", f"{flow_m3_h:g} m³/h + {hmt_m:g} m", "Besoin saisi directement."),
+            ("Pompes capables", f"{selection['sufficient_candidate_count']} solution(s)", "Couverture vérifiée sur les intervalles de courbe."),
+            ("CV retenu", f"{selected_cv:g} CV", "Plus petit CV suffisant."),
+            ("Prix à CV égal", f"{float(price):g} DH" if price is not None else "À confirmer", "Prix courant du Catalogue Admin."),
+            ("Règle HeliAntha", str(result.final_results.get("pumping_rule_title") or ""), "Correspondance solaire exacte, sans arrondi."),
+        ])
+        result.warnings = [
+            warning(
+                "PUMP_PRICE_TAX_BASIS_UNCONFIRMED",
+                "warning",
+                "La fiche source indique seulement « PRIX » : la nature HT/TTC du prix pompe reste à confirmer.",
+                "pump_price_tax_basis",
+                tax_basis,
+                "Confirmer la nature fiscale du prix depuis le Catalogue Admin.",
+            )
+        ] if tax_basis == "unconfirmed" else []
+        return result
+
+    def _recommended_pump_without_solar_rule(
+        self,
+        inputs: dict[str, Any],
+        pump: dict[str, Any],
+        selection: dict[str, Any],
+        flow_m3_h: float,
+        hmt_m: float,
+    ) -> CalculationResult:
+        specs = pump.get("technical_specs") or {}
+        selected_cv = float(selection["selected_pump_cv"])
+        duty = selection["duty"]
+        price = selection.get("current_price")
+        tax_basis = str(specs.get("price_tax_basis") or "unconfirmed")
+        message = (
+            f"La pompe adaptée a été identifiée à {selected_cv:g} CV, "
+            "mais la configuration solaire HeliAntha correspondante doit encore être définie."
+        )
+        warnings = [
+            warning(
+                "PUMP_SOLAR_RULE_MISSING",
+                "warning",
+                message,
+                "selected_pump_cv",
+                selected_cv,
+                "Définir la règle solaire HeliAntha pour ce CV.",
+            )
+        ]
+        if tax_basis == "unconfirmed":
+            warnings.append(warning(
+                "PUMP_PRICE_TAX_BASIS_UNCONFIRMED",
+                "warning",
+                "La fiche source indique seulement « PRIX » : la nature HT/TTC du prix pompe reste à confirmer.",
+                "pump_price_tax_basis",
+                tax_basis,
+                "Confirmer la nature fiscale du prix depuis le Catalogue Admin.",
+            ))
+        final = {
+            "pump_existing": False,
+            "selected_pump_id": pump.get("id"),
+            "selected_pump_reference_internal": pump.get("reference"),
+            "selected_pump_cv": selected_cv,
+            "pump_power_cv": selected_cv,
+            "pump_power_kw": float(pump.get("power_kw") or specs.get("power_kw") or 0),
+            "selected_pump_price": price,
+            "pump_vat_rate": pump.get("vat_rate"),
+            "pump_price_tax_basis": tax_basis,
+            "flow_m3_h": flow_m3_h,
+            "hmt_m": hmt_m,
+            "solar_rule_defined": False,
+            "pump_rule_mode": "recommended_curve",
+        }
+        resolved_sources = {
+            "pump_power_cv": self._resolved_source(
+                "Puissance de la pompe recommandée",
+                {
+                    "key": "selected_pump_cv",
+                    "value": selected_cv,
+                    "display_kind": "cv",
+                    "unit": "CV",
+                    "source_type": "manufacturer",
+                    "source_name": "Table Débit/HMT HeliAntha",
+                    "source_reference": "",
+                },
+                display_kind="cv",
+                unit="CV",
+                key="selected_pump_cv",
+                category="Pompage",
+                role="Sélection hydraulique",
+            )
+        }
+        calculation_blocks = [
+            self._calc_block("Besoin client", [
+                self._calc_item("Débit demandé", flow_m3_h, "m3/h", formula="Valeur saisie par le client"),
+                self._calc_item("HMT demandée", hmt_m, "m", formula="Valeur saisie par le client"),
+            ]),
+            self._calc_block("Sélection sur courbe HeliAntha", [
+                self._calc_item("Intervalle de débit", f"{duty['interval_start_m3_h']:g} → {duty['interval_end_m3_h']:g} m3/h", formula="Aucune interpolation"),
+                self._calc_item("HMT disponible retenue", duty["available_hmt_m"], "m", formula="Plus faible HMT des bornes de l'intervalle"),
+                self._calc_item("Pompe retenue", selected_cv, "CV", formula="Plus petit CV suffisant, puis prix Admin"),
+                self._calc_item("Configuration solaire", "À définir", formula=f"Aucune règle exacte pour {selected_cv:g} CV"),
+            ]),
+        ]
+        return CalculationResult(
+            "pumping",
+            "Pompage solaire",
+            message,
+            dict(inputs),
+            [
+                "Sélection sur les points Débit/HMT des fiches HeliAntha.",
+                "Aucun arrondi vers un autre CV et aucun fallback solaire.",
+            ],
+            {},
+            {
+                "selected_pump_id": pump.get("id"),
+                "selected_pump_cv": selected_cv,
+                "available_hmt_m": duty["available_hmt_m"],
+                "flow_interval_start_m3_h": duty["interval_start_m3_h"],
+                "flow_interval_end_m3_h": duty["interval_end_m3_h"],
+                "flow_interval_policy": duty["policy"],
+                "same_cv_candidate_count": selection["same_cv_candidate_count"],
+                "calculation_blocks": calculation_blocks,
+            },
+            warnings,
+            final,
+            [],
+            CALCULATOR_VERSIONS["PumpCalculator"],
+            [
+                {"label": "Pompe recommandée", "value": f"{selected_cv:g} CV"},
+                {"label": "Débit demandé", "value": f"{flow_m3_h:g} m³/h"},
+                {"label": "HMT demandée", "value": f"{hmt_m:g} m"},
+                {"label": "Configuration solaire", "value": "À définir"},
+            ],
+            self._apply_reliability_adjustments(
+                self._reliability("pumping", inputs, [("flow_m3_h", 24), ("hmt_m", 24)]),
+                [("Courbe HeliAntha", 2, "passed")],
+            ),
+            self._steps([
+                ("Débit + HMT", f"{flow_m3_h:g} m³/h + {hmt_m:g} m", "Besoin saisi directement."),
+                ("CV retenu", f"{selected_cv:g} CV", "Plus petit CV suffisant, puis prix Admin."),
+                ("Règle solaire", "À définir", "Aucun arrondi et aucun fallback."),
             ]),
             resolved_sources,
             "pumping",
@@ -2850,27 +3036,6 @@ class CalculationEngine:
             "ev",
         )
 
-    def _iot(self, d: dict[str, Any], cfg: ContextView) -> CalculationResult:
-        sensors = max(ceil(number(d, "sensors", 4)), 1)
-        warnings = [warning("IOT_OUT_OF_SCOPE", "info", "IoT est temporairement hors périmètre de cette version.", "project", "iot", "Reprendre ce module lors d'une phase dédiée.")]
-        return CalculationResult(
-            "iot",
-            "IoT & systèmes embarqués",
-            "Module conservé dans le code mais non développé dans cette phase.",
-            dict(d),
-            ["Hors périmètre version actuelle."],
-            {},
-            {"sensors": sensors},
-            warnings,
-            {"sensors": sensors},
-            [],
-            CALCULATOR_VERSIONS["IoTCalculator"],
-            [{"label": "Statut", "value": "Hors périmètre"}],
-            {"score": 0, "items": [{"label": "Hors périmètre", "points": 0, "status": "info"}]},
-            self._steps([("Projet", "IoT", "Conservé mais masqué temporairement.")]),
-            {},
-            "iot",
-        )
 
     def _offers(self, technical: CalculationResult, cfg: ContextView) -> list[dict[str, Any]]:
         variants = self._variant_specs(technical)
@@ -2889,19 +3054,13 @@ class CalculationEngine:
                 "ttc": financial["total_ttc"],
                 "selected_equipment": equipment,
                 "financial_breakdown": financial,
+                "tax_basis_confirmation_required": bool(financial.get("tax_basis_confirmation_required")),
+                "pump_price_tax_basis": financial.get("pump_price_tax_basis") or "",
             })
         return offers
 
     @staticmethod
     def _variant_specs(technical: CalculationResult) -> list[dict[str, Any]]:
-        if technical.project == "iot":
-            return [{
-                "name": "Etude technique",
-                "level": "optimal",
-                "recommended": True,
-                "description": "Module hors périmètre de cette version.",
-                "technical_difference": "Aucun chiffrage automatique.",
-            }]
         text_by_profile = {
             "offgrid": (
                 "Autonomie minimale valide avec capacité commerciale réduite si possible.",
@@ -2944,6 +3103,8 @@ class CalculationEngine:
     @staticmethod
     def _variant_equipment(equipment: list[dict[str, Any]], profile: str, level: str) -> list[dict[str, Any]]:
         adjusted = deepcopy(equipment)
+        if profile == "pumping":
+            return adjusted
         if level == "optimal":
             return adjusted
         for item in adjusted:
@@ -3049,7 +3210,6 @@ class CalculationEngine:
             "hybrid": "HybridCalculator",
             "thermal": "SolarThermalCalculator",
             "ev": "EVChargerCalculator",
-            "iot": "IoTCalculator",
         }
         versions[mapping[project]] = CALCULATOR_VERSIONS[mapping[project]]
         return versions

@@ -18,6 +18,9 @@ COMPONENT_LABELS = {
     "inverter": "Onduleur",
     "pump": "Pompe",
     "pump_drive": "Variateur de pompage",
+    "coffret": "Coffret de protection",
+    "cabling_accessories": "Câblage et accessoires",
+    "installation": "Installation et mise en service",
     "ev_charger": "Borne EV",
     "thermal_tank": "Ballon solaire",
     "thermal_collector": "Capteur solaire thermique",
@@ -117,6 +120,7 @@ class BOMBuilder:
     @staticmethod
     def _selection_line(component: str, selection: dict[str, Any]) -> dict[str, Any]:
         product = deepcopy(selection["selected_product"])
+        technical_specs = deepcopy(product.get("technical_specs") or {})
         quantity = float(selection.get("quantity") or 1)
         if quantity.is_integer():
             quantity = int(quantity)
@@ -160,15 +164,17 @@ class BOMBuilder:
             "demo": bool(product.get("demo")),
             "preferred": bool(product.get("preferred")),
             "priority": int(product.get("priority") or 0),
-            "technical_specs": deepcopy(product.get("technical_specs") or {}),
+            "technical_specs": technical_specs,
             "power_w": product.get("power_w"),
             "power_kw": product.get("power_kw"),
+            "power_cv": product.get("power_hp") or technical_specs.get("power_hp"),
             "capacity_kwh": product.get("capacity_kwh"),
             "capacity_l": product.get("capacity_l"),
             "efficiency": product.get("efficiency"),
             "technology": product.get("technology") or "",
             "warranty": product.get("warranty") or "",
             "datasheet_url": product.get("datasheet_url") or "",
+            "price_tax_basis": selection.get("price_tax_basis") or technical_specs.get("price_tax_basis") or "",
             "product_snapshot": product,
         }
 
@@ -289,11 +295,6 @@ class BOMBuilder:
             placeholders.extend([
                 item("protection_battery", "protections", "Protection batterie", "PROTECTION_SIZING_REQUIRED", "La protection batterie reste à dimensionner."),
                 item("cable_battery", "cables", "Câblage batterie", "CABLE_SIZING_REQUIRED", "La section du câble batterie reste à confirmer.", specs={"section_theoretical_mm2": None, "section_selected_mm2": None}),
-            ])
-        if project == "pumping" and not final.get("pumping_rule_key"):
-            placeholders.extend([
-                item("protection_motor", "protections", "Protection et sectionnement moteur", "PROTECTION_SIZING_REQUIRED", "La protection du moteur reste à dimensionner."),
-                item("cable_motor", "cables", "Câble pompe / moteur", "CABLE_SIZING_REQUIRED", "La section du câble moteur reste à confirmer.", quantity=max(distance, 1), unit="m" if distance else "lot", specs={"length_m": distance or None, "section_theoretical_mm2": None, "section_selected_mm2": None}),
             ])
         if project == "ev":
             placeholders.extend([

@@ -12,7 +12,7 @@
   <link rel="manifest" href="{{ url_for('main.pwa_manifest') }}">
   <link rel="icon" href="{{ url_for('main.brand_image') }}" type="image/jpeg">
   <link rel="apple-touch-icon" href="{{ url_for('main.brand_image') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}?v=20260828-1">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}?v=20260901-1">
 </head>
 <body class="admin-app">
   <div class="admin-backdrop" id="admin-backdrop" aria-hidden="true"></div>
@@ -26,6 +26,7 @@
       <a class="admin-nav-link{% if request.endpoint == 'main.admin_prospects' %} active{% endif %}" href="{{ url_for('main.admin_prospects') }}">Clients / prospects</a>
       <a class="admin-nav-link{% if request.endpoint == 'main.admin_quotes' %} active{% endif %}" href="{{ url_for('main.admin_quotes') }}">Devis</a>
       <a class="admin-nav-link{% if request.endpoint == 'main.admin_catalog' %} active{% endif %}" href="{{ url_for('main.admin_catalog') }}">Catalogue</a>
+      <a class="admin-nav-link{% if request.endpoint == 'main.admin_pumping_method' %} active{% endif %}" href="{{ url_for('main.admin_pumping_method') }}">Méthode Pompage</a>
       <a class="admin-nav-link{% if request.endpoint == 'main.admin_calculation_parameters' %} active{% endif %}" href="{{ url_for('main.admin_calculation_parameters') }}">Paramètres de calcul</a>
       <a class="admin-nav-link{% if request.endpoint == 'main.admin_pumping_rules' %} active{% endif %}" href="{{ url_for('main.admin_pumping_rules') }}">Règles Pompage solaire</a>
       <a class="admin-nav-link{% if request.endpoint == 'main.admin_pricing' %} active{% endif %}" href="{{ url_for('main.admin_pricing') }}">Tarification</a>
@@ -85,7 +86,7 @@
       });
     })();
   </script>
-  <script src="{{ url_for('static', filename='js/pwa.js') }}?v=20260828-2"></script>
+  <script src="{{ url_for('static', filename='js/pwa.js') }}?v=20260901-1"></script>
   {% block page_scripts %}{% endblock %}
 </body>
 </html>

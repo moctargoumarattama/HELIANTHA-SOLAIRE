@@ -363,10 +363,14 @@ class AdvisorService:
             return "Je veux etre sur de bien comprendre. Avez-vous deja une pompe sur place ?"
         if question_id == "existing_pump_cv":
             return "Je veux juste la puissance de la pompe en CV."
+        if question_id == "flow_m3_h":
+            return "Je veux juste le debit souhaite en m3/h."
+        if question_id == "hmt_m":
+            return "Je veux juste la HMT de l'installation en metres."
         if question_id == "network_existing":
             return "Je veux etre sur de bien vous orienter. Le site a-t-il deja le reseau electrique ?"
         if state.get("project_type") == "pumping":
-            return "Je veux etre sur de bien comprendre. Parlez-vous du forage, du debit ou de la pompe ?"
+            return "Je veux etre sur de bien comprendre. Parlez-vous du debit, de la HMT ou de la pompe ?"
         if state.get("project_type") in {"ongrid", "hybrid", "offgrid"}:
             return "Je veux etre sur de bien comprendre. Parlez-vous de la consommation, des batteries ou du lieu du projet ?"
         return "Je veux etre sur de bien comprendre. Parlez-vous du projet, du prix ou du materiel ?"
@@ -459,10 +463,10 @@ class AdvisorService:
             return f"J'ai note environ {updates['bill']:.0f} DH."
         if "monthly_kwh" in updates:
             return f"J'ai note {updates['monthly_kwh']:.0f} kWh par mois."
-        if "water_need" in updates:
-            return f"J'ai note {updates['water_need']:.0f} m3 par jour."
-        if "depth" in updates:
-            return f"J'ai note {updates['depth']:.0f} m de profondeur."
+        if "flow_m3_h" in updates:
+            return f"J'ai note {updates['flow_m3_h']:.2f} m3/h."
+        if "hmt_m" in updates:
+            return f"J'ai note {updates['hmt_m']:.0f} m de HMT."
         if "priority_loads" in updates:
             return "J'ai note les appareils prioritaires."
         return ""

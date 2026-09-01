@@ -5,28 +5,28 @@ from app.calculators import CalculationEngine
 from app.defaults import CATALOG_PRODUCTS
 
 
-def test_physical_constants_stay_available_in_engine_but_are_not_admin_parameters():
+def test_pumping_recommendation_uses_curve_sources_without_legacy_physics():
     result = CalculationEngine().calculate(
         "pumping",
         {
-            "water_need": 25,
-            "depth": 40,
-            "elevation": 12,
-            "distance": 60,
-            "hours": 5,
-            "city": "Casablanca",
+            "pump_existing": False,
+            "flow_m3_h": 12,
+            "hmt_m": 80,
         },
     )
 
     resolved = result["calculation_detail"]["resolved_sources"]
     params = result["calculation_detail"]["parameters_used"]
 
-    assert resolved["gravity"]["source_type"] == "physical_constant"
-    assert resolved["gravity"]["source_reference"] == "app.constants.GRAVITY"
-    assert resolved["water_density"]["source_type"] == "physical_constant"
-    assert resolved["water_density"]["source_reference"] == "app.constants.WATER_DENSITY"
+    assert resolved["pump_power_cv"]["source_name"] in {"Table Débit/HMT HeliAntha", "Table HeliAntha Débit/HMT"}
+    assert "gravity" not in resolved
+    assert "water_density" not in resolved
+    assert "pump_efficiency" not in resolved
+    assert "pump_drive_efficiency" not in resolved
     assert "gravity" not in params
     assert "water_density" not in params
+    assert "pump_efficiency" not in params
+    assert "pump_drive_efficiency" not in params
 
 
 def test_admin_calculation_page_hides_physical_constants(tmp_path):

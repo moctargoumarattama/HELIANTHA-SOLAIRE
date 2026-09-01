@@ -144,7 +144,7 @@ def test_public_pumping_existing_pump_wizard_text_is_clean():
 def test_visit_request_is_saved_and_updates_quote_status(tmp_path):
     app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "public-visit.db")})
     client = app.test_client()
-    created = create_quote(client, "pumping", {"water_need": 30, "hours": 6, "depth": 50, "elevation": 12, "distance": 60, "city": "Agadir"})
+    created = create_quote(client, "pumping", {"pump_existing": False, "flow_m3_h": 12, "hmt_m": 80})
 
     response = client.post(
         f"/api/simulations/{created['quote_number']}/visit",
@@ -180,7 +180,7 @@ def test_visit_panel_bottom_button_is_bound_without_top_toggle(tmp_path):
 def test_visit_request_appears_in_admin_prospects_as_technical_visit(tmp_path):
     app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "public-visit-admin.db")})
     client = app.test_client()
-    created = create_quote(client, "pumping", {"water_need": 30, "hours": 6, "depth": 50, "elevation": 12, "distance": 60, "city": "Agadir"})
+    created = create_quote(client, "pumping", {"pump_existing": False, "flow_m3_h": 12, "hmt_m": 80})
 
     client.post(
         f"/api/simulations/{created['quote_number']}/visit",
@@ -205,7 +205,37 @@ def test_visit_request_appears_in_admin_prospects_as_technical_visit(tmp_path):
     detail_html = detail.get_data(as_text=True)
     assert detail.status_code == 200
     assert 'id="visite-technique"' in detail_html
-    assert "Visites techniques" in detail_html
+    assert "Visite demandée" in detail_html
+
+
+def test_admin_quote_visit_section_groups_repeated_requests(tmp_path):
+    app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "public-visit-grouped.db")})
+    client = app.test_client()
+    created = create_quote(client, "pumping", {"pump_existing": False, "flow_m3_h": 12, "hmt_m": 80})
+    visit_payload = {
+        "preferred_date": "2026-09-02",
+        "time_slot": "Matin",
+        "address": "Douar test, Agadir",
+        "phone": "0600000000",
+        "comment": "Visite souhaitee en matinnee.",
+    }
+
+    for _ in range(3):
+        response = client.post(f"/api/simulations/{created['quote_number']}/visit", json=visit_payload)
+        assert response.status_code == 200
+
+    client.post("/admin/login", data={"password": "heliantha2026"})
+    detail = client.get("/admin/devis/1#visite-technique")
+
+    assert detail.status_code == 200
+    html = detail.get_data(as_text=True)
+    assert "Une seule fiche claire, sans répétition." in html
+    assert "Cette même demande a été envoyée 3 fois." in html
+    assert "Total reçu" not in html
+    assert "Demandes uniques" not in html
+    assert "Répétitions masquées" not in html
+    assert html.count("Douar test, Agadir") == 1
+    assert html.count("Visite souhaitee en matinnee.") == 1
 
 
 def test_public_print_route_renders_from_snapshot(tmp_path):
@@ -229,7 +259,7 @@ def test_admin_pdf_and_bilan_hide_placeholder_lines(tmp_path):
         "/api/calculate",
         json={
             "project": "pumping",
-            "data": {"water_need": 30, "hours": 6, "depth": 50, "elevation": 12, "distance": 60, "city": "Agadir"},
+            "data": {"pump_existing": False, "flow_m3_h": 12, "hmt_m": 80},
         },
     )
     client.post("/admin/login", data={"password": "heliantha2026"})
@@ -241,18 +271,31 @@ def test_admin_pdf_and_bilan_hide_placeholder_lines(tmp_path):
     detail_html = detail_response.get_data(as_text=True)
 
     assert pdf_response.status_code == 200
-    assert "PUMP-4.0" in pdf_html
-    assert "SI23-D5-5R5" in pdf_html
-    assert "CS6W-590TB-AG" in pdf_html
+    assert "Pompe solaire 7.5 CV" in pdf_html
+    assert "VEICHI 7.5 kW tri" in pdf_html
+    assert "Panneaux photovoltaïques 590 Wc" in pdf_html
     assert "PV-590-HS" not in pdf_html
     assert "DRV-VEICHI-5.5" not in pdf_html
+    assert "HeliAntha Select" not in detail_html
+    assert "HeliAntha Structure" not in detail_html
+    assert "HeliAntha Triphasé" not in detail_html
+    assert "HeliAntha 12 panneaux" not in detail_html
+    assert "HeliAntha Par panneau" not in detail_html
+    assert "Panneaux photovoltaïques 590 Wc" in detail_html
+    assert "Structure pour panneaux 590 Wc" in detail_html
+    assert "Coffret de protection tri" in detail_html
+    assert "Câblage et accessoires" in detail_html
+    assert "Installation et mise en service" in detail_html
     assert "A confirmer" not in pdf_html
-    assert "31 756.60 DH" in pdf_html
-    assert "37 199.76 DH" in pdf_html
+    assert "51 996.08 DH" in pdf_html
 
     assert detail_response.status_code == 200
-    assert "Nomenclature technique (BOM)" in detail_html
-    assert "3 ligne(s)" in detail_html
+    assert "Éléments du devis" in detail_html
+    assert "7 ligne(s)" in detail_html
+    assert "Raisonnement technique" not in detail_html
+    assert "Formule" not in detail_html
+    assert "Source" not in detail_html
+    assert "BOM" not in detail_html
 
 
 def test_calculate_returns_controlled_error_on_unexpected_failure(tmp_path, monkeypatch):

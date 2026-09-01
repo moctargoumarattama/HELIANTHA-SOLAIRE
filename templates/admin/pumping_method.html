@@ -1,0 +1,228 @@
+{% extends "admin/base.html" %}
+{% block title %}Méthode Pompage - HeliAntha Admin{% endblock %}
+{% block page_title %}Méthode Pompage{% endblock %}
+
+{% block content %}
+<section class="panel pumping-method-hero">
+  <span class="source-badge">Lecture seule</span>
+  <h2>Méthode de sélection Pompage</h2>
+  <p>
+    Cette page présente la logique utilisée par HeliAntha Smart Quote
+    pour sélectionner une pompe et sa configuration solaire.
+    Aucune donnée ne peut être modifiée ici.
+  </p>
+</section>
+
+<section class="stat-grid">
+  <article>
+    <small>Pompes utilisées dans la méthode</small>
+    <b>{{ summary.pump_count }}</b>
+  </article>
+  <article>
+    <small>Puissances CV distinctes</small>
+    <b>{{ summary.cv_count }}</b>
+  </article>
+  <article>
+    <small>Points Débit/HMT disponibles</small>
+    <b>{{ summary.curve_point_count }}</b>
+  </article>
+</section>
+
+<section class="admin-grid two">
+  <article class="panel">
+    <h2>Méthode de sélection</h2>
+    <ol class="clean-list">
+      <li>Le client fournit son débit en m³/h et sa HMT en mètres.</li>
+      <li>Le système consulte les courbes Débit/HMT enregistrées.</li>
+      <li>Les pompes insuffisantes sont éliminées.</li>
+      <li>Parmi les pompes capables de couvrir le besoin, le plus petit CV suffisant est retenu.</li>
+      <li>Si plusieurs solutions du même CV conviennent, la moins chère selon le prix Admin actuel est retenue.</li>
+      <li>Le CV sélectionné est envoyé vers la règle solaire HeliAntha.</li>
+      <li>La règle solaire fournit panneaux, variateur et phase.</li>
+    </ol>
+  </article>
+
+  <article class="panel">
+    <h2>Simulateur Débit/HMT</h2>
+    <p class="muted">Cette vérification utilise la vraie logique Pompage. Elle ne crée aucun prospect, aucune simulation client et aucun devis.</p>
+    {% if error %}
+      <div class="admin-alert">{{ error }}</div>
+    {% endif %}
+    <form class="admin-form pumping-method-form" method="get">
+      <label>
+        Débit demandé
+        <input name="flow_m3_h" type="text" inputmode="decimal" value="{{ flow_value }}" placeholder="ex. 5 ou 2,3">
+        <span>m³/h</span>
+      </label>
+      <label>
+        HMT demandée
+        <input name="hmt_m" type="text" inputmode="decimal" value="{{ hmt_value }}" placeholder="ex. 70">
+        <span>HMT (m) — Hauteur manométrique totale</span>
+      </label>
+      <div class="form-actions full">
+        <button class="admin-button" type="submit">Vérifier la sélection</button>
+      </div>
+    </form>
+  </article>
+</section>
+
+{% if analysis %}
+  <section class="panel">
+    <h2>Analyse des candidats</h2>
+    <div class="metric-list pumping-method-metrics">
+      <div>
+        <small>Débit demandé</small>
+        <b>{{ analysis.flow_label }}</b>
+      </div>
+      <div>
+        <small>HMT demandée</small>
+        <b>{{ analysis.hmt_label }}</b>
+      </div>
+      <div>
+        <small>Intervalle identifié</small>
+        <b>{{ analysis.interval_label }}</b>
+      </div>
+    </div>
+    <p class="muted">{{ analysis.policy_label }}</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>CV</th>
+            <th>Variante</th>
+            <th>Débit vérifié</th>
+            <th>HMT disponible</th>
+            <th>Prix Admin actuel</th>
+            <th>Statut</th>
+            <th>Lecture métier</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for candidate in analysis.candidates %}
+            <tr class="candidate-{{ candidate.status_tone }}">
+              <td><strong>{{ candidate.cv_label }}</strong></td>
+              <td>Variante {{ candidate.variant_index }}</td>
+              <td>{{ candidate.interval_label }}</td>
+              <td>{{ candidate.hmt_label }}</td>
+              <td>{{ candidate.price_label }}</td>
+              <td><span class="status candidate-status">{{ candidate.status }}</span></td>
+              <td>{{ candidate.reason }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="admin-grid two">
+    <article class="panel">
+      <h2>Décision</h2>
+      <h3>{{ analysis.decision.title }}</h3>
+      <ul class="clean-list decision-list">
+        {% for line in analysis.decision.lines %}
+          <li>{{ line }}</li>
+        {% endfor %}
+      </ul>
+    </article>
+
+    <article class="panel">
+      <h2>Configuration solaire</h2>
+      {% if analysis.solar_config %}
+        <dl class="info-list">
+          <dt>Pompe sélectionnée</dt>
+          <dd>{{ analysis.solar_config.pump_cv_label }}</dd>
+          <dt>Panneaux</dt>
+          <dd>{{ analysis.solar_config.panels_label }}</dd>
+          <dt>Puissance photovoltaïque</dt>
+          <dd>{{ analysis.solar_config.pv_kwp_label }}</dd>
+          <dt>Variateur</dt>
+          <dd>{{ analysis.solar_config.drive_label }}</dd>
+          <dt>Phase</dt>
+          <dd>{{ analysis.solar_config.phase_label }}</dd>
+        </dl>
+      {% elif analysis.decision.status == "selected" %}
+        <div class="admin-alert">
+          Pompe adaptée identifiée : {{ analysis.decision.selected_cv_label }}<br>
+          La configuration solaire HeliAntha correspondante n’est pas encore définie.
+        </div>
+      {% else %}
+        <div class="admin-alert">
+          Aucune pompe standard ne couvre ce besoin.<br>
+          Une configuration HeliAntha personnalisée est nécessaire.
+        </div>
+      {% endif %}
+    </article>
+  </section>
+{% endif %}
+
+<section class="panel">
+  <h2>Performances Débit/HMT par CV</h2>
+  <p class="muted">Vue lecture seule des points issus des fiches pompe enregistrées.</p>
+  <div class="performance-groups">
+    {% for group in performance_groups %}
+      <details class="performance-group">
+        <summary>Voir les détails — {{ group.cv_label }} — {{ group.variants|length }} variante(s) technique(s)</summary>
+        <div class="variant-grid">
+          {% for variant in group.variants %}
+            <article class="variant-card">
+              <h3>{{ variant.label }}</h3>
+              <dl class="info-list compact-info">
+                <dt>kW</dt><dd>{{ variant.power_kw }}</dd>
+                <dt>Tension</dt><dd>{{ variant.voltage }}</dd>
+                <dt>Courant</dt><dd>{{ variant.current }}</dd>
+                <dt>Prix Admin</dt><dd>{{ variant.price }}</dd>
+              </dl>
+              <div class="table-wrap mini-table">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Débit</th>
+                      <th>HMT</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for point in variant.points %}
+                      <tr>
+                        <td>{{ point.flow_label }}</td>
+                        <td>{{ point.hmt_label }}</td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </article>
+          {% endfor %}
+        </div>
+      </details>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Règles solaires</h2>
+  <p class="muted">Règles actives lues depuis la configuration Pompage HeliAntha.</p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>CV pompe</th>
+          <th>Panneaux</th>
+          <th>Variateur</th>
+          <th>Phase</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for rule in solar_rules %}
+          <tr>
+            <td>{{ rule.cv }}</td>
+            <td>{{ rule.panels }}</td>
+            <td>{{ rule.drive }}</td>
+            <td>{{ rule.phase }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

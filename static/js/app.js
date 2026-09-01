@@ -33,8 +33,8 @@ const WIZARD_PROJECT_META = window.HELIANTHA_WIZARD_PROJECTS || {
   pumping: {
     engine_project: "pumping",
     aliases: [],
-    payload_fields: ["pump_existing", "existing_pump_cv", "water_need", "hours", "depth", "elevation", "distance", "city"],
-    summary_fields: ["pump_existing", "existing_pump_cv", "water_need", "hours", "depth", "elevation", "distance", "city"],
+    payload_fields: ["pump_existing", "existing_pump_cv", "flow_m3_h", "hmt_m"],
+    summary_fields: ["pump_existing", "existing_pump_cv", "flow_m3_h", "hmt_m"],
     supports_loads: false,
   },
   off_grid: {
@@ -86,32 +86,32 @@ const PROJECTS = {
         title: "Avez-vous déjà une pompe ?",
         description: "Indiquez votre situation pour préparer votre installation solaire.",
         fields: [
-          choiceField("has_existing_pump", "Pompe existante", [
-            { value: "no", label: "Non, j’ai besoin d’une recommandation" },
-            { value: "yes", label: "Oui, une pompe existe déjà" },
-          ], "no"),
+          choiceField("pump_existing", "Pompe existante", [
+            { value: "false", label: "Non, j’ai besoin d’une recommandation" },
+            { value: "true", label: "Oui, une pompe existe déjà" },
+          ], "false"),
         ],
       },
       {
         id: "existing_pump_cv",
         type: "pump-cv-picker",
-        showIf: (state) => state.answers.has_existing_pump === "yes",
+        showIf: (state) => pumpExistingAnswer(state.answers.pump_existing),
         title: "Quelle est la puissance de votre pompe ?",
         description: "Choisissez la puissance indiquée sur votre pompe.",
       },
       {
         id: "site",
         type: "fields",
-        showIf: (state) => state.answers.has_existing_pump !== "yes",
-        title: "Votre besoin en eau",
-        description: "Nous utilisons ces informations uniquement si vous n’avez pas encore de pompe.",
+        showIf: (state) => !pumpExistingAnswer(state.answers.pump_existing),
+        title: "Votre besoin de pompage",
+        description: "Ces deux valeurs permettent de sélectionner une pompe HeliAntha adaptée.",
         fields: [
-          numberField("water_need", "Besoin en eau", "m³ / jour", "30"),
-          numberField("hours", "Pompage souhaité", "heures / jour", "6"),
-          numberField("depth", "Profondeur / niveau dynamique", "m", "55"),
-          numberField("elevation", "Hauteur jusqu’au réservoir", "m", "15"),
-          numberField("distance", "Distance horizontale", "m", "80"),
-          textField("city", "Ville du projet", "ex. Marrakech", "Marrakech"),
+          numberField("flow_m3_h", "De quel débit avez-vous besoin ?", "m³/h", "", { required: true, min: 0.01 }),
+          numberField("hmt_m", "Quelle est la HMT de votre installation ?", "m", "", {
+            required: true,
+            min: 0.01,
+            help: "HMT : hauteur manométrique totale de l’installation.",
+          }),
         ],
       },
       commonContactStep(),
@@ -320,7 +320,6 @@ const PUMP_CV_OPTIONS = [
   { value: "50", label: "50 CV" },
 ];
 const PUMP_CV_LABELS = Object.fromEntries(PUMP_CV_OPTIONS.map((option) => [option.value, option.label]));
-const PUMP_CV_STORAGE_VALUE = (value) => String(value ?? "");
 
 const state = loadState();
 const wizard = document.querySelector("#wizard");
@@ -353,6 +352,21 @@ function selectField(name, label, options, value, extra = {}) {
 
 function choiceField(name, label, options, value, extra = {}) {
   return { type: "choice", name, label, options, value, ...extra };
+}
+
+function pumpExistingAnswer(value) {
+  if (value === true) return true;
+  return ["true", "yes", "1"].includes(String(value ?? "").trim().toLowerCase());
+}
+
+function cleanOppositePumpingAnswers(answers) {
+  if (!answers || typeof answers !== "object") return;
+  if (pumpExistingAnswer(answers.pump_existing)) {
+    delete answers.flow_m3_h;
+    delete answers.hmt_m;
+  } else {
+    delete answers.existing_pump_cv;
+  }
 }
 
 function energyModeStep(defaultValue = "loads") {
@@ -547,6 +561,33 @@ function pruneProjectAnswers(project, answers) {
   return Object.fromEntries(
     Object.entries(answers || {}).filter(([key, value]) => allowed.has(key) && !(typeof value === "string" && value.trim() === ""))
   );
+}
+
+function parseLocaleNumber(value) {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : 0;
+  }
+  const normalized = String(value ?? "")
+    .trim()
+    .replace(/\u00a0/g, "")
+    .replace(/\s/g, "");
+  if (!normalized) {
+    return 0;
+  }
+  let decimal = normalized;
+  if (decimal.includes(",")) {
+    if (decimal.includes(".") && decimal.lastIndexOf(",") > decimal.lastIndexOf(".")) {
+      decimal = decimal.replace(/\./g, "");
+    }
+    decimal = decimal.replace(",", ".");
+  }
+  const parsed = Number(decimal);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function normalizeLocaleNumberAnswer(value) {
+  const parsed = parseLocaleNumber(value);
+  return Number.isFinite(parsed) ? parsed : value;
 }
 
 function pruneProjectLoads(project, loads, answers = {}) {
@@ -798,10 +839,8 @@ function getFieldLabel(project, fieldName) {
   const fallback = {
     pump_existing: "Pompe existante",
     existing_pump_cv: "Puissance de la pompe",
-    water_need: "Besoin en eau",
-    hours: "Pompage souhaité",
-    depth: "Profondeur",
-    elevation: "Hauteur jusqu’au réservoir",
+    flow_m3_h: "Débit demandé",
+    hmt_m: "HMT demandée",
     distance: "Distance horizontale",
     city: "Ville du projet",
     energy_mode: "Mode de saisie",
@@ -1073,6 +1112,9 @@ function renderFieldsStep(step) {
       const value = button.dataset.inlineValue;
       const target = step.contact ? state.contact : state.answers;
       target[group] = value;
+      if (state.project === "pumping" && group === "pump_existing") {
+        cleanOppositePumpingAnswers(target);
+      }
       renderWizardShell();
       persistState();
     });
@@ -1233,7 +1275,7 @@ function renderField(field, store) {
   return `
     <div class="field ${full}">
       <label for="${field.name}">${field.label}</label>
-      <input id="${field.name}" name="${field.name}" type="${field.type || "text"}" placeholder="${field.unit || field.placeholder || ""}" value="${escapeHtml(value)}" ${field.step ? `step="${field.step}"` : ""} ${required}>
+      <input id="${field.name}" name="${field.name}" type="${field.type || "text"}" placeholder="${field.unit || field.placeholder || ""}" value="${escapeHtml(value)}" ${field.step ? `step="${field.step}"` : ""} ${field.min !== undefined ? `min="${field.min}"` : ""} ${field.max !== undefined ? `max="${field.max}"` : ""} ${required}>
       ${(field.unit || field.help) ? `<p class="field-hint">${field.help || field.unit}</p>` : ""}
     </div>
   `;
@@ -1581,7 +1623,9 @@ function renderRecapStep() {
 
 function buildRecapItems(payload) {
   const data = payload.data || {};
-  const existingPumpMode = state.project === "pumping" && String(data.has_existing_pump || state.answers.has_existing_pump || "") === "yes";
+  const pumpingProject = state.project === "pumping";
+  const existingPumpMode = pumpingProject && data.pump_existing === true;
+  const recommendedPumpMode = pumpingProject && data.pump_existing === false;
   const items = existingPumpMode
     ? [
         ["Projet", getProjectConfig().label],
@@ -1590,15 +1634,19 @@ function buildRecapItems(payload) {
       ]
     : [["Projet", getProjectConfig().label]];
 
-  if (!existingPumpMode && (data.city || state.contact.location)) {
+  if (recommendedPumpMode) {
+    items.push(["Situation", "Recommandation de pompe"]);
+    if (data.flow_m3_h) items.push(["Débit demandé", `${formatNumber(data.flow_m3_h)} m³/h`]);
+    if (data.hmt_m) items.push(["HMT demandée", `${formatNumber(data.hmt_m)} m`]);
+  }
+  if (!pumpingProject && (data.city || state.contact.location)) {
     items.push(["Localisation", data.city || state.contact.location]);
   }
-  if (!existingPumpMode) {
+  if (!pumpingProject) {
     if (data.daily_kwh) items.push(["Consommation", `${formatNumber(data.daily_kwh)} kWh / jour`]);
     if (data.monthly_kwh) items.push(["Consommation mensuelle", `${formatNumber(data.monthly_kwh)} kWh / mois`]);
     if (data.peak_kw) items.push(["Puissance simultanée", `${formatNumber(data.peak_kw)} kW`]);
     if (data.autonomy) items.push(["Autonomie", `${formatNumber(data.autonomy)} jour(s)`]);
-    if (data.water_need) items.push(["Besoin en eau", `${formatNumber(data.water_need)} m² / jour`]);
     if (data.available_power) items.push(["Puissance disponible", `${formatNumber(data.available_power)} kW`]);
   }
   if (state.contact.name) items.push(["Contact", state.contact.name]);
@@ -1627,6 +1675,9 @@ function syncCurrentInputs() {
       target[button.dataset.inlineChoice] = button.dataset.inlineValue;
     }
   });
+  if (state.project === "pumping" && target === state.answers) {
+    cleanOppositePumpingAnswers(target);
+  }
   persistState();
 }
 
@@ -1769,6 +1820,18 @@ function buildApiPayload() {
   const data = pruneProjectAnswers(project, state.answers);
   const totals = computeLoads();
 
+  if (project === "pumping") {
+    data.pump_existing = pumpExistingAnswer(state.answers.pump_existing);
+    if (data.pump_existing) {
+      delete data.flow_m3_h;
+      delete data.hmt_m;
+    } else {
+      delete data.existing_pump_cv;
+      data.flow_m3_h = normalizeLocaleNumberAnswer(data.flow_m3_h);
+      data.hmt_m = normalizeLocaleNumberAnswer(data.hmt_m);
+    }
+  }
+
   if (state.answers.energy_mode === "loads") {
     data.daily_kwh = roundTo(totals.daily_kwh, 2);
     data.peak_kw = roundTo(totals.peak_kw, 2);
@@ -1777,7 +1840,7 @@ function buildApiPayload() {
     }
   }
 
-  if (!data.city && state.contact.location) {
+  if (project !== "pumping" && !data.city && state.contact.location) {
     data.city = state.contact.location;
   }
   if (projectUsesLoadLibrary(project, state.answers) && state.loads.length) {
@@ -1902,11 +1965,11 @@ function iconForDevice(name, category) {
 
 function roundTo(value, digits = 2) {
   const factor = 10 ** digits;
-  return Math.round(Number(value || 0) * factor) / factor;
+  return Math.round(parseLocaleNumber(value) * factor) / factor;
 }
 
 function formatNumber(value, digits = 1) {
-  const number = Number(value || 0);
+  const number = parseLocaleNumber(value);
   return new Intl.NumberFormat("fr-FR", {
     minimumFractionDigits: 0,
     maximumFractionDigits: digits,

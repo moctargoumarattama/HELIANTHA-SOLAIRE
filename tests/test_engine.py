@@ -9,9 +9,13 @@ from app.parameter_views import enrich_parameter
 
 def test_pumping_calculation_is_coherent():
     result = CalculationEngine().calculate("pumping", {
-        "water_need": 30, "depth": 55, "elevation": 15, "distance": 80, "hours": 6
+        "pump_existing": False, "flow_m3_h": 12, "hmt_m": 80
     })
     assert result["title"] == "Pompage solaire"
+    assert result["final_results"]["selected_pump_cv"] == pytest.approx(7.5)
+    assert result["final_results"]["flow_m3_h"] == pytest.approx(12)
+    assert result["final_results"]["hmt_m"] == pytest.approx(80)
+    assert result["final_results"]["panels"] == 14
     assert len(result["offers"]) == 3
     assert result["offers"][1]["recommended"] is True
     assert result["offers"][1]["ttc"] > result["offers"][1]["ht"]
@@ -104,6 +108,29 @@ def test_pumping_existing_pump_without_rule_is_rejected(tmp_path):
             CalculationEngine().calculate("pumping", {
                 "pump_existing": True,
                 "existing_pump_cv": 12,
+            })
+
+
+def test_pumping_existing_pump_requires_exact_drive_brand(tmp_path, monkeypatch):
+    app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "pumping-rule-brand-missing.db")})
+    from app.calculators.engine import ContextView
+
+    original_pumping_rule = ContextView.pumping_rule
+
+    def patched_pumping_rule(self, rule_type, **criteria):
+        rule = original_pumping_rule(self, rule_type, **criteria)
+        if rule_type == "pump_configuration" and abs(float(criteria.get("pump_cv") or 0) - 5.5) <= 0.05 and rule:
+            rule = dict(rule)
+            rule["drive_brand"] = ""
+        return rule
+
+    monkeypatch.setattr(ContextView, "pumping_rule", patched_pumping_rule)
+
+    with app.app_context():
+        with pytest.raises(ValidationError, match="Produit catalogue exact introuvable"):
+            CalculationEngine().calculate("pumping", {
+                "pump_existing": True,
+                "existing_pump_cv": 5.5,
             })
 
 
@@ -289,6 +316,67 @@ def test_admin_pages_render_after_login(tmp_path):
     ]
     for path in paths:
         assert client.get(path).status_code == 200
+
+
+def test_admin_dashboard_ignores_iot_and_hides_financial_cards(tmp_path):
+    app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "admin-dashboard.db")})
+    client = app.test_client()
+
+    with app.app_context():
+        from app.db import dashboard_stats, get_db
+
+        db = get_db()
+        for index, project in enumerate(["pumping", "offgrid", "ongrid", "hybrid", "thermal", "ev"], start=1):
+            db.execute(
+                """INSERT INTO quote_requests
+                (quote_number, project, request_json, result_json, status)
+                VALUES (?, ?, ?, ?, ?)""",
+                (f"HSQ-CAN-{index:02d}", project, "{}", "{}", "Nouveau"),
+            )
+        for index in range(1, 3):
+            db.execute(
+                """INSERT INTO quote_requests
+                (quote_number, project, request_json, result_json, status)
+                VALUES (?, ?, ?, ?, ?)""",
+                (f"HSQ-IOT-{index:02d}", "iot", "{}", "{}", "Nouveau"),
+            )
+        db.commit()
+        stats = dashboard_stats()
+
+    login = client.post("/admin/login", data={"password": "heliantha2026"})
+    assert login.status_code == 302
+
+    html = client.get("/admin/").get_data(as_text=True)
+
+    assert "potential_ht" not in stats
+    assert "potential_ttc" not in stats
+    assert stats["total_prospects"] == 6
+    assert [item["label"] for item in stats["project_breakdown"]] == [
+        "Pompage solaire",
+        "Site sans réseau",
+        "Réduire ma consommation",
+        "Solaire avec batteries",
+        "Chauffage solaire",
+        "Recharge électrique",
+    ]
+    assert "iot" not in html.lower()
+    assert "IoT" not in html
+    assert "Potentiel HT" not in html
+    assert "Potentiel TTC" not in html
+    assert "Prospects" in html
+    assert "Simulations" in html
+    assert "Devis générés" in html
+    assert "En attente" in html
+    assert "Acceptés" in html
+    assert "Refusés" in html
+    assert "En installation" in html
+    assert "Répartition des projets" in html
+    assert "Pompage solaire" in html
+    assert "Site sans réseau" in html
+    assert "Réduire ma consommation" in html
+    assert "Solaire avec batteries" in html
+    assert "Chauffage solaire" in html
+    assert "Recharge électrique" in html
 
 
 def test_admin_users_crud_and_direction_protection(tmp_path):

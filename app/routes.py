@@ -1,3 +1,4 @@
+from copy import deepcopy
 from datetime import datetime, timedelta
 from json import dumps as json_dumps, loads as json_loads
 from pathlib import Path
@@ -64,7 +65,17 @@ from .db import (
     update_quote_status,
 )
 from .defaults import CATEGORY_PRESENTATION, PROJECT_LABELS, PUBLIC_PROJECTS, QUOTE_STATUSES, SOURCE_TYPES
-from .pumping_rules import PUMPING_RULE_SECTIONS, group_rules, normalize_pump_cv, parse_number
+from .pumping_rules import (
+    PUMPING_RULE_SECTIONS,
+    format_cv,
+    format_phase,
+    format_power_kw,
+    format_power_w,
+    format_price,
+    group_rules,
+    normalize_pump_cv,
+    parse_number,
+)
 from .parameter_views import (
     SOURCE_OPTIONS,
     filter_and_group_parameters,
@@ -78,6 +89,7 @@ from .services.advisor.intents import detect_intents
 from .services.advisor.knowledge import search_knowledge
 from .services.advisor.learning import similar_occurrence_count
 from .services.advisor.rules import contains_any, detect_project, normalize
+from .services.pump_selector import NO_STANDARD_PUMP_MESSAGE, curve_head_for_flow, select_pump_for_duty
 from .wizard_projects import engine_project_for, normalize_wizard_project, wizard_projects_payload
 
 
@@ -97,16 +109,18 @@ CATALOG_STOCK_OPTIONS = [
     {"value": "available", "label": "Stock disponible"},
     {"value": "empty", "label": "Stock a confirmer / nul"},
 ]
-PWA_CACHE_NAME = "heliantha-pwa-v3"
+PWA_CACHE_NAME = "heliantha-pwa-v4"
+APP_ASSET_VERSION = "20260901-1"
+PWA_ASSET_VERSION = "20260901-1"
 PWA_CORE_PATHS = [
     "/",
     "/assets/helin.jpeg",
     "/static/css/app.css",
     "/static/css/admin.css",
-    "/static/js/app.js?v=20260829-1",
+    f"/static/js/app.js?v={APP_ASSET_VERSION}",
     "/static/js/public-result.js",
     "/static/js/advisor.js",
-    "/static/js/pwa.js?v=20260828-2",
+    f"/static/js/pwa.js?v={PWA_ASSET_VERSION}",
 ]
 
 PRICING_RULE_PRESENTATION = {
@@ -231,7 +245,80 @@ def _is_placeholder_equipment_line(item: dict) -> bool:
 
 
 def _display_equipment_lines(lines):
-    return [item for item in (lines or []) if not _is_placeholder_equipment_line(item)]
+    display_lines = []
+
+    def clean_number(value, digits=1):
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return ""
+        if digits <= 0:
+            return f"{number:.0f}"
+        text = f"{number:.{digits}f}".rstrip("0").rstrip(".")
+        return text
+
+    def phase_short(value):
+        label = str(value or "").strip().lower()
+        if "tri" in label:
+            return "tri"
+        if "mono" in label:
+            return "mono"
+        return ""
+
+    def simple_designation(row, specs):
+        component = str(row.get("component") or "").strip().lower()
+        category = str(row.get("category") or "").strip().lower()
+        role = str(row.get("role") or "").strip().lower()
+
+        power_cv = row.get("power_cv") or specs.get("power_hp")
+        if category == "pumps":
+            cv_label = clean_number(power_cv, 1)
+            return f"Pompe solaire {cv_label} CV" if cv_label else "Pompe solaire"
+
+        power_w = row.get("power_w") or specs.get("power_w") or specs.get("panel_power_w")
+        if component == "panel" or category == "panels":
+            power_label = clean_number(power_w, 0)
+            return f"Panneaux photovoltaïques {power_label} Wc" if power_label else "Panneaux photovoltaïques"
+
+        power_kw = row.get("power_kw") or specs.get("power_kw")
+        if component in {"pump_drive", "drive"} or category == "drives" or "variateur" in role:
+            brand = str(row.get("brand") or "").strip()
+            power_label = clean_number(power_kw, 1)
+            phase_label = phase_short(row.get("model") or specs.get("phase") or specs.get("phases"))
+            parts = ["Variateur"]
+            if brand:
+                parts.append(brand)
+            if power_label:
+                parts.append(f"{power_label} kW")
+            if phase_label:
+                parts.append(phase_label)
+            return " ".join(parts)
+
+        if component == "structure" or category == "structures" or "structure" in role:
+            power_label = clean_number(power_w, 0)
+            return f"Structure pour panneaux {power_label} Wc" if power_label else "Structure pour panneaux"
+
+        if component == "coffret" or category == "protections" or "coffret" in role:
+            phase_label = phase_short(row.get("model") or specs.get("phase") or specs.get("phases"))
+            return f"Coffret de protection {phase_label}" if phase_label else "Coffret de protection"
+
+        if component == "cabling_accessories" or category == "cables":
+            return "Câblage et accessoires"
+
+        if component == "installation" or category == "services" or "installation" in role:
+            return "Installation et mise en service"
+
+        return row.get("description") or row.get("model") or row.get("role") or "Élément du devis"
+
+    for item in lines or []:
+        if _is_placeholder_equipment_line(item):
+            continue
+        row = deepcopy(item)
+        specs = row.get("technical_specs") or {}
+        row["display_reference"] = ""
+        row["display_designation"] = simple_designation(row, specs)
+        display_lines.append(row)
+    return display_lines
 
 
 def _financial_summary_rows(financial_breakdown: dict) -> list[dict]:
@@ -244,9 +331,9 @@ def _financial_summary_rows(financial_breakdown: dict) -> list[dict]:
         return round(sum(categories.get(key, 0) for key in keys), 2)
 
     return [
-        {"label": "Matériel principal", "amount": total("principal_equipment")},
-        {"label": "Compléments techniques", "amount": total("accessories", "protections", "cabling", "structure")},
-        {"label": "Services", "amount": total("installation", "labor")},
+        {"label": "Matériel", "amount": total("principal_equipment")},
+        {"label": "Compléments", "amount": total("accessories", "protections", "cabling", "structure")},
+        {"label": "Pose", "amount": total("installation", "labor")},
         {"label": "Total HT", "amount": float(financial_breakdown.get("total_ht") or 0), "emphasis": True},
         {"label": "TVA", "amount": float(financial_breakdown.get("vat") or 0)},
         {"label": "Net à payer", "amount": float(financial_breakdown.get("total_ttc") or 0), "emphasis": True},
@@ -594,8 +681,6 @@ def calculate():
     if not project:
         return jsonify(error="Projet non reconnu."), 400
     engine_project = engine_project_for(project)
-    if engine_project == "iot":
-        return jsonify(error="IoT / systèmes embarqués est temporairement hors périmètre de cette version."), 400
     data = payload.get("data") or {}
     contact = payload.get("contact") or {}
     try:
@@ -718,6 +803,347 @@ def admin_dashboard():
     )
 
 
+def _method_decimal(value, digits=1):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return "—"
+    text = f"{number:,.{digits}f}"
+    text = text.replace(",", " ").replace(".", ",")
+    if digits == 1 and text.endswith(",0"):
+        return text[:-2]
+    return text
+
+
+def _method_pump_power(product):
+    specs = product.get("technical_specs") or {}
+    return normalize_pump_cv(specs.get("power_hp") or product.get("power_hp"))
+
+
+def _method_pump_curve(product):
+    points = product.get("pump_curve_points") or []
+    return [
+        {
+            "flow_m3_h": float(point.get("flow_m3_h") or 0),
+            "hmt_m": float(point.get("hmt_m") or 0),
+            "flow_label": f"{_method_decimal(point.get('flow_m3_h'), 1)} m³/h",
+            "hmt_label": f"{_method_decimal(point.get('hmt_m'), 1)} m",
+        }
+        for point in points
+        if point.get("flow_m3_h") is not None and point.get("hmt_m") is not None
+    ]
+
+
+def _method_active_curve_pumps(context):
+    pumps = []
+    for product in context.get("products") or []:
+        if product.get("category") != "pumps" or int(product.get("active", 1) or 0) != 1:
+            continue
+        curve = _method_pump_curve(product)
+        power_hp = _method_pump_power(product)
+        if not curve or power_hp <= 0:
+            continue
+        pumps.append({**product, "_method_power_hp": power_hp, "_method_curve": curve})
+    return sorted(
+        pumps,
+        key=lambda item: (
+            item["_method_power_hp"],
+            float(item.get("sale_price") or 0),
+            str(item.get("brand") or ""),
+            str(item.get("model") or ""),
+        ),
+    )
+
+
+def _method_pump_rules(context):
+    rules = [
+        dict(rule)
+        for rule in (context.get("pumping_solar_rules") or {}).values()
+        if rule.get("rule_type") == "pump_configuration" and int(rule.get("active", 1) or 0) == 1
+    ]
+    return sorted(
+        rules,
+        key=lambda rule: (
+            float(rule.get("pump_cv") or 0),
+            int(rule.get("sort_order") or 0),
+            str(rule.get("title") or ""),
+        ),
+    )
+
+
+def _method_rule_for_cv(context, pump_cv):
+    target = normalize_pump_cv(pump_cv)
+    for rule in _method_pump_rules(context):
+        if abs(normalize_pump_cv(rule.get("pump_cv")) - target) <= 1e-9:
+            return rule
+    return None
+
+
+def _method_interval_label(duty):
+    if not duty:
+        return "Hors courbe"
+    start = duty.get("interval_start_m3_h")
+    end = duty.get("interval_end_m3_h")
+    if abs(float(start) - float(end)) <= 1e-9:
+        return f"{_method_decimal(start, 1)} m³/h"
+    return f"{_method_decimal(start, 1)} → {_method_decimal(end, 1)} m³/h"
+
+
+def _method_policy_label(policy):
+    return {
+        "exact_catalogue_point": "Point exact de la courbe catalogue.",
+        "conservative_interval_no_interpolation": "Débit situé entre deux points : le moteur utilise l'intervalle réel et retient la HMT la plus prudente, sans interpolation.",
+    }.get(str(policy or ""), "Débit hors courbe enregistrée.")
+
+
+def _method_candidates(pumps, flow_m3_h, hmt_m):
+    candidates = []
+    variant_counts = {}
+    for pump in pumps:
+        cv = pump["_method_power_hp"]
+        variant_counts[cv] = variant_counts.get(cv, 0) + 1
+        duty = curve_head_for_flow(pump["_method_curve"], flow_m3_h)
+        available_hmt = float(duty.get("available_hmt_m") or 0) if duty else None
+        compatible = duty is not None and available_hmt is not None and available_hmt + 1e-9 >= hmt_m
+        if compatible:
+            status = "Compatible"
+            status_tone = "ok"
+            reason = "Couvre le débit et la HMT demandés."
+        elif duty:
+            status = "Insuffisant"
+            status_tone = "bad"
+            reason = f"HMT disponible inférieure à {_method_decimal(hmt_m, 1)} m."
+        else:
+            status = "Hors courbe"
+            status_tone = "muted"
+            reason = "Le débit demandé n'est pas couvert par les points enregistrés."
+        candidates.append({
+            "cv": cv,
+            "cv_label": format_cv(cv),
+            "variant_index": variant_counts[cv],
+            "interval_label": _method_interval_label(duty),
+            "hmt_label": f"{_method_decimal(available_hmt, 1)} m" if available_hmt is not None else "—",
+            "status": status,
+            "status_tone": status_tone,
+            "compatible": compatible,
+            "price": float(pump.get("sale_price") or 0) if pump.get("sale_price") not in (None, "") else None,
+            "price_label": format_price(pump.get("sale_price")),
+            "reason": reason,
+        })
+    return candidates
+
+
+def _method_solar_config(rule):
+    if not rule:
+        return None
+    panels = int(float(rule.get("panel_count") or 0))
+    panel_power_w = float(rule.get("panel_power_w") or 0)
+    drive_power_kw = float(rule.get("drive_power_kw") or 0)
+    pv_kwp = panels * panel_power_w / 1000 if panels and panel_power_w else 0
+    return {
+        "pump_cv_label": format_cv(rule.get("pump_cv")),
+        "panels_label": f"{panels} × {format_power_w(panel_power_w)}",
+        "pv_kwp_label": f"{_method_decimal(pv_kwp, 2)} kWp",
+        "drive_label": f"{rule.get('drive_brand') or 'Variateur'} {format_power_kw(drive_power_kw)}",
+        "phase_label": format_phase(rule.get("phase")),
+    }
+
+
+def _method_decision(selection, candidates, rule):
+    if not selection:
+        return {
+            "status": "no_standard_pump",
+            "title": "Aucune pompe standard ne couvre ce besoin.",
+            "lines": [
+                NO_STANDARD_PUMP_MESSAGE,
+                "Les candidats évalués sont hors courbe ou insuffisants pour le couple Débit + HMT demandé.",
+                "Aucun fallback et aucun CV automatique ne sont utilisés.",
+            ],
+        }
+    selected_cv = float(selection["selected_pump_cv"])
+    compatible = [candidate for candidate in candidates if candidate["compatible"]]
+    lower_insufficient = [
+        candidate
+        for candidate in candidates
+        if candidate["cv"] < selected_cv and not candidate["compatible"]
+    ]
+    same_cv_compatible = [
+        candidate
+        for candidate in compatible
+        if abs(candidate["cv"] - selected_cv) <= 1e-9
+    ]
+    compatible_cvs = []
+    for candidate in compatible:
+        if not any(abs(candidate["cv"] - existing) <= 1e-9 for existing in compatible_cvs):
+            compatible_cvs.append(candidate["cv"])
+    lines = []
+    if lower_insufficient:
+        lower_labels = []
+        for candidate in lower_insufficient:
+            if candidate["cv_label"] not in lower_labels:
+                lower_labels.append(candidate["cv_label"])
+        lines.append(f"Les puissances inférieures ({', '.join(lower_labels)}) ne couvrent pas le besoin.")
+    if compatible_cvs:
+        lines.append(
+            "Les pompes compatibles sont : "
+            + ", ".join(format_cv(cv) for cv in compatible_cvs)
+            + "."
+        )
+    lines.append("La règle HeliAntha retient la plus petite puissance CV suffisante.")
+    if len(same_cv_compatible) > 1:
+        lines.append(
+            f"{len(same_cv_compatible)} solutions {format_cv(selected_cv)} couvrent le besoin ; "
+            "le prix Admin actuel le plus faible les départage."
+        )
+    if not rule:
+        lines.append("La configuration solaire HeliAntha correspondante n'est pas encore définie.")
+    else:
+        lines.append("Le CV retenu est envoyé vers la règle solaire HeliAntha active.")
+    lines.append(f"→ {format_cv(selected_cv)} retenu.")
+    return {
+        "status": "selected",
+        "title": f"{format_cv(selected_cv)} retenu",
+        "selected_cv": selected_cv,
+        "selected_cv_label": format_cv(selected_cv),
+        "selected_price_label": format_price(selection.get("current_price")),
+        "solar_rule_missing": not bool(rule),
+        "lines": lines,
+    }
+
+
+def _method_performance_groups(pumps):
+    groups = []
+    by_cv = {}
+    for pump in pumps:
+        by_cv.setdefault(pump["_method_power_hp"], []).append(pump)
+    for cv, variants in sorted(by_cv.items()):
+        group = {"cv": cv, "cv_label": format_cv(cv), "variants": []}
+        for index, pump in enumerate(variants, start=1):
+            specs = pump.get("technical_specs") or {}
+            group["variants"].append({
+                "label": f"Variante technique {index}",
+                "power_kw": format_power_kw(pump.get("power_kw") or specs.get("power_kw")),
+                "voltage": f"{_method_decimal(pump.get('voltage') or specs.get('voltage_v'), 0)} V" if (pump.get("voltage") or specs.get("voltage_v")) not in (None, "") else "—",
+                "current": f"{_method_decimal(pump.get('current_amp') or specs.get('current_a'), 1)} A" if (pump.get("current_amp") or specs.get("current_a")) not in (None, "") else "—",
+                "price": format_price(pump.get("sale_price")),
+                "points": pump["_method_curve"],
+            })
+        groups.append(group)
+    return groups
+
+
+def _pumping_method_view(flow_value="", hmt_value=""):
+    context = load_calculation_context()
+    pumps = _method_active_curve_pumps(context)
+    pump_rules = _method_pump_rules(context)
+    summary = {
+        "pump_count": len(pumps),
+        "cv_count": len({pump["_method_power_hp"] for pump in pumps}),
+        "curve_point_count": sum(len(pump["_method_curve"]) for pump in pumps),
+    }
+    analysis = None
+    error = ""
+    submitted = bool(str(flow_value).strip() or str(hmt_value).strip())
+    if submitted:
+        flow = parse_number(flow_value, None)
+        hmt = parse_number(hmt_value, None)
+        if not flow or flow <= 0 or not hmt or hmt <= 0:
+            error = "Saisissez un débit et une HMT strictement supérieurs à 0."
+        else:
+            selection = select_pump_for_duty(context.get("products") or [], flow, hmt)
+            candidates = _method_candidates(pumps, flow, hmt)
+            selected_cv = float(selection["selected_pump_cv"]) if selection else None
+            rule = _method_rule_for_cv(context, selected_cv) if selected_cv else None
+            selected_duty = selection.get("duty") if selection else None
+            analysis = {
+                "flow_label": f"{_method_decimal(flow, 1)} m³/h",
+                "hmt_label": f"{_method_decimal(hmt, 1)} m",
+                "interval_label": _method_interval_label(selected_duty),
+                "policy_label": _method_policy_label((selected_duty or {}).get("policy")),
+                "candidates": candidates,
+                "decision": _method_decision(selection, candidates, rule),
+                "solar_config": _method_solar_config(rule),
+            }
+    return {
+        "summary": summary,
+        "flow_value": flow_value,
+        "hmt_value": hmt_value,
+        "analysis": analysis,
+        "error": error,
+        "performance_groups": _method_performance_groups(pumps),
+        "solar_rules": [
+            {
+                "cv": format_cv(rule.get("pump_cv")),
+                "panels": f"{int(float(rule.get('panel_count') or 0))} × {format_power_w(rule.get('panel_power_w'))}",
+                "drive": f"{rule.get('drive_brand') or 'Variateur'} {format_power_kw(rule.get('drive_power_kw'))}",
+                "phase": format_phase(rule.get("phase")),
+            }
+            for rule in pump_rules
+        ],
+    }
+
+
+@bp.get("/admin/pompage/methode")
+def admin_pumping_method():
+    view = _pumping_method_view(
+        request.args.get("flow_m3_h", ""),
+        request.args.get("hmt_m", ""),
+    )
+    return render_template("admin/pumping_method.html", **view)
+
+
+def _visit_request_signature(visit):
+    return tuple(
+        str(visit.get(key) or "").strip().lower()
+        for key in ("preferred_date", "time_slot", "address", "phone", "comment", "status")
+    )
+
+
+def _visit_request_display_summary(visits):
+    visits = [dict(visit) for visit in visits or []]
+    if not visits:
+        return {"latest": None, "groups": [], "total": 0, "unique_count": 0, "duplicate_count": 0}
+    groups_by_signature = {}
+    groups = []
+    for visit in visits:
+        signature = _visit_request_signature(visit)
+        group = groups_by_signature.get(signature)
+        if not group:
+            group = {
+                "visit": visit,
+                "count": 0,
+                "created_at_values": [],
+            }
+            groups_by_signature[signature] = group
+            groups.append(group)
+        group["count"] += 1
+        if visit.get("created_at"):
+            group["created_at_values"].append(visit.get("created_at"))
+
+    latest = visits[0]
+    for group in groups:
+        created_values = group["created_at_values"]
+        group["first_created_at"] = created_values[-1] if created_values else ""
+        group["last_created_at"] = created_values[0] if created_values else ""
+        group["duplicate_label"] = (
+            f"{group['count']} demandes identiques"
+            if group["count"] > 1
+            else "1 demande"
+        )
+    latest_signature = _visit_request_signature(latest)
+    latest_group = groups_by_signature.get(latest_signature) or groups[0]
+    other_groups = [group for group in groups if group is not latest_group]
+    return {
+        "latest": latest,
+        "latest_group": latest_group,
+        "groups": groups,
+        "other_groups": other_groups,
+        "total": len(visits),
+        "unique_count": len(groups),
+        "duplicate_count": len(visits) - len(groups),
+    }
+
+
 @bp.get("/admin/devis")
 def admin_quotes():
     quotes = list_quotes()
@@ -740,6 +1166,7 @@ def admin_quote_detail(quote_id):
     bom = quote.get("bom") or calculation_detail.get("bom", {})
     bom_lines = _display_equipment_lines((bom or {}).get("lines") or quote.get("selected_equipment") or [])
     financial_summary_rows = _financial_summary_rows(quote.get("financial_breakdown") or {})
+    visit_summary = _visit_request_display_summary(quote.get("visit_requests") or [])
     return render_template(
         "admin/quote_detail.html",
         quote=quote,
@@ -747,6 +1174,7 @@ def admin_quote_detail(quote_id):
         statuses=QUOTE_STATUSES,
         display_equipment_lines=bom_lines,
         financial_summary_rows=financial_summary_rows,
+        visit_summary=visit_summary,
     )
 
 
@@ -1196,7 +1624,7 @@ def _catalog_form_defaults():
         "model": "",
         "sale_price": "",
         "stock": 0,
-        "vat_rate": 0.20,
+        "vat_rate": None,
         "currency": "DH",
         "active": 1,
         "technical_specs": {},
@@ -1213,7 +1641,11 @@ def _product_from_form(form, existing_product=None):
         "brand": form.get("brand", "").strip(),
         "model": form.get("model", "").strip(),
         "sale_price": form.get("sale_price", "").strip(),
-        "stock": form.get("stock", "").strip(),
+        "stock": (
+            (existing_product or {}).get("stock", 0)
+            if form.get("category", "").strip() == "pumps"
+            else form.get("stock", "").strip()
+        ),
         "vat_rate": form.get("vat_rate", "").strip(),
         "currency": form.get("currency", "DH").strip(),
         "active": 1 if form.get("active") == "on" else 0,
@@ -1246,6 +1678,11 @@ def _catalog_form_view_product(product: dict | None) -> dict:
                 specs["power_hp"] = round(float(power_kw) / 0.7355, 1)
         except (TypeError, ValueError):
             pass
+    if view.get("category") == "pumps":
+        specs["curve_points"] = "\n".join(
+            f"{point.get('flow_m3_h'):g}:{point.get('hmt_m'):g}"
+            for point in (view.get("pump_curve_points") or [])
+        )
     view["form_specs"] = specs
     return view
 
@@ -1341,7 +1778,11 @@ def _decorate_catalog_product(product):
     item["category_label"] = category_label(item.get("category"))
     item["main_characteristic"] = _main_catalog_characteristic(item)
     item["datasheet_available"] = bool(item.get("datasheet_url"))
-    item["stock_label"] = "Disponible" if float(item.get("stock") or 0) > 0 else "A confirmer"
+    item["stock_label"] = (
+        ""
+        if item.get("category") == "pumps"
+        else ("Disponible" if float(item.get("stock") or 0) > 0 else "A confirmer")
+    )
     return item
 
 
@@ -1352,7 +1793,9 @@ def _main_catalog_characteristic(product):
         return f"{float(product['power_w']):.0f} Wc"
     if category == "batteries" and product.get("capacity_kwh"):
         return f"{float(product['capacity_kwh']):.2f} kWh"
-    if category in {"inverters", "pumps", "drives", "ev_chargers"} and product.get("power_kw"):
+    if category == "pumps" and specs.get("power_hp"):
+        return f"{float(specs['power_hp']):g} CV"
+    if category in {"inverters", "drives", "ev_chargers"} and product.get("power_kw"):
         return f"{float(product['power_kw']):.2f} kW"
     if category == "thermal":
         if product.get("capacity_l"):

@@ -7,11 +7,10 @@ PROJECT_FLOWS = {
         "questions": [
             {"id": "pump_existing", "text": "Avez-vous deja une pompe ?", "step": "pump", "actions": ["Oui", "Non"]},
             {"id": "existing_pump_cv", "text": "Quelle est la puissance de votre pompe en CV ?", "step": "pump", "show_if": {"pump_existing": True}},
-            {"id": "water_need", "text": "Quel volume d'eau souhaitez-vous par jour ?", "step": "water", "show_if": {"pump_existing": False}},
-            {"id": "depth", "text": "Quelle est la profondeur du forage ?", "step": "site", "show_if": {"pump_existing": False}},
-            {"id": "city", "text": "Dans quelle ville se trouve le projet ?", "step": "site", "show_if": {"pump_existing": False}},
+            {"id": "flow_m3_h", "text": "De quel debit avez-vous besoin en m3/h ?", "step": "water", "show_if": {"pump_existing": False}},
+            {"id": "hmt_m", "text": "Quelle est la HMT de votre installation en metres ?", "step": "site", "show_if": {"pump_existing": False}},
         ],
-        "fields": {"water_need", "pump_existing", "existing_pump_cv", "depth", "city", "distance", "elevation"},
+        "fields": {"pump_existing", "existing_pump_cv", "flow_m3_h", "hmt_m"},
     },
     "offgrid": {
         "required": ["daily_kwh"],
@@ -101,7 +100,7 @@ def has_minimum(project: str | None, data: dict) -> bool:
     if project == "pumping":
         if data.get("pump_existing") is True:
             return data.get("existing_pump_cv") not in (None, "", [])
-        return all(data.get(key) not in (None, "", []) for key in ("water_need", "depth", "city"))
+        return all(data.get(key) not in (None, "", []) for key in ("flow_m3_h", "hmt_m"))
     flow = PROJECT_FLOWS[project]
     for key in flow.get("required", []):
         if data.get(key) in (None, "", []):

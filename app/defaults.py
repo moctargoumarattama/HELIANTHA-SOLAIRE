@@ -5,6 +5,8 @@ templates, JavaScript and calculator formulas so HeliAntha can replace them
 later from the admin/database layer without rebuilding the application.
 """
 
+from .pump_catalog_data import PUMP_CATALOG_DATA
+
 PROJECT_LABELS = {
     "pumping": "Pompage solaire",
     "offgrid": "Installation Off-Grid",
@@ -12,10 +14,18 @@ PROJECT_LABELS = {
     "hybrid": "Installation hybride",
     "thermal": "Chauffage solaire",
     "ev": "Borne de recharge EV",
-    "iot": "IoT / systemes embarques",
 }
 
 PUBLIC_PROJECTS = ("pumping", "offgrid", "ongrid", "hybrid", "thermal", "ev")
+
+DASHBOARD_PROJECT_LABELS = {
+    "pumping": "Pompage solaire",
+    "offgrid": "Site sans réseau",
+    "ongrid": "Réduire ma consommation",
+    "hybrid": "Solaire avec batteries",
+    "thermal": "Chauffage solaire",
+    "ev": "Recharge électrique",
+}
 
 QUOTE_STATUSES = [
     "Nouveau",
@@ -39,7 +49,6 @@ CALCULATOR_VERSIONS = {
     "HybridCalculator": "1.0",
     "SolarThermalCalculator": "1.0",
     "EVChargerCalculator": "1.0",
-    "IoTCalculator": "0.5-hors-perimetre",
     "PricingEngine": "2.0-bom",
     "ProductSelector": "1.0",
     "CompatibilityChecker": "3.0",
@@ -875,28 +884,6 @@ CATALOG_PRODUCTS = [
         "warranty": "5 ans",
     },
     {
-        "reference": "PUMP-2.2",
-        "category": "pumps",
-        "subcategory": "immergee",
-        "brand": "HeliAntha Pump",
-        "model": "Solar Pump 2.2 kW",
-        "description": "Pompe immergee solaire.",
-        "power_kw": 2.2,
-        "sale_price": 9200,
-        "unit": "piece",
-    },
-    {
-        "reference": "PUMP-4.0",
-        "category": "pumps",
-        "subcategory": "immergee",
-        "brand": "HeliAntha Pump",
-        "model": "Solar Pump 4 kW",
-        "description": "Pompe immergee solaire.",
-        "power_kw": 4,
-        "sale_price": 14800,
-        "unit": "piece",
-    },
-    {
         "reference": "DRV-4.0",
         "category": "drives",
         "subcategory": "variateur solaire",
@@ -1172,6 +1159,38 @@ CATALOG_PRODUCTS = [
         "demo": False,
     },
 ]
+
+# Initial catalogue transcribed from the HeliAntha sheets.  The stable key is
+# only needed by SQLite's legacy product schema; hydraulic selection never
+# reads it.  Curves stay separate from prices and are persisted in their own
+# relational table by app.db.
+CATALOG_PRODUCTS.extend([
+    {
+        "reference": pump["stable_key"],
+        "category": "pumps",
+        "subcategory": "immergee",
+        "brand": pump["brand"],
+        "model": pump["source_model"],
+        "description": f"Pompe solaire {pump['power_hp']:g} CV",
+        "power_kw": pump["power_kw"],
+        "voltage": pump["voltage"],
+        "current_amp": pump["current_amp"],
+        "sale_price": pump["sale_price_source"],
+        "unit": "piece",
+        "vat_rate": None,
+        "demo": False,
+        "technical_specs": {
+            "power_hp": pump["power_hp"],
+            "power_kw": pump["power_kw"],
+            "voltage_v": pump["voltage"],
+            "current_a": pump["current_amp"],
+            "price_tax_basis": pump["price_tax_basis"],
+            "source_model": pump["source_model"],
+        },
+        "pump_curve_points": pump["curve_points"],
+    }
+    for pump in PUMP_CATALOG_DATA
+])
 
 for _catalog_product in CATALOG_PRODUCTS:
     _catalog_product.setdefault("demo", True)

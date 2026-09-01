@@ -1,7 +1,10 @@
 {% extends "admin/base.html" %}
 {% block title %}{{ quote.quote_number }} - HeliAntha Admin{% endblock %}
-{% block page_title %}Detail du devis{% endblock %}
+{% block page_title %}Détail du devis{% endblock %}
+
 {% block content %}
+{% set bom_lines = display_equipment_lines %}
+
 <div class="detail-actions">
   <a class="admin-button secondary" href="{{ url_for('main.admin_quotes') }}">Retour</a>
   <a class="admin-button" href="{{ url_for('main.admin_quote_pdf', quote_id=quote.id) }}" target="_blank">Imprimer / PDF</a>
@@ -15,176 +18,93 @@
   </form>
 </div>
 
-<section class="admin-grid two">
-  <article class="panel">
-    <h2>Informations client</h2>
-    <dl class="info-list">
-      <dt>Numero</dt><dd>{{ quote.quote_number }}</dd>
-      <dt>Client</dt><dd>{{ quote.customer_name or "-" }}</dd>
-      <dt>Telephone</dt><dd>{{ quote.phone or "-" }}</dd>
-      <dt>Email</dt><dd>{{ quote.email or "-" }}</dd>
-      <dt>Ville</dt><dd>{{ quote.location or quote.city or "-" }}</dd>
-      <dt>Projet</dt><dd>{{ project_labels.get(quote.project, quote.project) }}</dd>
-      <dt>Statut</dt><dd><span class="status">{{ quote.status }}</span></dd>
-    </dl>
-  </article>
-  <article class="panel">
-    <h2>Resume technique</h2>
-    <div class="metric-list">
-      {% for metric in quote.result.get('metrics', []) %}
-      <div><small>{{ metric.label }}</small><b>{{ metric.value }}</b></div>
-      {% else %}
-      <p class="muted">Aucun resume disponible.</p>
-      {% endfor %}
-    </div>
-  </article>
+<section class="panel quote-client-panel">
+  <h2>Client</h2>
+  <dl class="info-list">
+    <dt>N° devis</dt><dd>{{ quote.quote_number }}</dd>
+    <dt>Nom</dt><dd>{{ quote.customer_name or "-" }}</dd>
+    <dt>Téléphone</dt><dd>{{ quote.phone or "-" }}</dd>
+    <dt>Email</dt><dd>{{ quote.email or "-" }}</dd>
+    <dt>Ville</dt><dd>{{ quote.location or quote.city or "-" }}</dd>
+    <dt>Projet</dt><dd>{{ project_labels.get(quote.project, quote.project) }}</dd>
+    <dt>Statut</dt><dd><span class="status">{{ quote.status }}</span></dd>
+  </dl>
 </section>
 
 {% if quote.visit_requests %}
 <section class="panel" id="visite-technique">
   <div class="panel-head">
     <div>
-      <h2>Visites techniques</h2>
-      <p class="muted">La demande envoyée depuis la page publique est affichée ici.</p>
+      <h2>Visite demandée</h2>
+      <p class="muted">Une seule fiche claire, sans répétition.</p>
     </div>
-    <span class="status">{{ quote.visit_requests|length }} demande(s)</span>
+    <span class="status">{{ visit_summary.total }} demande(s) reçue(s)</span>
   </div>
-  <div class="warning-list">
-    {% for visit in quote.visit_requests %}
-    <article class="warning">
-      <b>{{ visit.preferred_date or "Date à confirmer" }}{% if visit.time_slot %} · {{ visit.time_slot }}{% endif %}</b>
-      <p><strong>Adresse:</strong> {{ visit.address or "-" }}</p>
-      <p><strong>Téléphone:</strong> {{ visit.phone or "-" }}</p>
-      {% if visit.comment %}<p><strong>Commentaire:</strong> {{ visit.comment }}</p>{% endif %}
-      <small>Statut: {{ visit.status or "Nouveau" }} · Demandé par {{ quote.status_history[0].changed_by if quote.status_history else "Client" }}</small>
-    </article>
-    {% endfor %}
-  </div>
+
+  {% set latest_visit = visit_summary.latest %}
+  {% set latest_group = visit_summary.latest_group %}
+  <article class="visit-summary-card">
+    <div>
+      <small>Créneau souhaité</small>
+      <h3>{{ latest_visit.preferred_date or "Date à confirmer" }}{% if latest_visit.time_slot %} · {{ latest_visit.time_slot }}{% endif %}</h3>
+      {% if latest_group.count > 1 %}
+      <p class="muted">Cette même demande a été envoyée {{ latest_group.count }} fois.</p>
+      {% endif %}
+    </div>
+    <dl class="info-list visit-info-list">
+      <dt>Adresse</dt><dd>{{ latest_visit.address or "-" }}</dd>
+      <dt>Téléphone</dt><dd>{{ latest_visit.phone or "-" }}</dd>
+      <dt>Message</dt><dd>{{ latest_visit.comment or "-" }}</dd>
+      <dt>Suivi</dt><dd><span class="status">{{ latest_visit.status or "Nouveau" }}</span></dd>
+    </dl>
+  </article>
+
+  {% if visit_summary.other_groups %}
+  <details class="visit-history-details">
+    <summary>Autres demandes différentes</summary>
+    <div class="visit-other-list">
+      {% for group in visit_summary.other_groups %}
+      {% set visit = group.visit %}
+      <article>
+        <b>{{ visit.preferred_date or "Date à confirmer" }}{% if visit.time_slot %} · {{ visit.time_slot }}{% endif %}</b>
+        <span>{{ visit.address or "-" }}</span>
+        {% if group.count > 1 %}<small>{{ group.count }} envois identiques</small>{% endif %}
+      </article>
+      {% endfor %}
+    </div>
+  </details>
+  {% endif %}
 </section>
 {% endif %}
-
-{% set bom = quote.bom or quote.calculation_detail.get('bom', {}) %}
-{% set bom_lines = display_equipment_lines %}
-
-<section class="panel">
-  <h2>Raisonnement technique</h2>
-  {% if quote.calculation_detail.get('calculation_blocks') %}
-  <div class="calculation-blocks">
-    {% for block in quote.calculation_detail.get('calculation_blocks', []) %}
-    <article class="calculation-block">
-      <h3>{{ block.title }}</h3>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr><th>Etape</th><th>Valeur</th><th>Formule</th><th>Source</th><th>Note</th></tr>
-          </thead>
-          <tbody>
-            {% for item in block.get('items', []) %}
-            <tr>
-              <td>{{ item.label }}</td>
-              <td>{{ item.value }}</td>
-              <td>{{ item.formula or "-" }}</td>
-              <td>
-                {% if item.source_badge or item.source_name %}
-                <div>{{ item.source_badge or "-" }}</div>
-                <small>{{ item.source_name or "" }}</small>
-                {% else %}
-                -
-                {% endif %}
-              </td>
-              <td>{{ item.note or "-" }}</td>
-            </tr>
-            {% else %}
-            <tr><td colspan="5">Aucune etape detaillee dans ce bloc.</td></tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </article>
-    {% endfor %}
-  </div>
-  {% else %}
-  <p class="muted">Raisonnement detaille non disponible pour ce devis historique.</p>
-  {% endif %}
-
-  <details class="technical-details">
-    <summary>Voir aussi le tableau technique ligne par ligne</summary>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr><th>Donnee d'entree</th><th>Regle / formule</th><th>Resultat intermediaire</th><th>Coefficient</th><th>Decision</th><th>Equipement</th></tr>
-        </thead>
-        <tbody>
-          {% for step in quote.calculation_detail.get('reasoning_steps', []) %}
-          <tr>
-            <td>{{ step.input }}</td>
-            <td>{{ step.rule }}</td>
-            <td>{{ step.intermediate_result }}</td>
-            <td>{{ step.coefficient or "-" }}</td>
-            <td>{{ step.technical_decision }}</td>
-            <td>{{ step.selected_equipment or "-" }}</td>
-          </tr>
-          {% else %}
-          <tr><td colspan="6">Raisonnement non disponible pour cet ancien devis.</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </details>
-
-  <details class="technical-details">
-    <summary>Valeurs et sources reellement utilisees</summary>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr><th>Valeur utilisee</th><th>Affichage</th><th>Source</th><th>Type</th><th>Reference</th></tr>
-        </thead>
-        <tbody>
-          {% for key, item in quote.calculation_detail.get('resolved_sources', {}).items() %}
-          <tr>
-            <td>{{ item.label or key }}</td>
-            <td>{{ item.display_value or item.value }}</td>
-            <td>{{ item.source_name or "Source non renseignee" }}</td>
-            <td>{{ item.source_badge or item.source_type or "-" }}</td>
-            <td>{{ item.source_reference or "-" }}</td>
-          </tr>
-          {% else %}
-          <tr><td colspan="5">Aucune source enregistree.</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </details>
-</section>
-
 
 <section class="panel">
   <div class="panel-head">
     <div>
-      <h2>Nomenclature technique (BOM)</h2>
-      <p class="muted">Snapshot materiel conserve avec le devis. Les anciens devis restent inchanges meme si le catalogue evolue.</p>
+      <h2>Éléments du devis</h2>
+      <p class="muted">Liste simple des éléments proposés.</p>
     </div>
     <span class="status">{{ bom_lines|length }} ligne(s)</span>
   </div>
   <div class="table-wrap">
-    <table>
+    <table class="simple-quote-table">
       <thead>
-        <tr><th>Role</th><th>Reference</th><th>Produit</th><th>Qté</th><th>Compatibilite</th><th>Source</th><th>PU</th><th>Total</th></tr>
+        <tr>
+          <th>Élément</th>
+          <th>Quantité</th>
+          <th>Prix unitaire</th>
+          <th>Total</th>
+        </tr>
       </thead>
       <tbody>
         {% for item in bom_lines %}
         <tr>
-          <td>{{ item.role or item.category }}</td>
-          <td>{{ item.reference or "-" }}</td>
-          <td>{{ [item.brand, item.model]|select|join(' ') or item.description or "-" }}</td>
+          <td>{{ item.display_designation or item.description or item.role or "-" }}</td>
           <td>{{ item.quantity }}</td>
-          <td>{{ item.compatibility_status or "-" }}</td>
-          <td>{{ item.source.source_name if item.get('source') else item.source_type or "-" }}</td>
           <td>{{ "{:,.2f}".format(item.unit_price or 0).replace(",", " ") }} {{ item.currency or "DH" }}</td>
           <td>{{ "{:,.2f}".format(item.total_price or 0).replace(",", " ") }} {{ item.currency or "DH" }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="8">Aucune ligne materiel enregistree.</td></tr>
+        <tr><td colspan="4">Aucun élément enregistré.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -192,20 +112,14 @@
 </section>
 
 <section class="panel">
-  <h2>Decomposition financiere</h2>
-  <div class="finance-box compact">
+  <h2>Montant du devis</h2>
+  <div class="finance-box compact quote-total-box">
     {% for row in financial_summary_rows %}
-    <div class="{% if row.emphasis %}total{% endif %}"><span>{{ row.label }}</span><b>{{ "{:,.2f}".format(row.amount or 0).replace(",", " ") }} DH</b></div>
+    <div class="{% if row.emphasis %}total{% endif %}">
+      <span>{{ row.label }}</span>
+      <b>{{ "{:,.2f}".format(row.amount or 0).replace(",", " ") }} DH</b>
+    </div>
     {% endfor %}
-  </div>
-  <div class="finance-box">
-    {% for cat in quote.financial_breakdown.get('categories', []) %}
-    <div><span>{{ cat.label }}</span><b>{{ "{:,.2f}".format(cat.amount or 0).replace(",", " ") }} DH</b></div>
-    {% endfor %}
-    <hr>
-    <div><span>Total HT</span><b>{{ "{:,.2f}".format(quote.financial_breakdown.get('total_ht', 0)).replace(",", " ") }} DH</b></div>
-    <div><span>TVA</span><b>{{ "{:,.2f}".format(quote.financial_breakdown.get('vat', 0)).replace(",", " ") }} DH</b></div>
-    <div class="total"><span>Total TTC</span><b>{{ "{:,.2f}".format(quote.financial_breakdown.get('total_ttc', 0)).replace(",", " ") }} DH</b></div>
   </div>
 </section>
 {% endblock %}

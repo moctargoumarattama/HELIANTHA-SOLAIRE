@@ -35,7 +35,6 @@ python run.py
 ## Ce qui est inclus
 
 - parcours public pour pompage, Off-Grid, On-Grid, hybride, thermique et borne EV ;
-- IoT conservé dans le code mais masqué temporairement côté public ;
 - résultats structurés : inputs, hypothèses, paramètres, résultats intermédiaires, avertissements, équipements et versions ;
 - décomposition financière : matériel, accessoires, protections, câblage, structure, installation, main-d'oeuvre, déplacement, marge, TVA ;
 - snapshots de devis pour conserver les anciens prix, paramètres et équipements ;

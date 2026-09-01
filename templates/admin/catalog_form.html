@@ -30,9 +30,9 @@
   <div class="form-section">
     <h2>Identification</h2>
     <div class="form-grid">
-      <label>
-        Référence *
-        <input name="reference" value="{{ product.get('reference', '') if product else '' }}" required>
+      <label data-pump-reference-field {% if current_category == 'pumps' %}hidden{% endif %}>
+        Référence <span data-non-pump-required-marker {% if current_category == 'pumps' %}hidden{% endif %}>*</span>
+        <input name="reference" value="{{ product.get('reference', '') if product else '' }}" {% if current_category != 'pumps' %}required{% endif %}>
         {% if errors.get('reference') %}<small class="field-error">{{ errors.get('reference') }}</small>{% endif %}
       </label>
 
@@ -48,8 +48,8 @@
       </label>
 
       <label>
-        Marque *
-        <input name="brand" value="{{ product.get('brand', '') if product else '' }}" required>
+        Marque <span data-non-pump-required-marker {% if current_category == 'pumps' %}hidden{% endif %}>*</span>
+        <input name="brand" value="{{ product.get('brand', '') if product else '' }}" {% if current_category != 'pumps' %}required{% endif %}>
         {% if errors.get('brand') %}<small class="field-error">{{ errors.get('brand') }}</small>{% endif %}
       </label>
 
@@ -68,7 +68,7 @@
         <div class="form-grid">
           {% for field in current_fields %}
           {% set raw_value = specs.get(field.key, '') %}
-          <label class="{% if field.key in ['power_w', 'power_kw', 'capacity_kwh', 'power_hp', 'tank_volume_l', 'section_mm2'] %}full{% endif %}">
+          <label class="{% if field.key in ['power_w', 'power_kw', 'capacity_kwh', 'power_hp', 'tank_volume_l', 'section_mm2', 'curve_points'] %}full{% endif %}">
             {{ field.label }}{% if field.required %} *{% endif %}
             {% if field.kind == 'choice' %}
               <select name="spec_{{ field.key }}" {% if field.required %}required data-required="1"{% endif %}>
@@ -77,6 +77,13 @@
                 <option value="{{ choice }}" {% if raw_value == choice %}selected{% endif %}>{{ choice_labels.get(choice, choice) }}</option>
                 {% endfor %}
               </select>
+            {% elif field.kind == 'pump_curve' %}
+              <textarea
+                name="spec_{{ field.key }}"
+                rows="8"
+                placeholder="0:95&#10;1:91&#10;1,5:89"
+                {% if field.required %}required data-required="1"{% endif %}
+              >{{ raw_value }}</textarea>
             {% else %}
               <input
                 {% if field.kind in ['number', 'integer', 'percent'] %}type="number" step="{% if field.kind == 'integer' %}1{% else %}any{% endif %}"{% endif %}
@@ -87,6 +94,7 @@
               >
             {% endif %}
             {% if field.unit %}<small>Unité : {{ field.unit }}</small>{% endif %}
+            {% if field.help %}<small>{{ field.help }}</small>{% endif %}
             {% if errors.get('spec_' ~ field.key) %}<small class="field-error">{{ errors.get('spec_' ~ field.key) }}</small>{% endif %}
           </label>
           {% endfor %}
@@ -100,18 +108,26 @@
     <h2>Commercial</h2>
     <div class="form-grid">
       <label>
-        Prix HT *
+        <span data-current-price-label>{{ "Prix actuel *" if current_category == "pumps" else "Prix HT *" }}</span>
         <input type="number" step="any" name="sale_price" value="{{ product.get('sale_price', '') if product else '' }}" required>
+        <small data-pump-price-note {% if current_category != 'pumps' %}hidden{% endif %}>Le prix courant vient du catalogue. Sa nature HT/TTC doit être confirmée si la fiche source ne la précise pas.</small>
         {% if errors.get('sale_price') %}<small class="field-error">{{ errors.get('sale_price') }}</small>{% endif %}
       </label>
 
       <label>
-        TVA *
-        <input type="number" step="any" name="vat_rate" value="{{ (product.get('vat_rate', 0.20) * 100) if product and product.get('vat_rate') is not none else 20 }}" required>
+        <span data-vat-label>{{ "TVA (si confirmée)" if current_category == "pumps" else "TVA *" }}</span>
+        <input
+          type="number"
+          step="any"
+          name="vat_rate"
+          value="{% if product and product.get('vat_rate') is not none %}{{ product.get('vat_rate') * 100 }}{% elif current_category != 'pumps' %}20{% endif %}"
+          data-vat-explicit="{{ 1 if product and product.get('id') and product.get('vat_rate') is not none else 0 }}"
+          {% if current_category != 'pumps' %}required{% endif %}
+        >
         {% if errors.get('vat_rate') %}<small class="field-error">{{ errors.get('vat_rate') }}</small>{% endif %}
       </label>
 
-      <label>
+      <label data-pump-stock-field {% if current_category == 'pumps' %}hidden{% endif %}>
         Stock
         <input type="number" step="1" name="stock" value="{{ product.get('stock', 0) if product else 0 }}">
         {% if errors.get('stock') %}<small class="field-error">{{ errors.get('stock') }}</small>{% endif %}

@@ -113,7 +113,19 @@ def test_quote_snapshot_saves_bom_and_product_selections(tmp_path):
             {"spec_type": "on_grid", "spec_power_kw": "10", "spec_phases": "triphase"},
             ["Type", "On-Grid", "Off-Grid", "Hybride", "Puissance", "Phase", "Monophasé", "Triphasé"],
         ),
-        ("pumps", "CAT-PUMP-15CV", {"spec_power_hp": "15", "spec_phases": "triphase"}, ["Puissance", "CV", "Phase"]),
+        (
+            "pumps",
+            "CAT-PUMP-15CV",
+            {
+                "spec_power_hp": "15",
+                "spec_power_kw": "11",
+                "spec_phases": "triphase",
+                "spec_voltage_v": "380",
+                "spec_current_a": "24",
+                "spec_curve_points": "10:147\n12:144\n15:141",
+            },
+            ["Puissance", "CV", "kW", "Phase", "Tension", "Courant", "Points", "HMT"],
+        ),
         ("drives", "CAT-DRV-15K", {"spec_power_kw": "15", "spec_phases": "triphase"}, ["Puissance", "kW", "Phase"]),
         (
             "ev_chargers",
@@ -197,7 +209,15 @@ def test_admin_catalog_form_is_dynamic_and_saves_minimal_specs(tmp_path, categor
         assert created_specs["phases"] == "triphase"
     elif category == "pumps":
         assert created_specs["power_hp"] == 15
+        assert created_specs["power_kw"] == 11
         assert created_specs["phases"] == "triphase"
+        assert created_specs["voltage_v"] == 380
+        assert created_specs["current_a"] == 24
+        assert product["pump_curve_points"] == [
+            {"flow_m3_h": 10.0, "hmt_m": 147.0},
+            {"flow_m3_h": 12.0, "hmt_m": 144.0},
+            {"flow_m3_h": 15.0, "hmt_m": 141.0},
+        ]
     elif category == "drives":
         assert created_specs["power_kw"] == 15
         assert created_specs["phases"] == "triphase"
@@ -340,7 +360,13 @@ def test_admin_quote_detail_renders_phase3_sections(tmp_path):
     html = response.get_data(as_text=True)
 
     assert response.status_code == 200
-    assert "Nomenclature technique (BOM)" in html
+    assert "Éléments du devis" in html
+    assert "Montant du devis" in html
+    assert "Raisonnement technique" not in html
+    assert "Formule" not in html
+    assert "Source" not in html
+    assert "Nomenclature technique" not in html
+    assert "BOM" not in html
     assert "Selection du materiel" not in html
     assert "Donnees du questionnaire" not in html
     assert "Parametres utilises" not in html

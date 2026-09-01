@@ -37,19 +37,18 @@
     <div class="pdf-table-wrap">
       <table class="pdf-table">
         <thead>
-          <tr><th>Référence</th><th>Désignation</th><th>Qté</th><th>PU</th><th>Total</th></tr>
+          <tr><th>Désignation</th><th>Qté</th><th>PU</th><th>Total</th></tr>
         </thead>
         <tbody>
           {% for item in display_equipment_lines %}
             <tr>
-              <td data-label="Reference">{{ item.reference }}</td>
-              <td data-label="Designation">{{ item.brand }} {{ item.model }}</td>
+              <td data-label="Designation">{{ item.display_designation or item.description or "-" }}</td>
               <td data-label="Qte">{{ item.quantity }}</td>
               <td data-label="PU">{{ "{:,.2f}".format(item.unit_price or 0).replace(",", " ") }} DH</td>
               <td data-label="Total">{{ "{:,.2f}".format(item.total_price or 0).replace(",", " ") }} DH</td>
             </tr>
           {% else %}
-            <tr><td colspan="5">Aucune ligne matérielle à afficher.</td></tr>
+            <tr><td colspan="4">Aucune ligne matérielle à afficher.</td></tr>
           {% endfor %}
         </tbody>
       </table>

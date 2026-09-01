@@ -41,7 +41,7 @@ LOAD_LABELS = {
 }
 
 NUMBER_RE = re.compile(
-    r"(\d+(?:[.,]\d+)?)\s*(kwh\/mois|kwh\/j|kwh|m3\/j|m3|cv|chevaux?|kw|w|m2|m|dh|jours?|jour|personnes?|km|v)?",
+    r"(\d+(?:[.,]\d+)?)\s*(kwh\/mois|kwh\/j|kwh|m3\/h|m3\/j|m3|cv|chevaux?|kw|w|m2|m|dh|jours?|jour|personnes?|km|v)?",
     re.IGNORECASE,
 )
 
@@ -132,6 +132,22 @@ def extract_entities(message: str, state: dict, synonyms: list[dict] | None = No
         data[key] = value
         answered_fields.add(key)
 
+    if (
+        project == "pumping"
+        and "hmt_m" not in data
+        and state.get("collected_data", {}).get("hmt_m") not in (None, "", [])
+        and contains_any(text, ["finalement", "en fait", "plutot", "je me suis trompe", "non c est", "c est pas", "ce n est pas", "desole c est"])
+    ):
+        hmt_candidates = [
+            _number(match.group(1))
+            for match in NUMBER_RE.finditer(text)
+            if normalize(match.group(2) or "") == "m"
+        ]
+        hmt_candidates = [value for value in hmt_candidates if value is not None]
+        if hmt_candidates:
+            data["hmt_m"] = hmt_candidates[-1]
+            answered_fields.add("hmt_m")
+
     if "bill" not in data and contains_any(text, ["dh", "dirham", "mad", "facture"]):
         value = first_number(text)
         if value is not None:
@@ -157,8 +173,16 @@ def extract_entities(message: str, state: dict, synonyms: list[dict] | None = No
 
 def infer_number_key(window: str, last_question: str | None, project: str | None, unit: str = "") -> str | None:
     window = normalize(window)
-    if unit == "m3/j" or unit == "m3":
-        return "water_need"
+    if unit == "m3/h":
+        return "flow_m3_h"
+    if unit == "m3/j":
+        return "flow_m3_h" if project == "pumping" else None
+    if unit == "m3":
+        if project == "pumping":
+            if last_question == "flow_m3_h" or contains_any(window, ["debit", "m3/h", "m 3 / h"]):
+                return "flow_m3_h"
+            return None
+        return None
     if unit == "dh":
         return "bill"
     if unit == "m2":
@@ -185,17 +209,17 @@ def infer_number_key(window: str, last_question: str | None, project: str | None
     if unit == "km":
         return "daily_km"
     if unit == "m":
+        if contains_any(window, ["hmt", "hauteur", "manometrique", "manometrique totale"]):
+            return "hmt_m"
         if project == "pumping":
-            if contains_any(window, ["distance"]):
-                return "distance"
-            if contains_any(window, ["hauteur", "elevation", "hmt"]):
-                return "elevation"
-            return "depth"
+            if last_question == "hmt_m" or contains_any(window, ["hmt", "hauteur", "manometrique", "manometrique totale"]):
+                return "hmt_m"
+            return None
         return "depth"
 
     context_map = {
-        "water_need": "water_need",
-        "depth": "depth",
+        "flow_m3_h": "flow_m3_h",
+        "hmt_m": "hmt_m",
         "daily_kwh": "daily_kwh",
         "monthly_kwh": "monthly_kwh",
         "roof_area": "roof_area",
@@ -211,8 +235,8 @@ def infer_number_key(window: str, last_question: str | None, project: str | None
             return "bill"
         return context_map[last_question]
 
-    if contains_any(window, ["metre cube", "eau par jour", "m3", "m 3"]):
-        return "water_need"
+    if project == "pumping" and contains_any(window, ["debit", "m3/h", "m 3 / h", "metre cube heure", "metres cubes heure"]):
+        return "flow_m3_h"
     if contains_any(window, ["dh", "dirham", "mad", "facture"]):
         return "bill"
     if contains_any(window, ["toiture", "surface", "m2", "m 2"]):
@@ -238,13 +262,9 @@ def infer_number_key(window: str, last_question: str | None, project: str | None
         return "people"
     if contains_any(window, ["km", "kilometre"]):
         return "daily_km"
-    if contains_any(window, ["metre", "profondeur", "forage", "puits", "hmt"]):
+    if contains_any(window, ["hmt", "hauteur", "manometrique"]):
         if project == "pumping":
-            if contains_any(window, ["distance"]):
-                return "distance"
-            if contains_any(window, ["hauteur", "elevation", "hmt"]):
-                return "elevation"
-            return "depth"
+            return "hmt_m"
         return "depth"
     return None
 

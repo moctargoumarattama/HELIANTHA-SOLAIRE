@@ -97,7 +97,17 @@ TECHNICAL_FIELDS = {
     ],
     "pumps": [
         {"key": "power_hp", "label": "Puissance", "kind": "number", "unit": "CV", "required": True},
+        {"key": "power_kw", "label": "Puissance", "kind": "number", "unit": "kW"},
         {"key": "phases", "label": "Phase", "kind": "choice", "choices": ("monophase", "triphase")},
+        {"key": "voltage_v", "label": "Tension", "kind": "number", "unit": "V"},
+        {"key": "current_a", "label": "Courant", "kind": "number", "unit": "A"},
+        {
+            "key": "curve_points",
+            "label": "Points Débit / HMT",
+            "kind": "pump_curve",
+            "unit": "m³/h : m",
+            "required": True,
+        },
     ],
     "drives": [
         {"key": "power_kw", "label": "Puissance", "kind": "number", "unit": "kW", "required": True},
@@ -271,6 +281,7 @@ def normalize_pump_curve(value: Any) -> list[dict[str, float]]:
         raise ValueError("La courbe pompe doit etre une liste de points debit/HMT.")
 
     result = []
+    seen_flows: set[float] = set()
     for index, point in enumerate(parsed, start=1):
         if isinstance(point, Mapping):
             flow = point.get("flow_m3_h", point.get("flow", point.get("debit")))
@@ -283,7 +294,11 @@ def normalize_pump_curve(value: Any) -> list[dict[str, float]]:
         hmt_value = normalize_number(hmt, field_label=f"HMT du point {index}")
         if flow_value is None or hmt_value is None:
             raise ValueError(f"Point {index} de la courbe pompe incomplet.")
-        result.append({"flow_m3_h": float(flow_value), "hmt_m": float(hmt_value)})
+        normalized_flow = float(flow_value)
+        if normalized_flow in seen_flows:
+            raise ValueError(f"Le débit {normalized_flow:g} m³/h est présent plusieurs fois.")
+        seen_flows.add(normalized_flow)
+        result.append({"flow_m3_h": normalized_flow, "hmt_m": float(hmt_value)})
     return sorted(result, key=lambda item: (item["flow_m3_h"], item["hmt_m"]))
 
 
@@ -368,22 +383,22 @@ def validate_product(
     candidate = dict(product)
     errors: dict[str, str] = {}
 
-    reference = str(candidate.get("reference") or "").strip().upper()
-    if not reference:
-        errors["reference"] = "La reference est obligatoire."
-    elif len(reference) > 100:
-        errors["reference"] = "La reference ne peut pas depasser 100 caracteres."
-
     try:
         category = normalize_category(candidate.get("category"))
     except ProductValidationError as exc:
         category = ""
         errors.update(exc.errors)
 
+    reference = str(candidate.get("reference") or "").strip().upper()
+    if not reference and category != "pumps":
+        errors["reference"] = "La reference est obligatoire."
+    elif len(reference) > 100:
+        errors["reference"] = "La reference ne peut pas depasser 100 caracteres."
+
     normalized: dict[str, Any] = {"reference": reference, "category": category}
     for key in ("brand", "model"):
         normalized[key] = str(candidate.get(key) or "").strip()
-    if not normalized["brand"]:
+    if not normalized["brand"] and category != "pumps":
         errors["brand"] = "La marque est obligatoire."
     datasheet_url = str(candidate.get("datasheet_url") or existing.get("datasheet_url") or "").strip()
     normalized["datasheet_url"] = datasheet_url
@@ -396,7 +411,10 @@ def validate_product(
     normalized["stock"] = 0 if normalized.get("stock") is None else normalized["stock"]
 
     try:
-        default_vat = existing.get("vat_rate") if existing.get("vat_rate") is not None else 0.20
+        if category == "pumps":
+            default_vat = existing.get("vat_rate") if "vat_rate" in existing else None
+        else:
+            default_vat = existing.get("vat_rate") if existing.get("vat_rate") is not None else 0.20
         normalized["vat_rate"] = normalize_ratio(candidate.get("vat_rate"), field_label="TVA", default=default_vat)
     except ValueError as exc:
         errors["vat_rate"] = str(exc)
@@ -455,6 +473,8 @@ def validate_product(
             normalized["power_kw"] = pump_power_kw
         if normalized.get("voltage") is None and specs.get("voltage_v") is not None:
             normalized["voltage"] = specs["voltage_v"]
+        if normalized.get("current_amp") is None and specs.get("current_a") is not None:
+            normalized["current_amp"] = specs["current_a"]
     elif category == "drives":
         if normalized.get("power_kw") is None and specs.get("power_kw") is not None:
             normalized["power_kw"] = specs["power_kw"]
@@ -480,20 +500,25 @@ def product_completeness(product: Mapping[str, Any]) -> dict[str, Any]:
     category = CATEGORY_ALIASES.get(_token(product.get("category")), str(product.get("category") or ""))
     specs = product.get("technical_specs") or {}
     checks: list[tuple[str, Any]] = [
-        ("Reference", product.get("reference")),
         ("Categorie", category),
-        ("Marque", product.get("brand")),
-        ("Modele", product.get("model")),
         ("Prix de vente", product.get("sale_price")),
         ("Unite", product.get("unit")),
-        ("TVA", product.get("vat_rate")),
-        ("Garantie", product.get("warranty")),
     ]
+    if category != "pumps":
+        checks[:0] = [
+            ("Reference", product.get("reference")),
+            ("Marque", product.get("brand")),
+        ]
+        checks.extend([
+            ("Modele", product.get("model")),
+            ("TVA", product.get("vat_rate")),
+            ("Garantie", product.get("warranty")),
+        ])
     capability_by_category = {
         "panels": ("Puissance W", product.get("power_w")),
         "batteries": ("Capacite kWh", product.get("capacity_kwh")),
         "inverters": ("Puissance kW", product.get("power_kw")),
-        "pumps": ("Puissance kW", product.get("power_kw")),
+        "pumps": ("Puissance CV", specs.get("power_hp")),
         "drives": ("Puissance kW", product.get("power_kw")),
         "ev_chargers": ("Puissance kW", product.get("power_kw")),
         "thermal": ("Capacite ou sous-categorie", product.get("capacity_l") or product.get("subcategory")),
@@ -503,7 +528,12 @@ def product_completeness(product: Mapping[str, Any]) -> dict[str, Any]:
         checks.append(capability_by_category[category])
     for field in TECHNICAL_FIELDS.get(category, []):
         if field.get("required"):
-            checks.append((field["label"], specs.get(field["key"])))
+            field_value = (
+                product.get("pump_curve_points")
+                if category == "pumps" and field["key"] == "curve_points"
+                else specs.get(field["key"])
+            )
+            checks.append((field["label"], field_value))
 
     missing = [label for label, value in checks if value is None or value == "" or value == []]
     score = round(100 * (len(checks) - len(missing)) / max(len(checks), 1))

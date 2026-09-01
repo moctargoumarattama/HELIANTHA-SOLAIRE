@@ -29,7 +29,7 @@
     <option value="0" {% if filters.get('active') == '0' %}selected{% endif %}>Inactifs</option>
   </select>
 
-  <select name="stock">
+  <select name="stock" data-stock-filter {% if filters.get('category') == 'pumps' %}hidden{% endif %}>
     {% for option in stock_options %}
     <option value="{{ option.value }}" {% if filters.get('stock') == option.value %}selected{% endif %}>{{ option.label }}</option>
     {% endfor %}
@@ -57,12 +57,12 @@
     <table>
       <thead>
         <tr>
-          <th>Reference</th>
+          <th data-pump-hidden-column>Reference</th>
           <th>Produit</th>
           <th>Categorie</th>
           <th>Caracteristique principale</th>
           <th>Prix vente</th>
-          <th>Stock</th>
+          <th data-pump-hidden-column>Stock</th>
           <th>Actions</th>
         </tr>
       </thead>
@@ -73,13 +73,13 @@
           data-category="{{ p.category or '' }}"
           data-brand="{{ p.brand or '' }}"
           data-active="{{ 1 if p.active else 0 }}"
-          data-stock="{{ p.stock or 0 }}"
+          data-stock="{{ '' if p.category == 'pumps' else (p.stock or 0) }}"
           data-price="{{ p.sale_price or 0 }}"
           data-updated="{{ p.updated_at or '' }}"
-          data-search="{{ [p.reference, p.brand, p.model, p.description, p.category_label, p.main_characteristic]|select|join(' ')|lower }}"
+          data-search="{{ [('' if p.category == 'pumps' else p.reference), p.brand, p.model, p.description, p.category_label, p.main_characteristic]|select|join(' ')|lower }}"
         >
-          <td>
-            <strong>{{ p.reference }}</strong>
+          <td data-pump-hidden-column>
+            {% if p.category != 'pumps' %}<strong>{{ p.reference }}</strong>{% endif %}
             {% if p.datasheet_available %}
             <div><a href="{{ p.datasheet_url }}" target="_blank" rel="noopener">Fiche technique</a></div>
             {% endif %}
@@ -93,9 +93,11 @@
           <td>{{ p.category_label }}</td>
           <td>{{ p.main_characteristic }}</td>
           <td>{{ "{:,.2f}".format(p.sale_price or 0).replace(",", " ") }} {{ p.currency or "DH" }}</td>
-          <td>
-            <strong>{{ p.stock or 0 }}</strong>
-            <div class="muted">{{ p.stock_label }}</div>
+          <td data-pump-hidden-column>
+            {% if p.category != 'pumps' %}
+              <strong>{{ p.stock or 0 }}</strong>
+              <div class="muted">{{ p.stock_label }}</div>
+            {% endif %}
           </td>
           <td class="row-actions">
             <a href="{{ url_for('main.admin_catalog_edit', product_id=p.id) }}">Modifier</a>
@@ -124,6 +126,8 @@
   const count = document.querySelector("[data-live-catalog-count]");
   const empty = document.querySelector("[data-live-catalog-empty]");
   const tbody = document.querySelector(".catalog-table-wrap tbody");
+  const stockFilter = form?.querySelector("[data-stock-filter]");
+  const pumpHiddenColumns = Array.from(document.querySelectorAll("[data-pump-hidden-column]"));
   if (!form || !rows.length || !tbody) return;
 
   const normalize = (value) => (value || "").toString().trim().toLowerCase();
@@ -132,7 +136,7 @@
   const matches = (row) => {
     const category = form.elements.category.value;
     const active = form.elements.active.value;
-    const stock = form.elements.stock.value;
+    const stock = category === "pumps" ? "" : form.elements.stock.value;
     const query = normalize(form.elements.q.value);
     const brand = normalize(form.elements.brand.value);
     if (category && row.dataset.category !== category) return false;
@@ -157,6 +161,14 @@
   };
 
   const applyFilters = () => {
+    const pumpOnly = form.elements.category.value === "pumps";
+    if (stockFilter) {
+      stockFilter.hidden = pumpOnly;
+      if (pumpOnly) stockFilter.value = "";
+    }
+    pumpHiddenColumns.forEach((cell) => {
+      cell.hidden = pumpOnly;
+    });
     const visible = rows.filter(matches);
     rows.forEach((row) => {
       row.hidden = true;

@@ -34,6 +34,37 @@ PUMP_EXISTING_PUBLIC_METRIC_KEYWORDS = (
     "m³/h",
     "m3/h",
 )
+PUMP_RECOMMENDED_PUBLIC_KEYS = {
+    "pump_rule_mode",
+    "no_standard_pump",
+    "standard_pump_message",
+    "selected_pump_cv",
+    "flow_m3_h",
+    "hmt_m",
+    "panels",
+    "panel_power_w",
+    "pv_power_kwp",
+    "installed_power_kwp",
+    "solar_drive_kw",
+    "drive_brand",
+    "phase",
+    "solar_rule_defined",
+    "tax_basis_confirmation_required",
+    "pump_price_tax_basis",
+}
+PUMP_RECOMMENDED_METRIC_KEYWORDS_TO_HIDE = (
+    "théorique",
+    "rendement",
+    "psh",
+    "perte hydraulique",
+    "marge pv",
+    "fallback",
+    "stock",
+    "référence",
+    "reference",
+    "product_id",
+    "pump_id",
+)
 
 
 def format_decimal_fr(value: Any, decimals: int = 2) -> str:
@@ -121,6 +152,7 @@ def client_warning_text(item: dict[str, Any]) -> str:
         "NO_COMPATIBLE_BATTERY": "HeliAntha proposera la meilleure référence.",
         "NO_COMPATIBLE_INVERTER": "HeliAntha proposera la meilleure référence.",
         "NO_COMPATIBLE_PUMP": "HeliAntha proposera la meilleure référence.",
+        "NO_STANDARD_PUMP": "Aucune pompe standard ne couvre ce besoin. Une configuration HeliAntha personnalisée est nécessaire.",
         "NO_COMPATIBLE_DRIVE": "HeliAntha proposera la meilleure référence.",
         "NO_COMPATIBLE_EV_CHARGER": "HeliAntha proposera la meilleure référence.",
         "HYBRID_STORAGE_SIMPLIFIED": "Stockage préparé pour votre projet.",
@@ -148,7 +180,13 @@ def offer_signature(offer: dict[str, Any]) -> tuple[Any, ...]:
     )
 
 
-def _main_components(equipment: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _main_components(
+    equipment: list[dict[str, Any]],
+    *,
+    project: str = "",
+    final: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    final = final or {}
     ordered = sorted(
         equipment,
         key=lambda item: (
@@ -161,12 +199,18 @@ def _main_components(equipment: list[dict[str, Any]]) -> list[dict[str, Any]]:
         category = item.get("category")
         if category not in MAIN_COMPONENT_ORDER:
             continue
-        title = " ".join(part for part in (item.get("brand"), item.get("model")) if part) or item.get("description") or "Matériel à confirmer"
+        specs = item.get("technical_specs") or {}
+        power_cv = item.get("power_cv") or specs.get("power_hp")
+        if category == "pumps" and project == "pumping":
+            power_cv = power_cv or final.get("selected_pump_cv")
+            title = f"Pompe solaire {format_decimal_fr(power_cv, 1)} CV" if power_cv else "Pompe solaire"
+        else:
+            title = " ".join(part for part in (item.get("brand"), item.get("model")) if part) or item.get("description") or "Matériel à confirmer"
         quantity = item.get("quantity") or 1
-        power_cv = item.get("power_cv")
         capacity = item.get("capacity_kwh")
         power_kw = item.get("power_kw")
         power_w = item.get("power_w")
+        raw_source_type = item.get("source_type") or item.get("source", {}).get("source_type") or ""
         summary = ""
         if category == "panels" and power_w:
             summary = f"{int(quantity)} × {format_decimal_fr(power_w, 0)} W"
@@ -187,15 +231,18 @@ def _main_components(equipment: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "role": item.get("role") or category,
             "title": title,
             "summary": summary,
-            "reference": item.get("reference") or "",
+            "reference": "" if project == "pumping" else (item.get("reference") or ""),
             "quantity": quantity,
-            "source_type": "heliantha" if (item.get("source_type") or item.get("source", {}).get("source_type") or "") == "demo" else (item.get("source_type") or item.get("source", {}).get("source_type") or ""),
+            "source_type": "" if project == "pumping" and raw_source_type == "fallback" else ("heliantha" if raw_source_type == "demo" else raw_source_type),
         })
     return result[:6]
 
 
 def _diagram_data(project: str, offer: dict[str, Any], final: dict[str, Any]) -> dict[str, Any]:
-    components = {item["category"]: item for item in _main_components(offer.get("selected_equipment") or [])}
+    components = {
+        item["category"]: item
+        for item in _main_components(offer.get("selected_equipment") or [], project=project, final=final)
+    }
     diagram = {
         "project": project,
         "panel": components.get("panels"),
@@ -220,17 +267,38 @@ def _is_existing_pump_public_mode(project: str, final: dict[str, Any]) -> bool:
     return project == "pumping" and str(final.get("pump_rule_mode") or "").strip().lower() == "existing_pump_cv"
 
 
+def _is_recommended_pump_public_mode(project: str, final: dict[str, Any]) -> bool:
+    return project == "pumping" and str(final.get("pump_rule_mode") or "").strip().lower() in {
+        "recommended_curve",
+        "no_standard_pump",
+    }
+
+
 def _sanitize_public_final_results(project: str, final: dict[str, Any]) -> dict[str, Any]:
     sanitized = deepcopy(final)
     if _is_existing_pump_public_mode(project, sanitized):
         for key in PUMP_EXISTING_PUBLIC_KEYS_TO_HIDE:
             sanitized.pop(key, None)
+    elif _is_recommended_pump_public_mode(project, sanitized):
+        sanitized = {
+            key: value
+            for key, value in sanitized.items()
+            if key in PUMP_RECOMMENDED_PUBLIC_KEYS
+        }
     return sanitized
 
 
 def _sanitize_public_metrics(project: str, final: dict[str, Any], metrics: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if _is_recommended_pump_public_mode(project, final):
+        cleaned = []
+        for item in metrics or []:
+            blob = " ".join(str(item.get(key) or "") for key in ("label", "value", "note")).strip().lower()
+            if any(keyword in blob for keyword in PUMP_RECOMMENDED_METRIC_KEYWORDS_TO_HIDE):
+                continue
+            cleaned.append(item)
+        return cleaned
     if not _is_existing_pump_public_mode(project, final):
-      return metrics
+        return metrics
     cleaned = []
     for item in metrics or []:
         label = str(item.get("label") or "").strip().lower()
@@ -243,9 +311,22 @@ def _sanitize_public_metrics(project: str, final: dict[str, Any], metrics: list[
 
 def _normalize_offer(project: str, offer: dict[str, Any], final: dict[str, Any], currency: str) -> dict[str, Any]:
     normalized = deepcopy(offer)
-    normalized["price_ttc_label"] = format_money_fr(offer.get("ttc"), currency)
+    tax_basis_confirmation_required = bool(
+        offer.get("tax_basis_confirmation_required")
+        or final.get("tax_basis_confirmation_required")
+        or str(offer.get("pump_price_tax_basis") or final.get("pump_price_tax_basis") or "").strip().lower() == "unconfirmed"
+    )
+    displayed_price = offer.get("ttc") if offer.get("ttc") is not None else offer.get("ht")
+    normalized["price_label"] = format_money_fr(displayed_price, currency)
+    normalized["price_ttc_label"] = "" if tax_basis_confirmation_required else format_money_fr(offer.get("ttc"), currency)
     normalized["price_ht_label"] = format_money_fr(offer.get("ht"), currency)
-    normalized["main_components"] = _main_components(offer.get("selected_equipment") or [])
+    normalized["tax_basis_confirmation_required"] = tax_basis_confirmation_required
+    normalized["price_tax_note"] = "Nature HT/TTC du prix de la pompe à confirmer." if tax_basis_confirmation_required else ""
+    normalized["main_components"] = _main_components(
+        offer.get("selected_equipment") or [],
+        project=project,
+        final=final,
+    )
     normalized["diagram"] = _diagram_data(project, offer, final)
     return normalized
 
@@ -280,6 +361,8 @@ def build_public_quote_payload(quote: dict[str, Any], company: dict[str, str]) -
     for item in quote.get("calculation_detail", {}).get("warnings", []):
         code = str(item.get("code") or "").strip().upper()
         if _is_existing_pump_public_mode(quote.get("project", ""), final) and code.startswith("PUMP_"):
+            continue
+        if _is_recommended_pump_public_mode(quote.get("project", ""), final) and ("FALLBACK" in code or "STOCK" in code):
             continue
         text = client_warning_text(item)
         if text in seen_texts:
@@ -327,7 +410,7 @@ def build_public_quote_payload(quote: dict[str, Any], company: dict[str, str]) -
         "material_confirmation_required": any(
             item.get("source_type") in {"fallback", "manual_validation"}
             for item in (recommended_offer or {}).get("main_components", [])
-        ),
+        ) or bool((recommended_offer or {}).get("tax_basis_confirmation_required")),
         "contact": company,
         "selected_offer_level": selected_level,
         "visit_requests": quote.get("visit_requests") or [],

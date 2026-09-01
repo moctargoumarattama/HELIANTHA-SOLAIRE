@@ -77,6 +77,11 @@ function isExistingPumpMode() {
   return publicView.project === "pumping" && String(final.pump_rule_mode || "").trim().toLowerCase() === "existing_pump_cv";
 }
 
+function isRecommendedPumpMode() {
+  const final = publicView.final_results || {};
+  return publicView.project === "pumping" && String(final.pump_rule_mode || "").trim().toLowerCase() === "recommended_curve";
+}
+
 function phaseLabel(value) {
   const normalized = String(value || "").trim().toLowerCase();
   return {
@@ -103,12 +108,47 @@ function pumpingExistingSummaryRows(offer) {
   ];
 }
 
+function pumpingRecommendedSummaryRows(offer) {
+  const final = publicView.final_results || {};
+  const panelCount = hasValue(final.panels) ? displayNumber(final.panels, 0) : "";
+  const panelPower = hasValue(final.panel_power_w) ? displayNumber(final.panel_power_w, 0) : "";
+  const panelsLabel = panelCount && panelPower ? `${panelCount} × ${panelPower} W` : "À confirmer";
+  const driveLabel = [final.drive_brand, displayNumber(final.solar_drive_kw, 2, "kW")].filter(Boolean).join(" ").trim();
+  const rows = [
+    { label: "Pompe recommandée", value: displayNumber(final.selected_pump_cv, 1, "CV") || "À confirmer" },
+    { label: "Débit demandé", value: displayNumber(final.flow_m3_h, 2, "m³/h") || "À confirmer" },
+    { label: "HMT demandée", value: displayNumber(final.hmt_m, 1, "m") || "À confirmer" },
+  ];
+
+  if (final.solar_rule_defined === false) {
+    rows.push({
+      label: "Configuration solaire",
+      value: "À définir par HeliAntha",
+      note: `La pompe adaptée a été identifiée à ${displayNumber(final.selected_pump_cv, 1, "CV") || "cette puissance"}, mais la configuration solaire correspondante doit encore être définie.`,
+    });
+    return rows;
+  }
+
+  rows.push(
+    { label: "Panneaux", value: panelsLabel },
+    { label: "Puissance solaire", value: displayNumber(final.pv_power_kwp || final.installed_power_kwp, 2, "kWp") || "À confirmer" },
+    { label: "Variateur", value: driveLabel || offerPowerSummary(offer, "drives") || "À confirmer" },
+    { label: "Phase", value: phaseLabel(final.phase) || "À confirmer" },
+  );
+  return rows;
+}
+
 function renderPriceCard(offer) {
   const price = document.querySelector("#offer-price");
   const subprice = document.querySelector("#offer-subprice");
 
-  const priceText = offer.price_ttc_label || "Prix à confirmer";
-  const subpriceText = offer.price_ttc_label ? "Estimation TTC" : "Prix préparé par HeliAntha";
+  const taxBasisUnconfirmed = offer.tax_basis_confirmation_required === true;
+  const priceText = offer.price_label || offer.price_ttc_label || "Prix à confirmer";
+  const subpriceText = taxBasisUnconfirmed
+    ? (offer.price_tax_note || "Nature HT/TTC du prix de la pompe à confirmer.")
+    : offer.price_ttc_label
+      ? "Estimation TTC"
+      : "Prix préparé par HeliAntha";
 
   if (price) price.textContent = priceText;
   if (subprice) subprice.textContent = subpriceText;
@@ -139,32 +179,29 @@ function renderEquipment(components) {
     return;
   }
 
-  container.innerHTML = components.map((item) => `
-    <article class="equipment-card">
-      <span class="equipment-icon">${iconForEquipment(item.category)}</span>
-      <small>${labelForCategory(item.category)}</small>
-      <h3>${item.title || "Materiel a confirmer"}</h3>
-      <p>${item.summary || "A confirmer lors de l'etude technique"}</p>
-      ${item.reference ? `<p class="offer-meta">Reference ${item.reference}</p>` : `<p class="offer-meta">Reference finale a confirmer</p>`}
-      <span class="equipment-source">${sourceLabel(item.source_type)}</span>
-    </article>
-  `).join("");
+  const hideTechnicalMetadata = publicView.project === "pumping";
+  container.innerHTML = components.map((item) => {
+    const referenceMarkup = hideTechnicalMetadata
+      ? ""
+      : item.reference
+        ? `<p class="offer-meta">Reference ${item.reference}</p>`
+        : `<p class="offer-meta">Reference finale a confirmer</p>`;
+    const sourceMarkup = hideTechnicalMetadata
+      ? ""
+      : `<span class="equipment-source">${sourceLabel(item.source_type)}</span>`;
+    return `
+      <article class="equipment-card">
+        <span class="equipment-icon">${iconForEquipment(item.category)}</span>
+        <small>${labelForCategory(item.category)}</small>
+        <h3>${item.title || "Materiel a confirmer"}</h3>
+        <p>${item.summary || "A confirmer lors de l'etude technique"}</p>
+        ${referenceMarkup}
+        ${sourceMarkup}
+      </article>
+    `;
+  }).join("");
 
   startEquipmentAutoScroll(container);
-}
-
-function renderTechnicalDetails(offer) {
-  const container = document.querySelector("#technical-details-grid");
-  if (!container) return;
-
-  const rows = buildTechnicalDetails(offer);
-  container.innerHTML = rows.map((row) => `
-    <article class="metric-card metric-card-soft">
-      <small>${row.label}</small>
-      <strong>${row.value}</strong>
-      ${row.note ? `<p class="metric-note">${row.note}</p>` : ""}
-    </article>
-  `).join("");
 }
 
 function startEquipmentAutoScroll(container) {
@@ -266,13 +303,23 @@ function buildDiagramMarkup(diagram) {
         </div>
       `;
     }
+    if (isRecommendedPumpMode() && final.solar_rule_defined === false) {
+      return `
+        <div class="diagram-vertical">
+          ${diagramNode("💧", "Pompe recommandée", displayNumber(final.selected_pump_cv, 1, "CV") || "À confirmer")}
+          <span class="diagram-connector"></span>
+          ${diagramNode("⚙️", "Configuration solaire", "À définir par HeliAntha")}
+        </div>
+      `;
+    }
+    const driveLabel = [final.drive_brand, displayNumber(final.solar_drive_kw, 2, "kW")].filter(Boolean).join(" ").trim();
     return `
       <div class="diagram-vertical">
         ${diagramNode("☀️", "Champ PV", offerPvSummary(offer) || displayNumber(final.pv_power_kwp || final.installed_power_kwp, 2, "kWp"))}
         <span class="diagram-connector"></span>
-        ${diagramNode("⚙️", "Variateur", offerPowerSummary(offer, "drives") || displayNumber(final.solar_drive_kw, 2, "kW"))}
+        ${diagramNode("⚙️", "Variateur", driveLabel || offerPowerSummary(offer, "drives") || "À confirmer")}
         <span class="diagram-connector"></span>
-        ${diagramNode("💧", "Pompe", offerPowerSummary(offer, "pumps") || displayNumber(final.pump_power_cv, 1, "CV") || displayNumber(final.pump_power_kw, 2, "kW"))}
+        ${diagramNode("💧", "Pompe", displayNumber(final.selected_pump_cv, 1, "CV") || offerPowerSummary(offer, "pumps") || "À confirmer")}
       </div>
     `;
   }
@@ -368,6 +415,9 @@ function energyFlowSummary(offer) {
     if (isExistingPumpMode()) {
       return "";
     }
+    if (isRecommendedPumpMode() && final.solar_rule_defined === false) {
+      return "La pompe adaptée est identifiée. La configuration solaire HeliAntha correspondante reste à définir.";
+    }
     return "Le champ photovoltaïque alimente le variateur puis la pompe.";
   }
   if (project === "ongrid") {
@@ -385,83 +435,24 @@ function energyFlowSummary(offer) {
   return "Le photovoltaïque alimente l’onduleur, puis l’énergie est répartie entre la maison et la batterie lorsque le stockage est prévu.";
 }
 
-function primaryMetricForOffer(offer) {
-  const final = publicView.final_results || {};
-
-  if (["offgrid", "ongrid", "hybrid", "pumping"].includes(publicView.project)) {
-    return {
-      value: displayNumberValue(offerPvPowerKw(offer) ?? final.pv_power_kwp ?? final.installed_power_kwp, 2),
-      unit: "kWp",
-      label: "Puissance solaire recommandée",
-    };
-  }
-  if (publicView.project === "ev") {
-    return {
-      value: displayNumberValue(offerPowerKw(offer, "ev_chargers") ?? final.charger_power_kw ?? final.requested_power_kw, 2),
-      unit: "kW",
-      label: "Borne recommandée",
-    };
-  }
-  if (publicView.project === "thermal") {
-    return {
-      value: displayNumberValue(offerThermalCapacity(offer) ?? final.tank_capacity_l ?? final.daily_hot_water_l, 0),
-      unit: "L",
-      label: "Capacité du ballon",
-    };
-  }
-
-  const fallbackMetric = (publicView.metrics || [])[0] || { value: "—", label: "Estimation HeliAntha" };
-  const parts = String(fallbackMetric.value || "—").split(" ");
-  return {
-    value: parts[0] || "—",
-    unit: parts.slice(1).join(" ") || "",
-    label: fallbackMetric.label || "Estimation HeliAntha",
-  };
-}
-
-function buildSpotlightHighlights(offer) {
-  const final = publicView.final_results || {};
-  if (publicView.project === "pumping") {
-    if (isExistingPumpMode()) {
-      return pumpingExistingSummaryRows(offer).slice(0, 3);
-    }
-    return [
-      { label: "Puissance solaire", value: offerPvSummary(offer) || displayNumber(final.pv_power_kwp || final.installed_power_kwp, 2, "kWp") },
-      { label: "Débit", value: displayNumber(final.flow_m3_h, 2, "m³/h") },
-      { label: "Hauteur", value: displayNumber(final.hmt_m, 0, "m") },
-    ];
-  }
-  if (publicView.project === "ev") {
-    return [
-      { label: "Borne", value: offerPowerSummary(offer, "ev_chargers") || displayNumber(final.charger_power_kw, 2, "kW") },
-      { label: "Temps", value: displayNumber(final.recharge_time_h, 2, "h") },
-      { label: "Puissance dispo.", value: displayNumber(final.available_power_kw, 2, "kW") },
-    ];
-  }
-  if (publicView.project === "thermal") {
-    return [
-      { label: "Capacité", value: offerThermalSummary(offer) || displayNumber(final.tank_capacity_l, 0, "L") },
-      { label: "Capteurs", value: displayNumber(final.collector_surface_m2, 2, "m²") },
-      { label: "Besoin", value: displayNumber(final.daily_hot_water_l, 0, "L/j") },
-    ];
-  }
-  return [
-    { label: "Puissance solaire", value: offerPvSummary(offer) || displayNumber(final.pv_power_kwp || final.installed_power_kwp, 2, "kWp") },
-    { label: "Panneaux", value: offerPanelSummary(offer) || displayNumber(final.panels, 0, "panneau(x)") },
-    { label: "Stockage", value: offerBatterySummary(offer) || displayNumber(final.battery_commercial_kwh, 2, "kWh") || "Selon configuration" },
-  ];
-}
-
 function buildTechnicalDetails(offer) {
   const final = publicView.final_results || {};
   const project = publicView.project;
   const rows = [];
 
-  if (["offgrid", "ongrid", "hybrid", "pumping"].includes(project)) {
-    if (project === "pumping" && isExistingPumpMode()) {
+  if (project === "pumping") {
+    if (isExistingPumpMode()) {
       rows.push(...pumpingExistingSummaryRows(offer));
       return rows.slice(0, 8);
     }
+    if (isRecommendedPumpMode()) {
+      rows.push(...pumpingRecommendedSummaryRows(offer));
+      return rows.slice(0, 8);
+    }
+    return rows;
+  }
+
+  if (["offgrid", "ongrid", "hybrid"].includes(project)) {
     rows.push({ label: "Puissance solaire", value: offerPvSummary(offer) || displayNumber(final.pv_power_kwp || final.installed_power_kwp, 2, "kWp") });
     rows.push({ label: "Panneaux", value: offerPanelSummary(offer) || displayNumber(final.panels, 0, "panneau(x)") });
   }
@@ -476,13 +467,6 @@ function buildTechnicalDetails(offer) {
     rows.push({ label: "Onduleur", value: offerPowerSummary(offer, "inverters") || displayNumber(final.inverter_selected_kw, 2, "kW") });
     rows.push({ label: "Production annuelle", value: displayNumber(final.annual_production_kwh, 0, "kWh/an") });
     rows.push({ label: "Couverture estimée", value: metricCoverage || "—" });
-  }
-
-  if (project === "pumping") {
-    rows.push({ label: "Variateur", value: offerPowerSummary(offer, "drives") || displayNumber(final.solar_drive_kw, 2, "kW") });
-    rows.push({ label: "Pompe", value: offerPowerSummary(offer, "pumps") || displayNumber(final.pump_power_cv, 1, "CV") || displayNumber(final.pump_power_kw, 2, "kW") });
-    rows.push({ label: "Débit", value: displayNumber(final.flow_m3_h, 2, "m³/h") });
-    rows.push({ label: "Hauteur de pompage", value: displayNumber(final.hmt_m, 0, "m") });
   }
 
   if (project === "ev") {

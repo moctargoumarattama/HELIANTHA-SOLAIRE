@@ -14,12 +14,13 @@ def test_advisor_detects_pumping_and_extracts_multiple_values(tmp_path):
     app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "advisor-pumping.db")})
     client = app.test_client()
 
-    payload = post_message(client, "J'ai un forage de 60 m a Marrakech et je veux 25 m3 par jour.").get_json()
+    payload = post_message(client, "Je n'ai pas de pompe. Il me faut 12 m3/h et 80 m de HMT a Marrakech.").get_json()
 
     assert payload["state"]["project_type"] == "pumping"
     assert payload["state"]["collected_data"]["city"] == "Marrakech"
-    assert payload["state"]["collected_data"]["water_need"] == 25
-    assert payload["state"]["collected_data"]["depth"] == 60
+    assert payload["state"]["collected_data"]["pump_existing"] is False
+    assert payload["state"]["collected_data"]["flow_m3_h"] == 12
+    assert payload["state"]["collected_data"]["hmt_m"] == 80
     assert any(action["action"] == "calculate" for action in payload["actions"])
 
 
@@ -161,16 +162,16 @@ def test_advisor_city_correction_replaces_previous_city(tmp_path):
     assert second["state"]["collected_data"]["city"] == "Rabat"
 
 
-def test_advisor_depth_correction_replaces_previous_depth(tmp_path):
-    app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "advisor-depth.db")})
+def test_advisor_hmt_correction_replaces_previous_value(tmp_path):
+    app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "advisor-hmt.db")})
     client = app.test_client()
-    state = {"project_type": "pumping", "last_question_id": "depth", "pending_question_id": "depth"}
+    state = {"project_type": "pumping", "last_question_id": "hmt_m", "pending_question_id": "hmt_m"}
 
     first = post_message(client, "60m", state=state).get_json()
     second = post_message(client, "non c'est pas 60 c'est 85m", state=first["state"]).get_json()
 
-    assert first["state"]["collected_data"]["depth"] == 60
-    assert second["state"]["collected_data"]["depth"] == 85
+    assert first["state"]["collected_data"]["hmt_m"] == 60
+    assert second["state"]["collected_data"]["hmt_m"] == 85
 
 
 def test_advisor_changes_project_from_ev_to_house_solar(tmp_path):

@@ -1,6 +1,7 @@
 import json
 import sqlite3
 from datetime import UTC, datetime
+from uuid import uuid4
 
 from flask import current_app, g
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -8,11 +9,13 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from .catalog import ProductValidationError, product_completeness, validate_product
 from .defaults import (
     CALCULATION_PARAMETERS,
+    DASHBOARD_PROJECT_LABELS,
     CATALOG_PRODUCTS,
     COMPANY_SETTINGS,
     PARAMETER_CLASSIFICATION,
     PARAMETER_PRESENTATION,
     PRICING_RULES,
+    PUBLIC_PROJECTS,
     QUOTE_STATUSES,
     TECHNICAL_REFERENCE,
 )
@@ -66,6 +69,15 @@ CREATE TABLE IF NOT EXISTS products (
     active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS pump_curve_points (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pump_id INTEGER NOT NULL,
+    flow_m3_h REAL NOT NULL,
+    hmt_m REAL NOT NULL,
+    FOREIGN KEY (pump_id) REFERENCES products(id) ON DELETE CASCADE,
+    UNIQUE (pump_id, flow_m3_h)
 );
 
 CREATE TABLE IF NOT EXISTS calculation_parameters (
@@ -407,6 +419,7 @@ def ensure_schema(db=None):
     db.executescript(SCHEMA)
     _migrate_quote_requests(db)
     _migrate_products(db)
+    _migrate_pump_curve_points(db)
     _migrate_calculation_parameters(db)
     _migrate_pumping_solar_rules(db)
     _migrate_public_tracking(db)
@@ -431,6 +444,13 @@ def _migrate_products(db):
     db.execute(
         """CREATE INDEX IF NOT EXISTS idx_products_catalog_lookup
         ON products(active, category, brand, stock, priority)"""
+    )
+
+
+def _migrate_pump_curve_points(db):
+    db.execute(
+        """CREATE INDEX IF NOT EXISTS idx_pump_curve_points_lookup
+        ON pump_curve_points(pump_id, flow_m3_h)"""
     )
 
 
@@ -662,7 +682,7 @@ def _seed_defaults(db):
     )
 
     for product in CATALOG_PRODUCTS:
-        db.execute(
+        inserted = db.execute(
             """INSERT OR IGNORE INTO products
             (reference, category, subcategory, brand, model, description, power_kw, power_w,
              voltage, current_amp, capacity_kwh, capacity_l, efficiency, technology,
@@ -694,21 +714,39 @@ def _seed_defaults(db):
                 product.get("vat_rate", 0.20),
                 product.get("currency", "DH"),
                 product.get("datasheet_url", ""),
-                1,
+                1 if product.get("demo", True) else 0,
                 1 if product.get("preferred") else 0,
                 int(product.get("priority", 0) or 0),
             ),
         )
+        if inserted.rowcount == 1 and product.get("category") == "pumps":
+            pump_id = inserted.lastrowid
+            points = product.get("pump_curve_points") or []
+            db.executemany(
+                """INSERT INTO pump_curve_points (pump_id, flow_m3_h, hmt_m)
+                VALUES (?, ?, ?)""",
+                [
+                    (pump_id, point.get("flow_m3_h"), point.get("hmt_m"))
+                    for point in points
+                ],
+            )
         # References in CATALOG_PRODUCTS are the stable identity of the bundled
         # catalogue.  Only the provenance flag is backfilled;
         # prices, stock and any edits made by HeliAntha are never overwritten.
         db.execute(
-            """UPDATE products SET demo = 1,
+            """UPDATE products SET demo = ?,
             vat_rate = COALESCE(vat_rate, ?),
             currency = COALESCE(NULLIF(currency, ''), ?)
             WHERE reference = ?""",
-            (product.get("vat_rate", 0.20), product.get("currency", "DH"), product.get("reference")),
+            (
+                1 if product.get("demo", True) else 0,
+                product.get("vat_rate", 0.20),
+                product.get("currency", "DH"),
+                product.get("reference"),
+            ),
         )
+
+    _seed_missing_default_pump_curves(db)
 
     if not db.execute("SELECT id FROM technical_references WHERE status = 'Actif' LIMIT 1").fetchone():
         db.execute(
@@ -793,6 +831,36 @@ def _seed_defaults(db):
             db.execute("DELETE FROM users WHERE id = ?", (legacy_admin_user["id"],))
 
 
+def _seed_missing_default_pump_curves(db):
+    for product in CATALOG_PRODUCTS:
+        if product.get("category") != "pumps":
+            continue
+        points = product.get("pump_curve_points") or []
+        if not points:
+            continue
+        row = db.execute(
+            "SELECT id FROM products WHERE reference = ?",
+            (product.get("reference"),),
+        ).fetchone()
+        if not row:
+            continue
+        pump_id = row["id"]
+        existing_points = db.execute(
+            "SELECT COUNT(1) FROM pump_curve_points WHERE pump_id = ?",
+            (pump_id,),
+        ).fetchone()[0]
+        if existing_points:
+            continue
+        db.executemany(
+            """INSERT INTO pump_curve_points (pump_id, flow_m3_h, hmt_m)
+            VALUES (?, ?, ?)""",
+            [
+                (pump_id, point.get("flow_m3_h"), point.get("hmt_m"))
+                for point in points
+            ],
+        )
+
+
 def dumps(value):
     return json.dumps(value, ensure_ascii=False)
 
@@ -828,7 +896,10 @@ def load_calculation_context():
     # Keep inactive rows in the context so the calculation layer can make the
     # active/inactive decision without interpreting an empty active result as
     # "no database catalogue" and silently restoring bundled demo products.
-    products = [_product_from_row(row) for row in db.execute("SELECT * FROM products ORDER BY id").fetchall()]
+    products = _products_with_pump_curves(
+        db,
+        db.execute("SELECT * FROM products ORDER BY id").fetchall(),
+    )
     reference = active_reference()
     return {
         "technical_parameters": params,
@@ -1359,19 +1430,26 @@ def list_advisor_unknown_messages(status="new", limit=200):
 def dashboard_stats():
     db = get_db()
     ensure_schema(db)
-    rows = [
-        dict(row)
-        for row in db.execute("SELECT * FROM quote_requests WHERE project != 'iot' ORDER BY id DESC").fetchall()
-    ]
+    rows = [dict(row) for row in db.execute("SELECT * FROM quote_requests ORDER BY id DESC").fetchall()]
+    canonical_projects = set(PUBLIC_PROJECTS)
+    rows = [row for row in rows if row.get("project") in canonical_projects]
     today = datetime.now(UTC).date().isoformat()
-    by_project = {}
     by_status = {}
-    by_month = {}
     for row in rows:
-        by_project[row["project"]] = by_project.get(row["project"], 0) + 1
         by_status[row["status"]] = by_status.get(row["status"], 0) + 1
-        month = str(row["created_at"] or "")[:7]
-        by_month[month] = by_month.get(month, 0) + 1
+    project_counts = {project: 0 for project in PUBLIC_PROJECTS}
+    for row in rows:
+        project = row["project"]
+        project_counts[project] = project_counts.get(project, 0) + 1
+    project_breakdown = [
+        {
+            "key": project,
+            "label": DASHBOARD_PROJECT_LABELS.get(project, project),
+            "count": count,
+        }
+        for project in PUBLIC_PROJECTS
+        if (count := project_counts.get(project, 0)) > 0
+    ]
     return {
         "total_prospects": len(rows),
         "new_today": sum(1 for row in rows if str(row.get("created_at", "")).startswith(today)),
@@ -1382,11 +1460,8 @@ def dashboard_stats():
         "accepted_quotes": by_status.get("Accepte", 0),
         "refused_quotes": by_status.get("Refuse", 0),
         "installing_projects": by_status.get("Installation", 0),
-        "potential_ht": round(sum(float(row.get("amount_ht") or 0) for row in rows)),
-        "potential_ttc": round(sum(float(row.get("amount_ttc") or 0) for row in rows)),
-        "by_project": by_project,
+        "project_breakdown": project_breakdown,
         "by_status": by_status,
-        "by_month": by_month,
         "latest_quotes": rows[:8],
     }
 
@@ -1425,14 +1500,15 @@ def list_products(search="", category="", active="", brand="", stock="", sort="c
         "updated": "updated_at DESC, reference",
     }.get(sort, "active DESC, preferred DESC, priority DESC, category, brand, reference")
     sql += f" ORDER BY {order_by}"
-    return [_product_from_row(row) for row in db.execute(sql, values).fetchall()]
+    return _products_with_pump_curves(db, db.execute(sql, values).fetchall())
 
 
 def get_product(product_id):
     db = get_db()
     ensure_schema(db)
     row = db.execute("SELECT * FROM products WHERE id = ?", (product_id,)).fetchone()
-    return _product_from_row(row) if row else None
+    products = _products_with_pump_curves(db, [row] if row else [])
+    return products[0] if products else None
 
 
 def save_product(product, product_id=None, submitted_fields=None):
@@ -1440,6 +1516,21 @@ def save_product(product, product_id=None, submitted_fields=None):
     ensure_schema(db)
     existing = get_product(product_id) if product_id else None
     validated = validate_product(product, existing=existing, submitted_fields=submitted_fields)
+    if validated.get("category") == "pumps" and not validated.get("reference"):
+        validated["reference"] = (
+            (existing or {}).get("reference")
+            or f"PUMP-INTERNAL-{uuid4().hex.upper()}"
+        )
+    technical_specs = dict(validated.get("technical_specs") or {})
+    curve_was_submitted = (
+        validated.get("category") == "pumps"
+        and (
+            (submitted_fields is not None and "spec_curve_points" in submitted_fields)
+            or "curve_points" in technical_specs
+        )
+    )
+    curve_points = technical_specs.pop("curve_points", [])
+    validated["technical_specs"] = technical_specs
     values = (
         validated.get("reference"),
         validated.get("category"),
@@ -1455,7 +1546,7 @@ def save_product(product, product_id=None, submitted_fields=None):
         validated.get("capacity_l"),
         validated.get("efficiency"),
         validated.get("technology"),
-        dumps(validated.get("technical_specs") or {}),
+        dumps(technical_specs),
         validated.get("purchase_price"),
         validated.get("sale_price"),
         validated.get("supplier"),
@@ -1472,6 +1563,7 @@ def save_product(product, product_id=None, submitted_fields=None):
         utc_now(),
     )
     try:
+        saved_product_id = product_id
         if product_id:
             db.execute(
                 """UPDATE products SET reference=?, category=?, subcategory=?, brand=?, model=?,
@@ -1483,7 +1575,7 @@ def save_product(product, product_id=None, submitted_fields=None):
                 values + (product_id,),
             )
         else:
-            db.execute(
+            cursor = db.execute(
                 """INSERT INTO products
                 (reference, category, subcategory, brand, model, description, power_kw, power_w,
                  voltage, current_amp, capacity_kwh, capacity_l, efficiency, technology,
@@ -1492,9 +1584,21 @@ def save_product(product, product_id=None, submitted_fields=None):
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 values,
             )
+            saved_product_id = cursor.lastrowid
     except sqlite3.IntegrityError as exc:
         raise ProductValidationError({"reference": "Cette reference existe deja dans le catalogue."}) from exc
+    if curve_was_submitted and saved_product_id:
+        db.execute("DELETE FROM pump_curve_points WHERE pump_id = ?", (saved_product_id,))
+        db.executemany(
+            """INSERT INTO pump_curve_points (pump_id, flow_m3_h, hmt_m)
+            VALUES (?, ?, ?)""",
+            [
+                (saved_product_id, point["flow_m3_h"], point["hmt_m"])
+                for point in curve_points
+            ],
+        )
     db.commit()
+    return saved_product_id
 
 
 def set_product_active(product_id, active):
@@ -1836,3 +1940,28 @@ def _product_from_row(row):
     product["technical_specs"] = loads(product.pop("technical_specs_json", None), {})
     product["completeness"] = product_completeness(product)
     return product
+
+
+def _products_with_pump_curves(db, rows):
+    products = [_product_from_row(row) for row in rows]
+    pump_ids = [product["id"] for product in products if product.get("category") == "pumps"]
+    points_by_pump = {pump_id: [] for pump_id in pump_ids}
+    if pump_ids:
+        placeholders = ",".join("?" for _ in pump_ids)
+        rows = db.execute(
+            f"""SELECT pump_id, flow_m3_h, hmt_m
+            FROM pump_curve_points
+            WHERE pump_id IN ({placeholders})
+            ORDER BY pump_id, flow_m3_h, id""",
+            pump_ids,
+        ).fetchall()
+        for row in rows:
+            points_by_pump[row["pump_id"]].append({
+                "flow_m3_h": float(row["flow_m3_h"]),
+                "hmt_m": float(row["hmt_m"]),
+            })
+    for product in products:
+        if product.get("category") == "pumps":
+            product["pump_curve_points"] = points_by_pump.get(product["id"], [])
+            product["completeness"] = product_completeness(product)
+    return products

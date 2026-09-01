@@ -18,7 +18,17 @@
     ],
     pumps: [
       { key: "power_hp", label: "Puissance", kind: "number", unit: "CV", required: true },
+      { key: "power_kw", label: "Puissance", kind: "number", unit: "kW" },
       { key: "phases", label: "Phase", kind: "choice", choices: ["monophase", "triphase"] },
+      { key: "voltage_v", label: "Tension", kind: "number", unit: "V" },
+      { key: "current_a", label: "Courant", kind: "number", unit: "A" },
+      {
+        key: "curve_points",
+        label: "Courbe Débit / HMT",
+        kind: "pump_curve",
+        required: true,
+        help: "Une ligne par point, au format débit:HMT.",
+      },
     ],
     drives: [
       { key: "power_kw", label: "Puissance", kind: "number", unit: "kW", required: true },
@@ -76,7 +86,7 @@
   const fieldMarkup = (field, values = {}) => {
     const rawValue = values[field.key] ?? "";
     const required = field.required ? ' required data-required="1"' : "";
-    const wide = ["power_w", "power_kw", "capacity_kwh", "power_hp", "tank_volume_l", "section_mm2"].includes(field.key)
+    const wide = ["power_w", "power_kw", "capacity_kwh", "power_hp", "tank_volume_l", "section_mm2", "curve_points"].includes(field.key)
       ? " full"
       : "";
     const input = field.kind === "choice"
@@ -84,7 +94,14 @@
           <option value="">Choisir</option>
           ${field.choices.map((choice) => `<option value="${escapeHtml(choice)}"${String(rawValue) === String(choice) ? " selected" : ""}>${labelFor(field, choice)}</option>`).join("")}
         </select>`
-      : `<input
+      : field.kind === "pump_curve"
+        ? `<textarea
+            name="${fieldName(field)}"
+            rows="8"
+            placeholder="0:95&#10;1:91&#10;1,5:89"
+            ${required}
+          >${escapeHtml(rawValue)}</textarea>`
+        : `<input
           ${field.kind === "number" || field.kind === "integer" || field.kind === "percent" ? `type="number" step="${field.kind === "integer" ? "1" : "any"}"` : ""}
           name="${fieldName(field)}"
           value="${escapeHtml(rawValue)}"
@@ -96,6 +113,7 @@
       ${escapeHtml(field.label)}${field.required ? " *" : ""}
       ${input}
       ${field.unit ? `<small>Unité : ${escapeHtml(field.unit)}</small>` : ""}
+      ${field.help ? `<small>${escapeHtml(field.help)}</small>` : ""}
     </label>`;
   };
 
@@ -127,6 +145,37 @@
 
   const categoryValues = new Map();
   let activeCategory = categorySelect.value || "";
+  const referenceField = form.querySelector("[data-pump-reference-field]");
+  const referenceInput = form.querySelector("input[name='reference']");
+  const brandInput = form.querySelector("input[name='brand']");
+  const requiredMarkers = form.querySelectorAll("[data-non-pump-required-marker]");
+  const stockField = form.querySelector("[data-pump-stock-field]");
+  const priceLabel = form.querySelector("[data-current-price-label]");
+  const priceNote = form.querySelector("[data-pump-price-note]");
+  const vatLabel = form.querySelector("[data-vat-label]");
+  const vatInput = form.querySelector("input[name='vat_rate']");
+
+  const syncPumpCommercialFields = (category) => {
+    const isPump = category === "pumps";
+    if (referenceField) referenceField.hidden = isPump;
+    if (stockField) stockField.hidden = isPump;
+    if (referenceInput) referenceInput.required = !isPump;
+    if (brandInput) brandInput.required = !isPump;
+    requiredMarkers.forEach((marker) => {
+      marker.hidden = isPump;
+    });
+    if (priceLabel) priceLabel.textContent = isPump ? "Prix actuel *" : "Prix HT *";
+    if (priceNote) priceNote.hidden = !isPump;
+    if (vatLabel) vatLabel.textContent = isPump ? "TVA (si confirmée)" : "TVA *";
+    if (vatInput) {
+      vatInput.required = !isPump;
+      if (isPump && vatInput.dataset.vatExplicit !== "1") {
+        vatInput.value = "";
+      } else if (!isPump && !vatInput.value && vatInput.dataset.vatExplicit !== "1") {
+        vatInput.value = "20";
+      }
+    }
+  };
 
   const currentSection = document.getElementById("catalog-tech-section");
   const currentContainer = document.getElementById("catalog-characteristics");
@@ -148,6 +197,7 @@
       }
     }
     activeCategory = nextCategory;
+    syncPumpCommercialFields(nextCategory);
     if (!nextCategory || !(CATEGORY_FIELDS[nextCategory] || []).length) {
       shell.innerHTML = "";
       return;
@@ -156,4 +206,5 @@
   };
 
   categorySelect.addEventListener("change", syncCategory);
+  syncPumpCommercialFields(activeCategory);
 })();

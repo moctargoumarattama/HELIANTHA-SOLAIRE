@@ -12,16 +12,14 @@
   <article><small>Acceptés</small><b>{{ stats.accepted_quotes }}</b></article>
   <article><small>Refusés</small><b>{{ stats.refused_quotes }}</b></article>
   <article><small>En installation</small><b>{{ stats.installing_projects }}</b></article>
-  <article><small>Potentiel HT</small><b>{{ "{:,.0f}".format(stats.potential_ht).replace(",", " ") }} DH</b></article>
-  <article><small>Potentiel TTC</small><b>{{ "{:,.0f}".format(stats.potential_ttc).replace(",", " ") }} DH</b></article>
 </section>
 
 <section class="admin-grid two">
   <article class="panel">
     <h2>Répartition des projets</h2>
     <div class="bars">
-      {% for key, count in stats.by_project.items() %}
-      <div><span>{{ project_labels.get(key, key) }}</span><b>{{ count }}</b><i style="width: {{ count * 20 if count < 5 else 100 }}%"></i></div>
+      {% for item in stats.project_breakdown %}
+      <div><span>{{ item.label }}</span><b>{{ item.count }}</b><i style="width: {{ item.count * 20 if item.count < 5 else 100 }}%"></i></div>
       {% else %}<p class="muted">Aucune simulation pour le moment.</p>{% endfor %}
     </div>
   </article>
