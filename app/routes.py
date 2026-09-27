@@ -65,7 +65,13 @@ from .public_presenters import build_public_quote_payload, company_profile, sani
 from .services.ai_service import chat_with_ollama, extract_quote_request, sanitize_messages
 from .services.pump_selector import NO_STANDARD_PUMP_MESSAGE, curve_head_for_flow, select_pump_for_duty
 from .services.pump_pricing import calculate_pump_sale_price
-from .services.whatsapp_service import notify_quote_created
+from .services.whatsapp_service import (
+    gateway_logout,
+    get_gateway_qr,
+    get_gateway_status,
+    notify_quote_created,
+    send_whatsapp_raw,
+)
 from .wizard_projects import engine_project_for, normalize_wizard_project, wizard_projects_payload
 
 
@@ -274,6 +280,15 @@ def _notify_quote_created_safely(
         )
     except Exception:
         current_app.logger.exception("WhatsApp quote notification failed")
+
+
+def _whatsapp_admin_settings() -> dict[str, str]:
+    settings = {row.get("key"): row.get("value", "") for row in list_company_settings()}
+    return {
+        "gateway_url": settings.get("whatsapp_gateway_url") or "http://127.0.0.1:3001/send-message",
+        "admin_whatsapp": settings.get("admin_whatsapp") or "",
+        "app_base_url": settings.get("app_base_url") or "",
+    }
 
 
 
@@ -1484,6 +1499,41 @@ def admin_settings():
             update_company_setting(setting["id"], request.form.get(f"value_{setting['id']}", setting["value"]))
         return redirect(url_for("main.admin_settings"))
     return render_template("admin/settings.html", settings=settings)
+
+
+@bp.get("/admin/whatsapp")
+def admin_whatsapp():
+    settings = _whatsapp_admin_settings()
+    return render_template("admin/whatsapp.html", settings=settings)
+
+
+@bp.get("/admin/whatsapp/status")
+def admin_whatsapp_status():
+    settings = _whatsapp_admin_settings()
+    return jsonify(get_gateway_status(settings["gateway_url"]))
+
+
+@bp.get("/admin/whatsapp/qr")
+def admin_whatsapp_qr():
+    settings = _whatsapp_admin_settings()
+    return jsonify(get_gateway_qr(settings["gateway_url"]))
+
+
+@bp.post("/admin/whatsapp/logout")
+def admin_whatsapp_logout():
+    settings = _whatsapp_admin_settings()
+    success = gateway_logout(settings["gateway_url"])
+    return jsonify(success=success)
+
+
+@bp.post("/admin/whatsapp/test")
+def admin_whatsapp_test():
+    settings = _whatsapp_admin_settings()
+    payload = request.get_json(silent=True) or {}
+    phone = str(payload.get("phone") or settings.get("admin_whatsapp") or "").strip()
+    message = str(payload.get("message") or "Test WhatsApp HeliAntha").strip()
+    success = send_whatsapp_raw(phone, message, gateway_url=settings["gateway_url"])
+    return jsonify(success=success)
 
 
 @bp.route("/admin/utilisateurs", methods=["GET", "POST"])

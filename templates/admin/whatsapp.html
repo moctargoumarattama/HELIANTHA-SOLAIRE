@@ -1,0 +1,135 @@
+{% extends "admin/base.html" %}
+{% block title %}WhatsApp - HeliAntha Admin{% endblock %}
+{% block page_title %}Passerelle WhatsApp{% endblock %}
+{% block content %}
+<section class="admin-grid two whatsapp-admin">
+  <article class="panel whatsapp-status-panel">
+    <div class="panel-head">
+      <div>
+        <h2>Etat de connexion</h2>
+        <p class="muted">Passerelle locale : <strong>{{ settings.gateway_url }}</strong></p>
+      </div>
+      <span class="status whatsapp-status-badge" id="wa-status-badge">Verification...</span>
+    </div>
+
+    <dl class="info-list whatsapp-info-list">
+      <dt>Etat</dt><dd id="wa-status-text">Verification en cours</dd>
+      <dt>Telephone connecte</dt><dd id="wa-phone">-</dd>
+      <dt>QR disponible</dt><dd id="wa-has-qr">-</dd>
+      <dt>Telephone admin</dt><dd>{{ settings.admin_whatsapp or "-" }}</dd>
+      <dt>URL publique</dt><dd>{{ settings.app_base_url or "-" }}</dd>
+    </dl>
+
+    <div class="detail-actions whatsapp-actions">
+      <button class="admin-button secondary" type="button" id="wa-refresh">Actualiser</button>
+      <button class="ghost-button" type="button" id="wa-logout">Deconnecter / Reinitialiser</button>
+    </div>
+  </article>
+
+  <article class="panel whatsapp-qr-panel">
+    <div class="panel-head">
+      <div>
+        <h2>QR code WhatsApp</h2>
+        <p class="muted">Scannez ce QR avec WhatsApp pour connecter la session.</p>
+      </div>
+    </div>
+    <div class="whatsapp-qr-box" id="wa-qr-box">
+      <p class="muted">Chargement du QR...</p>
+    </div>
+  </article>
+</section>
+
+<section class="panel">
+  <h2>Message de test</h2>
+  <form class="form-grid whatsapp-test-form" id="wa-test-form">
+    <label>Telephone destinataire <small>Par defaut : telephone admin</small>
+      <input name="phone" value="{{ settings.admin_whatsapp }}" placeholder="06XXXXXXXX">
+    </label>
+    <label class="full">Message
+      <textarea name="message" rows="3">Test WhatsApp HeliAntha : la passerelle est operationnelle.</textarea>
+    </label>
+    <div class="full">
+      <button class="admin-button" type="submit">Envoyer le test</button>
+      <span class="muted" id="wa-test-result"></span>
+    </div>
+  </form>
+</section>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+(() => {
+  const statusBadge = document.getElementById("wa-status-badge");
+  const statusText = document.getElementById("wa-status-text");
+  const phone = document.getElementById("wa-phone");
+  const hasQr = document.getElementById("wa-has-qr");
+  const qrBox = document.getElementById("wa-qr-box");
+  const result = document.getElementById("wa-test-result");
+
+  const setStatus = (payload) => {
+    const online = payload.online !== false;
+    const connected = payload.connected === true;
+    statusBadge.className = `status whatsapp-status-badge ${!online ? "offline" : connected ? "connected" : "disconnected"}`;
+    statusBadge.textContent = !online ? "Hors ligne" : connected ? "Connecte" : "Deconnecte";
+    statusText.textContent = !online ? "Passerelle injoignable" : connected ? "Session WhatsApp connectee" : "En attente de scan QR";
+    phone.textContent = payload.phone || "-";
+    hasQr.textContent = payload.has_qr ? "Oui" : "Non";
+  };
+
+  const loadStatus = async () => {
+    try {
+      const response = await fetch("{{ url_for('main.admin_whatsapp_status') }}");
+      const payload = await response.json();
+      setStatus(payload);
+      if (!payload.connected) loadQr();
+    } catch (_) {
+      setStatus({ online: false, connected: false, phone: null, has_qr: false });
+    }
+  };
+
+  const loadQr = async () => {
+    qrBox.innerHTML = '<p class="muted">Recherche du QR...</p>';
+    try {
+      const response = await fetch("{{ url_for('main.admin_whatsapp_qr') }}");
+      const payload = await response.json();
+      if (payload.qr) {
+        qrBox.innerHTML = `<img src="${payload.qr}" alt="QR code WhatsApp">`;
+      } else if (payload.connected) {
+        qrBox.innerHTML = '<p class="muted">Session deja connectee.</p>';
+      } else {
+        qrBox.innerHTML = `<p class="muted">${payload.error || "QR non disponible pour le moment."}</p>`;
+      }
+    } catch (_) {
+      qrBox.innerHTML = '<p class="muted">Passerelle injoignable.</p>';
+    }
+  };
+
+  document.getElementById("wa-refresh")?.addEventListener("click", loadStatus);
+  document.getElementById("wa-logout")?.addEventListener("click", async () => {
+    if (!confirm("Deconnecter la session WhatsApp ?")) return;
+    await fetch("{{ url_for('main.admin_whatsapp_logout') }}", { method: "POST" });
+    window.setTimeout(loadStatus, 600);
+  });
+
+  document.getElementById("wa-test-form")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    result.textContent = "Envoi en cours...";
+    const data = Object.fromEntries(new FormData(event.currentTarget).entries());
+    try {
+      const response = await fetch("{{ url_for('main.admin_whatsapp_test') }}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      const payload = await response.json();
+      result.textContent = payload.success ? "Message envoye." : "Echec envoi. Verifiez la passerelle.";
+    } catch (_) {
+      result.textContent = "Passerelle injoignable.";
+    }
+  });
+
+  loadStatus();
+  window.setInterval(loadStatus, 5000);
+})();
+</script>
+{% endblock %}

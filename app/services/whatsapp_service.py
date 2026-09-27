@@ -16,6 +16,13 @@ ADMIN_PHONE = os.getenv("ADMIN_WHATSAPP", "0684056613")
 BASE_URL = os.getenv("APP_BASE_URL", "https://devis.heliantha.ma").rstrip("/")
 
 
+def get_whatsapp_base_url(gateway_url: str | None = None) -> str:
+    value = str(gateway_url or WHATSAPP_GATEWAY_URL or "http://127.0.0.1:3001").strip()
+    if value.endswith("/send-message"):
+        value = value[: -len("/send-message")]
+    return value.rstrip("/")
+
+
 def send_whatsapp_raw(phone: str, message: str, gateway_url: str | None = None) -> bool:
     """Send a WhatsApp message through the local Baileys gateway."""
 
@@ -37,6 +44,52 @@ def send_whatsapp_raw(phone: str, message: str, gateway_url: str | None = None) 
         return False
     except Exception as exc:  # pragma: no cover - defensive logging path
         logger.error("WhatsApp gateway connection error: %s", exc)
+        return False
+
+
+def get_gateway_status(gateway_url: str | None = None) -> dict[str, Any]:
+    """Return the local WhatsApp gateway status, or an offline payload."""
+
+    base = get_whatsapp_base_url(gateway_url)
+    try:
+        response = requests.get(f"{base}/status", timeout=3)
+        data = response.json()
+        if not isinstance(data, dict):
+            raise ValueError("Invalid gateway status payload")
+        data.setdefault("connected", False)
+        data.setdefault("phone", None)
+        data.setdefault("has_qr", False)
+        data["online"] = True
+        return data
+    except Exception:
+        return {"connected": False, "phone": None, "has_qr": False, "online": False}
+
+
+def get_gateway_qr(gateway_url: str | None = None) -> dict[str, Any]:
+    """Return the gateway QR payload as base64 image data."""
+
+    base = get_whatsapp_base_url(gateway_url)
+    try:
+        response = requests.get(f"{base}/qr", timeout=3)
+        data = response.json()
+        if not isinstance(data, dict):
+            raise ValueError("Invalid gateway QR payload")
+        data.setdefault("connected", False)
+        data.setdefault("qr", None)
+        return data
+    except Exception:
+        return {"connected": False, "qr": None, "error": "Passerelle injoignable"}
+
+
+def gateway_logout(gateway_url: str | None = None) -> bool:
+    """Ask the gateway to logout/reset its WhatsApp session."""
+
+    base = get_whatsapp_base_url(gateway_url)
+    try:
+        response = requests.post(f"{base}/logout", timeout=5)
+        data = response.json()
+        return bool(data.get("success"))
+    except Exception:
         return False
 
 

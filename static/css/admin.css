@@ -2959,6 +2959,60 @@ body.admin-menu-open{
   filter:brightness(.97);
 }
 
+.whatsapp-admin .panel{
+  min-height:360px;
+}
+
+.whatsapp-status-badge.connected{
+  background:#e7f7ef;
+  color:#17633f;
+}
+
+.whatsapp-status-badge.disconnected{
+  background:#fff5df;
+  color:#8a5a00;
+}
+
+.whatsapp-status-badge.offline{
+  background:#fff0ed;
+  color:#9d2419;
+}
+
+.whatsapp-info-list{
+  margin-top:18px;
+}
+
+.whatsapp-actions{
+  margin:18px 0 0;
+}
+
+.whatsapp-qr-box{
+  align-items:center;
+  background:linear-gradient(180deg,#ffffff 0%,#f7fbf8 100%);
+  border:1px dashed #b9c8c0;
+  border-radius:8px;
+  display:flex;
+  justify-content:center;
+  min-height:260px;
+  padding:18px;
+  text-align:center;
+}
+
+.whatsapp-qr-box img{
+  background:white;
+  border:10px solid white;
+  border-radius:8px;
+  box-shadow:0 18px 40px rgba(17,45,38,.12);
+  width:min(260px,100%);
+}
+
+.whatsapp-test-form .full{
+  align-items:center;
+  display:flex;
+  gap:12px;
+  flex-wrap:wrap;
+}
+
 /* Formal quote PDF inspired by HeliAntha proposal layout */
 .quote-proposal{
   width:210mm;

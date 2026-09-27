@@ -2,7 +2,14 @@ from unittest.mock import Mock, patch
 
 import requests
 
-from app.services.whatsapp_service import notify_quote_created, send_whatsapp_raw
+from app.services.whatsapp_service import (
+    gateway_logout,
+    get_gateway_qr,
+    get_gateway_status,
+    get_whatsapp_base_url,
+    notify_quote_created,
+    send_whatsapp_raw,
+)
 
 
 def test_send_whatsapp_raw_success():
@@ -74,3 +81,34 @@ def test_notify_quote_created_uses_admin_gateway_settings():
     assert send.call_args_list[0].kwargs["gateway_url"] == "http://127.0.0.1:3999/send-message"
     assert send.call_args_list[1].args[0] == "0699999999"
     assert "https://example.test/devis/42/pdf" in send.call_args_list[0].args[1]
+
+
+def test_get_whatsapp_base_url_strips_send_message_path():
+    assert get_whatsapp_base_url("http://127.0.0.1:3001/send-message") == "http://127.0.0.1:3001"
+    assert get_whatsapp_base_url("http://127.0.0.1:3001") == "http://127.0.0.1:3001"
+
+
+def test_gateway_status_and_qr_use_base_endpoints():
+    status_response = Mock()
+    status_response.json.return_value = {"connected": True, "phone": "2126", "has_qr": False}
+    qr_response = Mock()
+    qr_response.json.return_value = {"connected": False, "qr": "data:image/png;base64,abc"}
+
+    with patch("app.services.whatsapp_service.requests.get", side_effect=[status_response, qr_response]) as get:
+        status = get_gateway_status("http://127.0.0.1:3001/send-message")
+        qr = get_gateway_qr("http://127.0.0.1:3001/send-message")
+
+    assert status["online"] is True
+    assert status["connected"] is True
+    assert qr["qr"].startswith("data:image")
+    assert get.call_args_list[0].args[0] == "http://127.0.0.1:3001/status"
+    assert get.call_args_list[1].args[0] == "http://127.0.0.1:3001/qr"
+
+
+def test_gateway_helpers_return_offline_on_errors():
+    with patch("app.services.whatsapp_service.requests.get", side_effect=requests.ConnectionError):
+        assert get_gateway_status()["online"] is False
+        assert get_gateway_qr()["qr"] is None
+
+    with patch("app.services.whatsapp_service.requests.post", side_effect=requests.ConnectionError):
+        assert gateway_logout() is False
