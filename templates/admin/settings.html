@@ -5,7 +5,15 @@
 <form class="panel" method="post">
   <div class="form-grid">
     {% for s in settings %}
-    <label>{{ s.label }} <small>{{ s.key }}</small><input name="value_{{ s.id }}" value="{{ s.value }}"></label>
+    {% set long_field = s.key in ['pdf_social_links', 'pdf_legal_footer'] or (s.value and s.value|length > 120) %}
+    <label class="{% if long_field %}full{% endif %}">
+      {{ s.label }} <small>{{ s.key }}</small>
+      {% if long_field %}
+        <textarea name="value_{{ s.id }}" rows="{% if s.key in ['pdf_legal_footer', 'pdf_social_links'] %}4{% else %}2{% endif %}">{{ s.value }}</textarea>
+      {% else %}
+        <input name="value_{{ s.id }}" value="{{ s.value }}">
+      {% endif %}
+    </label>
     {% endfor %}
   </div>
   <button class="admin-button" type="submit">Enregistrer les paramètres</button>

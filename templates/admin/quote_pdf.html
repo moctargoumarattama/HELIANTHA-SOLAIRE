@@ -7,59 +7,124 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
 </head>
 <body class="pdf-page">
-  <main class="pdf-sheet">
-    <header class="pdf-header">
-      <div class="admin-brand">
-        <span class="admin-mark" aria-hidden="true"><img class="admin-logo" src="{{ url_for('main.brand_image') }}" alt=""></span>
-        <div>
-          <b>HeliAntha</b>
-          <small>Etude · Installation · Maintenance</small>
-        </div>
+  {% set financial = quote.financial_breakdown or {} %}
+  {% set total_ht = financial.total_ht or 0 %}
+  {% set vat_amount = financial.vat or 0 %}
+  {% set total_ttc = financial.total_ttc or 0 %}
+  {% set validity = "15" %}
+  <main class="pdf-sheet quote-proposal">
+    <header class="proposal-header">
+      <div class="proposal-brand">
+        <img src="{{ url_for('main.brand_image') }}" alt="HeliAntha">
       </div>
-      <div>
-        <b>Pré-devis {{ quote.quote_number }}</b>
-        <span>{{ quote.created_at }}</span>
+      <div class="proposal-title">
+        <h1>PROPOSITION {{ quote.quote_number }}</h1>
+        <p>Date : {{ quote.created_at }}</p>
+        <p>Validite : {{ validity }} jours</p>
+        <p>Code client : CL{{ "%05d"|format(quote.id or 0) }}</p>
       </div>
     </header>
 
-    <section class="pdf-grid">
-      <div>
-        <h2>Client</h2>
-        <p>{{ quote.customer_name }}<br>{{ quote.phone }}<br>{{ quote.email }}</p>
-      </div>
-      <div>
-        <h2>Projet</h2>
-        <p>{{ project_labels.get(quote.project, quote.project) }}<br>{{ quote.solution_name }}<br>{{ quote.location or quote.city }}</p>
-      </div>
+    <section class="proposal-parties">
+      <article>
+        <h2>EMETTEUR</h2>
+        <p>
+          <strong>{{ company.company_name or "HELIANTHA" }}</strong><br>
+          {{ company.address or "Maroc" }}<br>
+          Tel. : {{ company.phone or "-" }}{% if company.whatsapp %} / {{ company.whatsapp }}{% endif %}<br>
+          Email : {{ company.email or "-" }}<br>
+          Web : {{ company.website or "-" }}
+        </p>
+      </article>
+      <article>
+        <h2>ADRESSE A</h2>
+        <p>
+          <strong>{{ quote.customer_name or "Client" }}</strong><br>
+          Tel. : {{ quote.phone or "-" }}<br>
+          {% if quote.email %}Email : {{ quote.email }}<br>{% endif %}
+          {{ quote.location or quote.city or "Maroc" }}
+        </p>
+      </article>
     </section>
 
-    <h2>Configuration retenue</h2>
-    <div class="pdf-table-wrap">
-      <table class="pdf-table">
-        <thead>
-          <tr><th>Désignation</th><th>Qté</th><th>PU</th><th>Total</th></tr>
-        </thead>
+    <table class="proposal-table">
+      <thead>
+        <tr>
+          <th>Designation</th>
+          <th>TVA</th>
+          <th>P.U. HT</th>
+          <th>Qte</th>
+          <th>Total HT</th>
+          <th>Total TTC</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in display_equipment_lines %}
+          <tr>
+            <td>
+              <strong>{{ item.display_designation or item.description or "-" }}</strong>
+              {% if item.role or item.category %}
+                <small>{{ item.role or item.category }}</small>
+              {% endif %}
+            </td>
+            <td>{{ item.display_vat_rate }}</td>
+            <td>{{ "{:,.2f}".format(item.display_unit_price_ht or item.unit_price or 0).replace(",", " ") }}</td>
+            <td>{{ item.quantity }}</td>
+            <td>{{ "{:,.2f}".format(item.display_total_price_ht or item.total_price or 0).replace(",", " ") }}</td>
+            <td><strong>{{ "{:,.2f}".format(item.display_total_ttc or 0).replace(",", " ") }}</strong></td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="6">Aucune ligne materielle a afficher.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <section class="proposal-bottom">
+      <div class="proposal-notes">
+        <p><strong>Montants exprimes en Dirham Marocain (MAD)</strong></p>
+        <p><strong>Modalite de paiement :</strong> 100% a la commande.</p>
+        <p><strong>Reglement par virement bancaire :</strong><br>
+          Banque : {{ company.pdf_bank_name or "-" }}<br>
+          RIB : {{ company.pdf_rib or "-" }}<br>
+          IBAN : {{ company.pdf_iban or "-" }}
+        </p>
+        <p><strong>Reglement par cheque :</strong><br>
+          A l'ordre de {{ company.company_name or "HELIANTHA" }}{% if company.address %}, adresse au : {{ company.address }}{% endif %}.
+        </p>
+      </div>
+
+      <table class="proposal-totals">
         <tbody>
-          {% for item in display_equipment_lines %}
-            <tr>
-              <td data-label="Designation">{{ item.display_designation or item.description or "-" }}</td>
-              <td data-label="Qte">{{ item.quantity }}</td>
-              <td data-label="PU">{{ "{:,.2f}".format(item.unit_price or 0).replace(",", " ") }} DH</td>
-              <td data-label="Total">{{ "{:,.2f}".format(item.total_price or 0).replace(",", " ") }} DH</td>
-            </tr>
-          {% else %}
-            <tr><td colspan="4">Aucune ligne matérielle à afficher.</td></tr>
-          {% endfor %}
+          <tr><td>Total HT</td><td>{{ "{:,.2f}".format(total_ht).replace(",", " ") }} MAD</td></tr>
+          <tr><td>Total TVA</td><td>{{ "{:,.2f}".format(vat_amount).replace(",", " ") }} MAD</td></tr>
+          <tr class="grand-total"><td>TOTAL TTC</td><td>{{ "{:,.2f}".format(total_ttc).replace(",", " ") }} MAD</td></tr>
         </tbody>
       </table>
-    </div>
+    </section>
 
-    <h2>Lecture rapide</h2>
-    <div class="finance-box compact">
-      {% for row in financial_summary_rows %}
-      <div class="{% if row.emphasis %}total{% endif %}"><span>{{ row.label }}</span><b>{{ "{:,.2f}".format(row.amount or 0).replace(",", " ") }} DH</b></div>
+    <section class="proposal-contact">
+      <strong>VOTRE INTERLOCUTEUR CHEZ {{ company.company_name or "HELIANTHA" }} :</strong>
+      {{ company.pdf_contact_name or "-" }}
+      {% if company.phone %} | Tel : {{ company.phone }}{% endif %}
+      {% if company.email %} | Email : {{ company.email }}{% endif %}
+      {% if company.pdf_social_links %}<br>Suivez-nous : {{ company.pdf_social_links }}{% endif %}
+    </section>
+
+    <section class="proposal-signature">
+      Cachet, Date, Signature et mention "Bon pour Accord" :
+    </section>
+
+    <footer class="proposal-footer">
+      {{ company.company_name or "HELIANTHA" }}{% if company.address %} - {{ company.address }}{% endif %}
+      {% if company.phone %}<br>Tel. : {{ company.phone }}{% endif %}
+      {% if company.website %} - {{ company.website }}{% endif %}
+      {% if company.email %} - {{ company.email }}{% endif %}
+      {% for line in (company.pdf_legal_footer or "").splitlines() %}
+        <br>{{ line }}
       {% endfor %}
-    </div>
+    </footer>
   </main>
   <script>window.addEventListener("load",()=>setTimeout(()=>window.print(),300));</script>
 </body>

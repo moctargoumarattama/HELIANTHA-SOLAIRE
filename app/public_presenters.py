@@ -9,7 +9,7 @@ from typing import Any
 from .defaults import PROJECT_LABELS
 
 
-MAIN_COMPONENT_ORDER = ("panels", "inverters", "batteries", "pumps", "drives", "thermal", "ev_chargers")
+MAIN_COMPONENT_ORDER = ("panels", "inverters", "pumps", "drives", "structures")
 PUMP_EXISTING_PUBLIC_KEYS_TO_HIDE = {
     "water_need_m3_day",
     "flow_m3_h",
@@ -39,6 +39,7 @@ PUMP_RECOMMENDED_PUBLIC_KEYS = {
     "no_standard_pump",
     "standard_pump_message",
     "selected_pump_cv",
+    "selected_outlet_diameter",
     "flow_m3_h",
     "hmt_m",
     "panels",
@@ -49,13 +50,10 @@ PUMP_RECOMMENDED_PUBLIC_KEYS = {
     "drive_brand",
     "phase",
     "solar_rule_defined",
-    "tax_basis_confirmation_required",
-    "pump_price_tax_basis",
 }
 PUMP_RECOMMENDED_METRIC_KEYWORDS_TO_HIDE = (
     "théorique",
     "rendement",
-    "psh",
     "perte hydraulique",
     "marge pv",
     "fallback",
@@ -65,6 +63,43 @@ PUMP_RECOMMENDED_METRIC_KEYWORDS_TO_HIDE = (
     "product_id",
     "pump_id",
 )
+PUBLIC_EQUIPMENT_KEYS = {
+    "category",
+    "financial_category",
+    "component",
+    "brand",
+    "model",
+    "description",
+    "role",
+    "quantity",
+    "unit",
+    "unit_price",
+    "total_price",
+    "price_status",
+    "currency",
+    "vat_rate",
+    "power_w",
+    "power_kw",
+    "power_cv",
+    "capacity_kwh",
+    "capacity_l",
+    "efficiency",
+    "technology",
+    "warranty",
+    "datasheet_url",
+}
+PUBLIC_TECHNICAL_SPEC_KEYS = {
+    "outlet_diameter",
+    "power_hp",
+    "power_kw",
+    "power_w",
+    "capacity_kwh",
+    "capacity_l",
+    "phase",
+    "phases",
+    "voltage_v",
+    "current_a",
+}
 
 
 def format_decimal_fr(value: Any, decimals: int = 2) -> str:
@@ -85,6 +120,77 @@ def format_money_fr(value: Any, currency: str = "DH", decimals: int = 0) -> str:
     return f"{text.replace(',', ' ').replace('.', ',')} {currency}".strip()
 
 
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _line_public_amounts(row: dict[str, Any]) -> None:
+    unit_ht = _safe_float(row.get("unit_price"))
+    total_ht = _safe_float(row.get("total_price"))
+    vat_rate = _safe_float(row.get("vat_rate"))
+    vat_amount = round(total_ht * vat_rate, 2)
+    row["unit_price_ht"] = round(unit_ht, 2)
+    row["total_price_ht"] = round(total_ht, 2)
+    row["vat_amount"] = vat_amount
+    row["total_price_ttc"] = round(total_ht + vat_amount, 2)
+    row.pop("unit_price", None)
+    row.pop("total_price", None)
+
+
+def _sanitize_public_financial_breakdown(financial: dict[str, Any]) -> dict[str, Any]:
+    allowed = {
+        "project",
+        "categories",
+        "material_catalog_total",
+        "total_ht",
+        "vat_rate",
+        "vat",
+        "total_ttc",
+        "currency",
+        "pricing_version",
+        "vat_breakdown",
+        "contains_demo_prices",
+        "is_final_price",
+    }
+    return {key: deepcopy(value) for key, value in (financial or {}).items() if key in allowed}
+
+
+def _sanitize_public_equipment(
+    equipment: list[dict[str, Any]],
+    *,
+    project: str,
+    final: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    final = final or {}
+    sanitized = []
+    for item in equipment or []:
+        category = str(item.get("category") or "").strip()
+        row = {key: deepcopy(item.get(key)) for key in PUBLIC_EQUIPMENT_KEYS if key in item}
+        specs = item.get("technical_specs") or {}
+        safe_specs = {
+            key: deepcopy(value)
+            for key, value in specs.items()
+            if key in PUBLIC_TECHNICAL_SPEC_KEYS
+        }
+        outlet = safe_specs.get("outlet_diameter") or item.get("outlet_diameter")
+        if project == "pumping" and category == "pumps":
+            outlet = outlet or final.get("selected_outlet_diameter")
+        if outlet:
+            row["outlet_diameter"] = outlet
+            safe_specs["outlet_diameter"] = outlet
+        if project == "pumping" and category == "pumps":
+            row["brand"] = ""
+            row["model"] = ""
+            row["reference"] = ""
+        row["technical_specs"] = safe_specs
+        _line_public_amounts(row)
+        sanitized.append(row)
+    return sanitized
+
+
 def company_profile(rows: list[dict[str, Any]]) -> dict[str, str]:
     profile = {row.get("key"): row.get("value", "") for row in rows}
     company_name = str(profile.get("company_name") or "HELIANTHA").strip().upper() or "HELIANTHA"
@@ -92,6 +198,13 @@ def company_profile(rows: list[dict[str, Any]]) -> dict[str, str]:
     website_url = website if website.startswith(("http://", "https://")) else (f"https://{website}" if website else "")
     phone = str(profile.get("phone") or "").strip()
     whatsapp = str(profile.get("whatsapp") or "").strip()
+    legal_footer = str(profile.get("pdf_legal_footer") or "").strip()
+    if "R.C." in legal_footer and ("Siege social" in legal_footer or "Tel." in legal_footer):
+        legal_footer = "\n".join(
+            line.strip()
+            for line in legal_footer.splitlines()
+            if line.strip().startswith(("R.C.", "RC", "Patente", "I.F.", "IF", "C.N.S.S.", "CNSS", "ICE"))
+        ) or legal_footer
     return {
         "company_name": company_name,
         "phone": phone,
@@ -103,9 +216,13 @@ def company_profile(rows: list[dict[str, Any]]) -> dict[str, str]:
         "website": website,
         "website_url": website_url,
         "location_url": profile.get("location_url", "https://maps.app.goo.gl/xAfGJugGUMye8oSX7"),
-        "quote_validity_days": profile.get("quote_validity_days", "15"),
         "currency": profile.get("currency", "DH"),
-        "pdf_footer": profile.get("pdf_footer", ""),
+        "pdf_bank_name": profile.get("pdf_bank_name", ""),
+        "pdf_rib": profile.get("pdf_rib", ""),
+        "pdf_iban": profile.get("pdf_iban", ""),
+        "pdf_contact_name": profile.get("pdf_contact_name", ""),
+        "pdf_social_links": profile.get("pdf_social_links", ""),
+        "pdf_legal_footer": legal_footer,
     }
 
 
@@ -130,13 +247,10 @@ def compatibility_tone(status: str | None) -> str:
 def client_warning_text(item: dict[str, Any]) -> str:
     code = str(item.get("code") or "")
     mapping = {
-        "PSH_FALLBACK_USED": "Données solaires prises en compte par HeliAntha.",
         "PV_PANEL_FALLBACK_USED": "Équipements proposés par HeliAntha.",
         "PV_STRING_VALIDATION_REQUIRED": "HeliAntha vérifiera le câblage final.",
-        "BATTERY_DOD_FALLBACK_USED": "Réglage batterie préparé par HeliAntha.",
         "PUMP_EFFICIENCY_FALLBACK_USED": "Pompe préparée pour la validation finale.",
         "DRIVE_EFFICIENCY_FALLBACK_USED": "Variateur préparé pour la validation finale.",
-        "EV_SAFETY_MARGIN_LOW": "HeliAntha vérifiera l’alimentation finale.",
         "ROOF_AREA_LIMIT": "Implantation à vérifier sur site.",
         "PRODUCT_DATA_INCOMPLETE": "Détails techniques finalisés avant installation.",
         "DEMO_PRODUCT_SELECTED": "Référence finale confirmée par HeliAntha.",
@@ -147,14 +261,10 @@ def client_warning_text(item: dict[str, Any]) -> str:
         "PUMP_FLOW_VALIDATION_REQUIRED": "Débit vérifié selon le site.",
         "PUMP_HEAD_VALIDATION_REQUIRED": "HMT vérifiée lors de l’étude.",
         "PUMP_DRIVE_VALIDATION_REQUIRED": "Compatibilité vérifiée avant installation.",
-        "EV_NETWORK_VALIDATION_REQUIRED": "Borne validée avec l’installation.",
         "NO_COMPATIBLE_PANEL": "HeliAntha proposera la meilleure référence.",
-        "NO_COMPATIBLE_BATTERY": "HeliAntha proposera la meilleure référence.",
-        "NO_COMPATIBLE_INVERTER": "HeliAntha proposera la meilleure référence.",
         "NO_COMPATIBLE_PUMP": "HeliAntha proposera la meilleure référence.",
         "NO_STANDARD_PUMP": "Aucune pompe standard ne couvre ce besoin. Une configuration HeliAntha personnalisée est nécessaire.",
         "NO_COMPATIBLE_DRIVE": "HeliAntha proposera la meilleure référence.",
-        "NO_COMPATIBLE_EV_CHARGER": "HeliAntha proposera la meilleure référence.",
         "HYBRID_STORAGE_SIMPLIFIED": "Stockage préparé pour votre projet.",
         "HOT_WATER_ESTIMATED": "Besoin préparé à partir de vos réponses.",
     }
@@ -201,13 +311,15 @@ def _main_components(
             continue
         specs = item.get("technical_specs") or {}
         power_cv = item.get("power_cv") or specs.get("power_hp")
+        outlet_diameter = specs.get("outlet_diameter") or item.get("outlet_diameter")
+        if category == "pumps" and project == "pumping":
+            outlet_diameter = outlet_diameter or final.get("selected_outlet_diameter")
         if category == "pumps" and project == "pumping":
             power_cv = power_cv or final.get("selected_pump_cv")
             title = f"Pompe solaire {format_decimal_fr(power_cv, 1)} CV" if power_cv else "Pompe solaire"
         else:
             title = " ".join(part for part in (item.get("brand"), item.get("model")) if part) or item.get("description") or "Matériel à confirmer"
         quantity = item.get("quantity") or 1
-        capacity = item.get("capacity_kwh")
         power_kw = item.get("power_kw")
         power_w = item.get("power_w")
         raw_source_type = item.get("source_type") or item.get("source", {}).get("source_type") or ""
@@ -216,14 +328,12 @@ def _main_components(
             summary = f"{int(quantity)} × {format_decimal_fr(power_w, 0)} W"
         elif category == "pumps" and power_cv:
             summary = f"{format_decimal_fr(power_cv, 1)} CV"
-        elif category == "batteries" and capacity:
-            summary = f"{int(quantity)} × {format_decimal_fr(capacity)} kWh"
+            if outlet_diameter:
+                summary = f"{summary} - Refoulement {outlet_diameter}"
         elif power_kw:
             summary = f"{format_decimal_fr(power_kw)} kW"
-        elif capacity:
-            summary = f"{format_decimal_fr(capacity)} kWh"
-        elif item.get("capacity_l"):
-            summary = f"{format_decimal_fr(item.get('capacity_l'), 0)} L"
+        elif category == "structures":
+            summary = f"{int(quantity)} support(s)"
         else:
             summary = f"{int(quantity)} unité(s)"
         result.append({
@@ -233,6 +343,7 @@ def _main_components(
             "summary": summary,
             "reference": "" if project == "pumping" else (item.get("reference") or ""),
             "quantity": quantity,
+            "outlet_diameter": outlet_diameter or "",
             "source_type": "" if project == "pumping" and raw_source_type == "fallback" else ("heliantha" if raw_source_type == "demo" else raw_source_type),
         })
     return result[:6]
@@ -247,15 +358,15 @@ def _diagram_data(project: str, offer: dict[str, Any], final: dict[str, Any]) ->
         "project": project,
         "panel": components.get("panels"),
         "inverter": components.get("inverters"),
-        "battery": components.get("batteries"),
         "pump": components.get("pumps"),
         "drive": components.get("drives"),
-        "charger": components.get("ev_chargers"),
-        "thermal": components.get("thermal"),
+        "structure": components.get("structures"),
         "panel_count": final.get("panels"),
+        "ongrid_panel_count": final.get("panel_count"),
+        "installed_power_kwp": final.get("installed_power_kwp"),
+        "string_layout": final.get("string_layout"),
         "flow_m3_h": final.get("flow_m3_h"),
         "hmt_m": final.get("hmt_m"),
-        "autonomy_days": final.get("autonomy_days"),
     }
     if _is_existing_pump_public_mode(project, final):
         diagram.pop("flow_m3_h", None)
@@ -311,17 +422,20 @@ def _sanitize_public_metrics(project: str, final: dict[str, Any], metrics: list[
 
 def _normalize_offer(project: str, offer: dict[str, Any], final: dict[str, Any], currency: str) -> dict[str, Any]:
     normalized = deepcopy(offer)
-    tax_basis_confirmation_required = bool(
-        offer.get("tax_basis_confirmation_required")
-        or final.get("tax_basis_confirmation_required")
-        or str(offer.get("pump_price_tax_basis") or final.get("pump_price_tax_basis") or "").strip().lower() == "unconfirmed"
-    )
     displayed_price = offer.get("ttc") if offer.get("ttc") is not None else offer.get("ht")
     normalized["price_label"] = format_money_fr(displayed_price, currency)
-    normalized["price_ttc_label"] = "" if tax_basis_confirmation_required else format_money_fr(offer.get("ttc"), currency)
+    normalized["price_ttc_label"] = format_money_fr(offer.get("ttc"), currency)
     normalized["price_ht_label"] = format_money_fr(offer.get("ht"), currency)
-    normalized["tax_basis_confirmation_required"] = tax_basis_confirmation_required
-    normalized["price_tax_note"] = "Nature HT/TTC du prix de la pompe à confirmer." if tax_basis_confirmation_required else ""
+    normalized.pop("tax_basis_confirmation_required", None)
+    normalized.pop("pump_price_tax_basis", None)
+    normalized.pop("price_tax_note", None)
+    if project in {"pumping", "photovoltaic"}:
+        normalized["selected_equipment"] = _sanitize_public_equipment(
+            offer.get("selected_equipment") or [],
+            project=project,
+            final=final,
+        )
+        normalized["financial_breakdown"] = _sanitize_public_financial_breakdown(offer.get("financial_breakdown") or {})
     normalized["main_components"] = _main_components(
         offer.get("selected_equipment") or [],
         project=project,
@@ -329,6 +443,47 @@ def _normalize_offer(project: str, offer: dict[str, Any], final: dict[str, Any],
     )
     normalized["diagram"] = _diagram_data(project, offer, final)
     return normalized
+
+
+def sanitize_calculation_result_for_public(result: dict[str, Any]) -> dict[str, Any]:
+    """Return a client-safe calculate payload for public simulations."""
+
+    cleaned = deepcopy(result)
+    project = cleaned.get("project") or cleaned.get("project_type") or ""
+    if project not in {"pumping", "photovoltaic"}:
+        return cleaned
+
+    final = _sanitize_public_final_results(project, cleaned.get("final_results") or {})
+    cleaned["final_results"] = final
+    cleaned["metrics"] = _sanitize_public_metrics(project, final, cleaned.get("metrics") or [])
+    cleaned["selected_equipment"] = _sanitize_public_equipment(
+        cleaned.get("selected_equipment") or [],
+        project=project,
+        final=final,
+    )
+    cleaned["financial_breakdown"] = _sanitize_public_financial_breakdown(cleaned.get("financial_breakdown") or {})
+    currency = (cleaned.get("financial_breakdown") or {}).get("currency") or "DH"
+    cleaned["offers"] = [
+        _normalize_offer(project, offer, final, currency)
+        for offer in (cleaned.get("offers") or [])
+    ]
+    for key in (
+        "assumptions",
+        "parameters_used",
+        "intermediate_results",
+        "calculation_blocks",
+        "resolved_sources",
+        "reasoning_steps",
+        "calculation_detail",
+        "technical_configuration",
+        "compatibility",
+        "product_selections",
+        "bom",
+        "technical_reference",
+        "quote_snapshot",
+    ):
+        cleaned.pop(key, None)
+    return cleaned
 
 
 def build_public_quote_payload(quote: dict[str, Any], company: dict[str, str]) -> dict[str, Any]:
@@ -410,7 +565,7 @@ def build_public_quote_payload(quote: dict[str, Any], company: dict[str, str]) -
         "material_confirmation_required": any(
             item.get("source_type") in {"fallback", "manual_validation"}
             for item in (recommended_offer or {}).get("main_components", [])
-        ) or bool((recommended_offer or {}).get("tax_basis_confirmation_required")),
+        ),
         "contact": company,
         "selected_offer_level": selected_level,
         "visit_requests": quote.get("visit_requests") or [],

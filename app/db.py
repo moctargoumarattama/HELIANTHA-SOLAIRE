@@ -12,6 +12,7 @@ from .defaults import (
     DASHBOARD_PROJECT_LABELS,
     CATALOG_PRODUCTS,
     COMPANY_SETTINGS,
+    ONGRID_PARAMETER_DEFAULTS,
     PARAMETER_CLASSIFICATION,
     PARAMETER_PRESENTATION,
     PRICING_RULES,
@@ -154,6 +155,8 @@ CREATE TABLE IF NOT EXISTS pumping_solar_rules (
     max_cv REAL,
     pricing_mode TEXT,
     unit_price_ht REAL,
+    coefficient_1 REAL,
+    coefficient_2 REAL,
     vat_rate REAL,
     applies_to TEXT,
     source_type TEXT NOT NULL DEFAULT 'heliantha',
@@ -162,6 +165,18 @@ CREATE TABLE IF NOT EXISTS pumping_solar_rules (
     notes TEXT,
     sort_order INTEGER NOT NULL DEFAULT 0,
     active INTEGER NOT NULL DEFAULT 1,
+    updated_by TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS ongrid_parameters (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    key TEXT NOT NULL UNIQUE,
+    label TEXT NOT NULL,
+    value TEXT NOT NULL,
+    unit TEXT,
+    description TEXT,
     updated_by TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -232,83 +247,6 @@ CREATE TABLE IF NOT EXISTS quote_client_events (
     FOREIGN KEY (quote_id) REFERENCES quote_requests(id)
 );
 
-CREATE TABLE IF NOT EXISTS advisor_sessions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_key TEXT NOT NULL UNIQUE,
-    state_json TEXT NOT NULL,
-    quote_id INTEGER,
-    quote_reference TEXT,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS advisor_messages (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_key TEXT NOT NULL,
-    role TEXT NOT NULL,
-    message TEXT NOT NULL,
-    normalized_message TEXT,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS advisor_unknown_messages (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_key TEXT NOT NULL,
-    original_message TEXT NOT NULL,
-    normalized_message TEXT,
-    project_type TEXT,
-    intent TEXT,
-    context_json TEXT,
-    reason TEXT,
-    status TEXT NOT NULL DEFAULT 'new',
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS advisor_knowledge (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    category TEXT NOT NULL,
-    title TEXT NOT NULL,
-    question TEXT,
-    answer TEXT NOT NULL,
-    keywords TEXT,
-    active INTEGER NOT NULL DEFAULT 1,
-    validated_by TEXT,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS advisor_synonyms (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    canonical_term TEXT NOT NULL,
-    variant TEXT NOT NULL,
-    normalized_variant TEXT NOT NULL,
-    category TEXT,
-    project_type TEXT,
-    active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    validated_by TEXT
-);
-
-CREATE TABLE IF NOT EXISTS advisor_intent_examples (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    intent TEXT NOT NULL,
-    example_text TEXT NOT NULL,
-    normalized_text TEXT NOT NULL,
-    project_type TEXT,
-    active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    validated_by TEXT
-);
-
-CREATE TABLE IF NOT EXISTS advisor_learning_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    learning_type TEXT NOT NULL,
-    target_key TEXT,
-    old_value TEXT,
-    new_value TEXT,
-    validated_by TEXT,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
 """
 
 QUOTE_COLUMNS = {
@@ -379,6 +317,8 @@ PUMPING_SOLAR_RULE_COLUMNS = {
     "max_cv": "REAL",
     "pricing_mode": "TEXT",
     "unit_price_ht": "REAL",
+    "coefficient_1": "REAL",
+    "coefficient_2": "REAL",
     "vat_rate": "REAL",
     "applies_to": "TEXT",
     "source_type": "TEXT NOT NULL DEFAULT 'heliantha'",
@@ -389,11 +329,6 @@ PUMPING_SOLAR_RULE_COLUMNS = {
     "active": "INTEGER NOT NULL DEFAULT 1",
     "updated_by": "TEXT",
 }
-
-ADVISOR_KNOWLEDGE_COLUMNS = {
-    "validated_by": "TEXT",
-}
-
 
 def get_db():
     if "db" not in g:
@@ -424,7 +359,6 @@ def ensure_schema(db=None):
     _migrate_pumping_solar_rules(db)
     _migrate_public_tracking(db)
     _migrate_users(db)
-    _migrate_advisor(db)
     _seed_defaults(db)
     db.commit()
 
@@ -480,33 +414,6 @@ def _migrate_public_tracking(db):
     db.execute(
         """CREATE INDEX IF NOT EXISTS idx_quote_client_events_quote
         ON quote_client_events(quote_id, created_at DESC)"""
-    )
-
-
-def _migrate_advisor(db):
-    existing_knowledge = {row["name"] for row in db.execute("PRAGMA table_info(advisor_knowledge)").fetchall()}
-    for column, column_type in ADVISOR_KNOWLEDGE_COLUMNS.items():
-        if column not in existing_knowledge:
-            db.execute(f"ALTER TABLE advisor_knowledge ADD COLUMN {column} {column_type}")
-    db.execute(
-        """CREATE INDEX IF NOT EXISTS idx_advisor_messages_session
-        ON advisor_messages(session_key, created_at)"""
-    )
-    db.execute(
-        """CREATE INDEX IF NOT EXISTS idx_advisor_unknown_status
-        ON advisor_unknown_messages(status, created_at DESC)"""
-    )
-    db.execute(
-        """CREATE INDEX IF NOT EXISTS idx_advisor_synonyms_lookup
-        ON advisor_synonyms(active, project_type, category, normalized_variant)"""
-    )
-    db.execute(
-        """CREATE INDEX IF NOT EXISTS idx_advisor_intent_examples_lookup
-        ON advisor_intent_examples(active, intent, project_type, normalized_text)"""
-    )
-    db.execute(
-        """CREATE INDEX IF NOT EXISTS idx_advisor_learning_log_recent
-        ON advisor_learning_log(created_at DESC)"""
     )
 
 
@@ -642,9 +549,9 @@ def _seed_defaults(db):
             (rule_key, rule_type, title, pump_cv, panel_count, panel_power_w,
              panel_reference, panel_sale_price_ht, drive_power_kw, drive_reference,
              drive_sale_price_ht, drive_brand, phase, min_cv, max_cv, pricing_mode,
-             unit_price_ht, vat_rate, applies_to, source_type, source_name,
+             unit_price_ht, coefficient_1, coefficient_2, vat_rate, applies_to, source_type, source_name,
              source_reference, notes, sort_order, active, updated_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 rule.get("rule_key"),
                 rule.get("rule_type"),
@@ -663,6 +570,8 @@ def _seed_defaults(db):
                 rule.get("max_cv"),
                 rule.get("pricing_mode"),
                 rule.get("unit_price_ht"),
+                rule.get("coefficient_1"),
+                rule.get("coefficient_2"),
                 rule.get("vat_rate"),
                 rule.get("applies_to"),
                 rule.get("source_type", "heliantha"),
@@ -674,6 +583,25 @@ def _seed_defaults(db):
                 rule.get("updated_by", "HeliAntha"),
             ),
         )
+
+    if not db.execute("SELECT id FROM ongrid_parameters LIMIT 1").fetchone():
+        db.executemany(
+            """INSERT INTO ongrid_parameters
+            (key, label, value, unit, description, updated_by)
+            VALUES (?, ?, ?, ?, ?, ?)""",
+            [
+                (key, label, f"{value:.2f}", unit, description, "HeliAntha")
+                for key, label, value, unit, description in ONGRID_PARAMETER_DEFAULTS
+            ],
+        )
+
+    db.execute(
+        """UPDATE pumping_solar_rules
+        SET coefficient_1 = COALESCE(coefficient_1, 0.5),
+            coefficient_2 = COALESCE(coefficient_2, 1.3),
+            vat_rate = COALESCE(vat_rate, 0.20)
+        WHERE rule_key = 'pump-sale-parameters'"""
+    )
 
     db.execute(
         """UPDATE pumping_solar_rules
@@ -747,6 +675,7 @@ def _seed_defaults(db):
         )
 
     _seed_missing_default_pump_curves(db)
+    _seed_default_pump_metadata(db)
 
     if not db.execute("SELECT id FROM technical_references WHERE status = 'Actif' LIMIT 1").fetchone():
         db.execute(
@@ -769,27 +698,6 @@ def _seed_defaults(db):
             VALUES (?, ?, ?, ?)""",
             (key, value, category, label),
         )
-
-    from .services.advisor.knowledge import DEFAULT_KNOWLEDGE
-
-    for item in DEFAULT_KNOWLEDGE:
-        exists = db.execute(
-            "SELECT id FROM advisor_knowledge WHERE title = ? AND category = ? LIMIT 1",
-            (item["title"], item["category"]),
-        ).fetchone()
-        if not exists:
-            db.execute(
-                """INSERT INTO advisor_knowledge (category, title, question, answer, keywords, validated_by)
-                VALUES (?, ?, ?, ?, ?, ?)""",
-                (
-                    item["category"],
-                    item["title"],
-                    item.get("question", ""),
-                    item["answer"],
-                    item.get("keywords", ""),
-                    "HeliAntha",
-                ),
-            )
 
     direction_user = db.execute(
         """SELECT * FROM users
@@ -861,6 +769,39 @@ def _seed_missing_default_pump_curves(db):
         )
 
 
+def _seed_default_pump_metadata(db):
+    """Backfill bundled pump technical metadata without touching admin prices."""
+
+    for product in CATALOG_PRODUCTS:
+        if product.get("category") != "pumps":
+            continue
+        default_specs = product.get("technical_specs") or {}
+        outlet_diameter = default_specs.get("outlet_diameter")
+        if not outlet_diameter:
+            continue
+        row = db.execute(
+            "SELECT id, technical_specs_json FROM products WHERE reference = ?",
+            (product.get("reference"),),
+        ).fetchone()
+        if not row:
+            continue
+        specs = loads(row["technical_specs_json"], {})
+        if not isinstance(specs, dict):
+            specs = {}
+        changed = False
+        if not specs.get("outlet_diameter"):
+            specs["outlet_diameter"] = outlet_diameter
+            changed = True
+        if str(specs.get("price_tax_basis") or "").strip().lower() in {"", "unconfirmed"}:
+            specs["price_tax_basis"] = default_specs.get("price_tax_basis") or "internal_pt"
+            changed = True
+        if changed:
+            db.execute(
+                "UPDATE products SET technical_specs_json = ?, updated_at = ? WHERE id = ?",
+                (dumps(specs), utc_now(), row["id"]),
+            )
+
+
 def dumps(value):
     return json.dumps(value, ensure_ascii=False)
 
@@ -893,6 +834,10 @@ def load_calculation_context():
         row["rule_key"]: dict(row)
         for row in db.execute("SELECT * FROM pumping_solar_rules WHERE active = 1").fetchall()
     }
+    ongrid_parameters = {
+        row["key"]: dict(row)
+        for row in db.execute("SELECT * FROM ongrid_parameters ORDER BY id").fetchall()
+    }
     # Keep inactive rows in the context so the calculation layer can make the
     # active/inactive decision without interpreting an empty active result as
     # "no database catalogue" and silently restoring bundled demo products.
@@ -905,6 +850,7 @@ def load_calculation_context():
         "technical_parameters": params,
         "pricing_rules": pricing,
         "pumping_solar_rules": pumping_rules,
+        "ongrid_parameters": ongrid_parameters,
         "products": products,
         "technical_reference": reference,
     }
@@ -1105,326 +1051,6 @@ def save_quote_client_event(quote_id, quote_number, event_type, event_value=""):
         (quote_id, quote_number, event_type, event_value),
     )
     db.commit()
-
-
-def get_advisor_state(session_key):
-    db = get_db()
-    ensure_schema(db)
-    row = db.execute(
-        "SELECT state_json FROM advisor_sessions WHERE session_key = ?",
-        (session_key,),
-    ).fetchone()
-    return loads(row["state_json"], {}) if row else {}
-
-
-def save_advisor_state(session_key, state):
-    db = get_db()
-    ensure_schema(db)
-    existing = db.execute("SELECT id FROM advisor_sessions WHERE session_key = ?", (session_key,)).fetchone()
-    payload = (
-        dumps(state),
-        state.get("quote_id"),
-        state.get("quote_reference"),
-        utc_now(),
-        session_key,
-    )
-    if existing:
-        db.execute(
-            """UPDATE advisor_sessions
-            SET state_json = ?, quote_id = ?, quote_reference = ?, updated_at = ?
-            WHERE session_key = ?""",
-            payload,
-        )
-    else:
-        db.execute(
-            """INSERT INTO advisor_sessions (state_json, quote_id, quote_reference, updated_at, session_key)
-            VALUES (?, ?, ?, ?, ?)""",
-            payload,
-        )
-    db.commit()
-
-
-def add_advisor_message(session_key, role, message, normalized_message=""):
-    db = get_db()
-    ensure_schema(db)
-    db.execute(
-        """INSERT INTO advisor_messages (session_key, role, message, normalized_message)
-        VALUES (?, ?, ?, ?)""",
-        (session_key, role, message, normalized_message),
-    )
-    db.commit()
-
-
-def add_advisor_unknown(session_key, original_message, normalized_message, state, reason=""):
-    db = get_db()
-    ensure_schema(db)
-    db.execute(
-        """INSERT INTO advisor_unknown_messages
-        (session_key, original_message, normalized_message, project_type, intent, context_json, reason)
-        VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (
-            session_key,
-            original_message,
-            normalized_message,
-            state.get("project_type", ""),
-            state.get("current_intent", ""),
-            dumps(state),
-            reason,
-        ),
-    )
-    db.commit()
-
-
-def get_advisor_knowledge():
-    db = get_db()
-    ensure_schema(db)
-    return [
-        dict(row)
-        for row in db.execute(
-            "SELECT * FROM advisor_knowledge WHERE active = 1 ORDER BY category, title"
-        ).fetchall()
-    ]
-
-
-def save_advisor_knowledge_item(category, title, question, answer, keywords="", active=True, validated_by=""):
-    db = get_db()
-    ensure_schema(db)
-    from .services.advisor.rules import normalize
-
-    normalized_question = normalize(question or title)
-    existing = None
-    for row in db.execute("SELECT * FROM advisor_knowledge ORDER BY id DESC").fetchall():
-        item = dict(row)
-        if normalize(item.get("question") or item.get("title") or "") == normalized_question:
-            existing = item
-            break
-    if existing:
-        db.execute(
-            """UPDATE advisor_knowledge
-            SET category = ?, title = ?, question = ?, answer = ?, keywords = ?, active = ?, validated_by = ?, updated_at = ?
-            WHERE id = ?""",
-            (
-                category,
-                title,
-                question,
-                answer,
-                keywords,
-                1 if active else 0,
-                validated_by or existing.get("validated_by") or "HeliAntha",
-                utc_now(),
-                existing["id"],
-            ),
-        )
-        log_advisor_learning("knowledge", title, existing.get("answer", ""), answer, validated_by or "HeliAntha")
-        db.commit()
-        return existing["id"]
-    cursor = db.execute(
-        """INSERT INTO advisor_knowledge
-        (category, title, question, answer, keywords, active, validated_by, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-        (
-            category,
-            title,
-            question,
-            answer,
-            keywords,
-            1 if active else 0,
-            validated_by or "HeliAntha",
-            utc_now(),
-        ),
-    )
-    log_advisor_learning("knowledge", title, "", answer, validated_by or "HeliAntha")
-    db.commit()
-    return cursor.lastrowid
-
-
-def list_advisor_synonyms(active_only=True):
-    db = get_db()
-    ensure_schema(db)
-    sql = "SELECT * FROM advisor_synonyms"
-    if active_only:
-        sql += " WHERE active = 1"
-    sql += " ORDER BY canonical_term, variant"
-    return [dict(row) for row in db.execute(sql).fetchall()]
-
-
-def save_advisor_synonym(canonical_term, variant, category="", project_type="", active=True, validated_by=""):
-    db = get_db()
-    ensure_schema(db)
-    from .services.advisor.rules import normalize
-
-    canonical_term = (canonical_term or "").strip()
-    variant = (variant or "").strip()
-    normalized_variant = normalize(variant)
-    existing = db.execute(
-        """SELECT * FROM advisor_synonyms
-        WHERE canonical_term = ? AND normalized_variant = ? AND COALESCE(project_type, '') = ? LIMIT 1""",
-        (canonical_term, normalized_variant, (project_type or "").strip()),
-    ).fetchone()
-    if existing:
-        row = dict(existing)
-        db.execute(
-            """UPDATE advisor_synonyms
-            SET variant = ?, category = ?, project_type = ?, active = ?, validated_by = ?
-            WHERE id = ?""",
-            (
-                variant,
-                category,
-                project_type,
-                1 if active else 0,
-                validated_by or row.get("validated_by") or "HeliAntha",
-                row["id"],
-            ),
-        )
-        log_advisor_learning("synonym", canonical_term, row.get("variant", ""), variant, validated_by or "HeliAntha")
-        db.commit()
-        return row["id"]
-    cursor = db.execute(
-        """INSERT INTO advisor_synonyms
-        (canonical_term, variant, normalized_variant, category, project_type, active, validated_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (
-            canonical_term,
-            variant,
-            normalized_variant,
-            category,
-            project_type,
-            1 if active else 0,
-            validated_by or "HeliAntha",
-        ),
-    )
-    log_advisor_learning("synonym", canonical_term, "", variant, validated_by or "HeliAntha")
-    db.commit()
-    return cursor.lastrowid
-
-
-def list_advisor_intent_examples(active_only=True):
-    db = get_db()
-    ensure_schema(db)
-    sql = "SELECT * FROM advisor_intent_examples"
-    if active_only:
-        sql += " WHERE active = 1"
-    sql += " ORDER BY intent, example_text"
-    return [dict(row) for row in db.execute(sql).fetchall()]
-
-
-def save_advisor_intent_example(intent, example_text, project_type="", active=True, validated_by=""):
-    db = get_db()
-    ensure_schema(db)
-    from .services.advisor.rules import normalize
-
-    example_text = (example_text or "").strip()
-    normalized_text = normalize(example_text)
-    existing = db.execute(
-        """SELECT * FROM advisor_intent_examples
-        WHERE intent = ? AND normalized_text = ? AND COALESCE(project_type, '') = ? LIMIT 1""",
-        (intent, normalized_text, (project_type or "").strip()),
-    ).fetchone()
-    if existing:
-        row = dict(existing)
-        db.execute(
-            """UPDATE advisor_intent_examples
-            SET example_text = ?, project_type = ?, active = ?, validated_by = ?
-            WHERE id = ?""",
-            (
-                example_text,
-                project_type,
-                1 if active else 0,
-                validated_by or row.get("validated_by") or "HeliAntha",
-                row["id"],
-            ),
-        )
-        log_advisor_learning("intent", intent, row.get("example_text", ""), example_text, validated_by or "HeliAntha")
-        db.commit()
-        return row["id"]
-    cursor = db.execute(
-        """INSERT INTO advisor_intent_examples
-        (intent, example_text, normalized_text, project_type, active, validated_by)
-        VALUES (?, ?, ?, ?, ?, ?)""",
-        (
-            intent,
-            example_text,
-            normalized_text,
-            project_type,
-            1 if active else 0,
-            validated_by or "HeliAntha",
-        ),
-    )
-    log_advisor_learning("intent", intent, "", example_text, validated_by or "HeliAntha")
-    db.commit()
-    return cursor.lastrowid
-
-
-def log_advisor_learning(learning_type, target_key, old_value="", new_value="", validated_by=""):
-    db = get_db()
-    ensure_schema(db)
-    db.execute(
-        """INSERT INTO advisor_learning_log
-        (learning_type, target_key, old_value, new_value, validated_by)
-        VALUES (?, ?, ?, ?, ?)""",
-        (
-            learning_type,
-            target_key,
-            old_value,
-            new_value,
-            validated_by or "HeliAntha",
-        ),
-    )
-
-
-def list_advisor_learning_log(limit=80):
-    db = get_db()
-    ensure_schema(db)
-    return [
-        dict(row)
-        for row in db.execute(
-            "SELECT * FROM advisor_learning_log ORDER BY id DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
-    ]
-
-
-def update_advisor_unknown_status(item_id, status="reviewed"):
-    db = get_db()
-    ensure_schema(db)
-    db.execute(
-        "UPDATE advisor_unknown_messages SET status = ? WHERE id = ?",
-        (status, item_id),
-    )
-    db.commit()
-
-
-def get_advisor_runtime_assets():
-    return {
-        "knowledge": get_advisor_knowledge(),
-        "synonyms": list_advisor_synonyms(active_only=True),
-        "intent_examples": list_advisor_intent_examples(active_only=True),
-    }
-
-
-def list_advisor_messages(limit=120):
-    db = get_db()
-    ensure_schema(db)
-    return [
-        dict(row)
-        for row in db.execute(
-            "SELECT * FROM advisor_messages ORDER BY id DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
-    ]
-
-
-def list_advisor_unknown_messages(status="new", limit=200):
-    db = get_db()
-    ensure_schema(db)
-    values = []
-    sql = "SELECT * FROM advisor_unknown_messages"
-    if status:
-        sql += " WHERE status = ?"
-        values.append(status)
-    sql += " ORDER BY id DESC LIMIT ?"
-    values.append(limit)
-    return [dict(row) for row in db.execute(sql, values).fetchall()]
 
 
 def dashboard_stats():
@@ -1762,6 +1388,8 @@ def update_pumping_solar_rule(rule_id, data: dict[str, object], changed_by: str 
         "max_cv",
         "pricing_mode",
         "unit_price_ht",
+        "coefficient_1",
+        "coefficient_2",
         "vat_rate",
         "applies_to",
         "source_type",
@@ -1809,6 +1437,8 @@ def create_pumping_solar_rule(data: dict[str, object], changed_by: str = "HeliAn
         "max_cv": data.get("max_cv"),
         "pricing_mode": str(data.get("pricing_mode") or "").strip(),
         "unit_price_ht": data.get("unit_price_ht"),
+        "coefficient_1": data.get("coefficient_1"),
+        "coefficient_2": data.get("coefficient_2"),
         "vat_rate": data.get("vat_rate"),
         "applies_to": str(data.get("applies_to") or "").strip(),
         "source_type": str(data.get("source_type") or "heliantha").strip() or "heliantha",
@@ -1828,6 +1458,44 @@ def create_pumping_solar_rule(data: dict[str, object], changed_by: str = "HeliAn
     )
     db.commit()
     return int(cursor.lastrowid)
+
+
+def list_ongrid_parameters():
+    db = get_db()
+    ensure_schema(db)
+    return [dict(row) for row in db.execute("SELECT * FROM ongrid_parameters ORDER BY id").fetchall()]
+
+
+def update_ongrid_parameters(values: dict[str, object], changed_by: str = "HeliAntha") -> None:
+    db = get_db()
+    ensure_schema(db)
+    known = {
+        row["key"]: dict(row)
+        for row in db.execute("SELECT * FROM ongrid_parameters").fetchall()
+    }
+    defaults = {key: (label, value, unit, description) for key, label, value, unit, description in ONGRID_PARAMETER_DEFAULTS}
+    for key, raw_value in values.items():
+        if key not in defaults:
+            continue
+        value_text = str(raw_value or "").strip().replace(",", ".")
+        if not value_text:
+            continue
+        label, _default, unit, description = defaults[key]
+        if key in known:
+            db.execute(
+                """UPDATE ongrid_parameters
+                SET value = ?, updated_by = ?, updated_at = ?
+                WHERE key = ?""",
+                (value_text, changed_by, utc_now(), key),
+            )
+        else:
+            db.execute(
+                """INSERT INTO ongrid_parameters
+                (key, label, value, unit, description, updated_by)
+                VALUES (?, ?, ?, ?, ?, ?)""",
+                (key, label, value_text, unit, description, changed_by),
+            )
+    db.commit()
 
 
 def active_reference():

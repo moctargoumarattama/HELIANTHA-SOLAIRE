@@ -54,130 +54,39 @@
     </section>
   {% endif %}
 
-  {% if not print_mode %}
-    <section class="expertise-strip" aria-label="Message d'expertise HeliAntha">
-      <div class="shell">
-        <div class="expertise-marquee">
-          <div class="expertise-marquee-track">
-            <div class="expertise-marquee-group">
-              <span>Plus de 10 ans d'expertise dans l'energie solaire au Maroc.</span>
-              <span class="expertise-dot" aria-hidden="true">-</span>
-              <span>Plus de 10 ans d'expertise dans l'energie solaire au Maroc.</span>
-              <span class="expertise-dot" aria-hidden="true">-</span>
-              <span>Plus de 10 ans d'expertise dans l'energie solaire au Maroc.</span>
-            </div>
-            <div class="expertise-marquee-group" aria-hidden="true">
-              <span>Plus de 10 ans d'expertise dans l'energie solaire au Maroc.</span>
-              <span class="expertise-dot" aria-hidden="true">-</span>
-              <span>Plus de 10 ans d'expertise dans l'energie solaire au Maroc.</span>
-              <span class="expertise-dot" aria-hidden="true">-</span>
-              <span>Plus de 10 ans d'expertise dans l'energie solaire au Maroc.</span>
-            </div>
+  <main class="public-result-compact">
+    <section class="shell compact-result-header reveal-on-scroll">
+      <div class="compact-result-meta">
+        <span>Ref : {{ quote.quote_number }}</span>
+        <span>Ville : {{ quote.city or quote.location or "Maroc" }}</span>
+        <span>Date : {{ quote.created_at }}</span>
+      </div>
+    </section>
+
+    <section class="shell compact-result-grid reveal-on-scroll">
+      <article class="compact-block compact-solution-block">
+        <div class="compact-block-title">
+          <span class="eyebrow">Solution technique</span>
+          <h1 id="compact-offer-name">{{ public_view.recommended_offer.name if public_view.recommended_offer else "Solution HeliAntha" }}</h1>
+        </div>
+        <ul class="compact-solution-list" id="compact-solution-list"></ul>
+      </article>
+
+      <aside class="compact-side">
+        <article class="compact-block compact-price-block">
+          <span class="eyebrow">Chiffrage commercial</span>
+          <strong id="compact-total-ttc">-</strong>
+          <div class="compact-price-lines">
+            <span id="compact-total-ht">Total HT : -</span>
+            <span id="compact-total-vat">TVA : -</span>
           </div>
-        </div>
-      </div>
-    </section>
-  {% endif %}
+        </article>
 
-  <main class="result-main result-main-compact">
-    <section class="result-hero result-hero-simple reveal-on-scroll">
-      <div class="shell result-hero-grid result-hero-grid-simple">
-        <div class="result-hero-copy">
-          <span class="eyebrow">{{ public_view.simulation_label }}</span>
-          <div class="hero-meta-grid">
-            <article class="hero-meta-card">
-              <small>Projet</small>
-              <strong>{{ public_view.project_label }}</strong>
-            </article>
-            <article class="hero-meta-card">
-              <small>Ville</small>
-              <strong>{{ quote.city or quote.location or "Maroc" }}</strong>
-            </article>
-            <article class="hero-meta-card hero-meta-card-ref">
-              <small>Ref.</small>
-              <strong>{{ quote.quote_number }}</strong>
-            </article>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="result-summary reveal-on-scroll">
-      <div class="shell result-layout result-layout-compact">
-        <div class="result-primary">
-          <section class="result-spotlight solution-card" id="result-spotlight">
-            <div class="spotlight-primary">
-              <div class="spotlight-topline">
-                <span class="eyebrow">Votre solution</span>
-                <span class="solution-badge" id="offer-name">{{ public_view.recommended_offer.name if public_view.recommended_offer else "Solution HeliAntha" }}</span>
-              </div>
-              <div class="metric-grid metric-grid-compact spotlight-tech-grid" id="spotlight-results-grid"></div>
-            </div>
-          </section>
-        </div>
-
-        <aside class="result-sidebar result-sidebar-compact">
-          <section class="price-card price-card-compact" id="price-card">
-            <span class="eyebrow">Prix estime</span>
-            <strong id="offer-price">-</strong>
-            <p id="offer-subprice">Estimation preparee pour votre projet</p>
-          </section>
-
-          <section class="equipment-card equipment-card-compact equipment-card-sidebar">
-            <div class="diagram-head diagram-head-tight">
-              <div>
-                <span class="eyebrow">Materiel principal</span>
-              </div>
-            </div>
-            <div class="equipment-grid equipment-grid-sidebar" id="equipment-grid"></div>
-          </section>
-        </aside>
-      </div>
-    </section>
-
-    <section class="diagram-card energy-flow-card reveal-on-scroll">
-      <div class="shell">
-        <div class="diagram-head">
-          <div>
-            <span class="eyebrow">Flux energetique</span>
-            <h2>Comment ca fonctionne</h2>
-          </div>
-        </div>
-        <div id="solution-diagram" class="solution-diagram" aria-live="polite"></div>
-        <p class="diagram-summary" id="energy-flow-summary" aria-live="polite"></p>
-      </div>
-    </section>
-
-    {% set critical_warnings = public_view.warnings | selectattr("level", "equalto", "critical") | list %}
-    {% if critical_warnings %}
-      <section class="warnings-section reveal-on-scroll" id="warnings-section">
-        <div class="shell">
-          <details class="tech-details">
-            <summary>Points à vérifier</summary>
-            <div class="warning-list warning-list-compact">
-              {% for item in critical_warnings %}
-                <article class="warning-card warning-{{ item.level }}">
-                  <strong>À vérifier</strong>
-                  <p>{{ item.text }}</p>
-                </article>
-              {% endfor %}
-            </div>
-          </details>
-        </div>
-      </section>
-    {% endif %}
-
-    <section class="final-cta-section reveal-on-scroll">
-      <div class="shell final-cta-card final-cta-card-compact">
-        <div>
-          <span class="eyebrow">Pret a avancer ?</span>
-          <h2>Demandez la suite quand vous voulez.</h2>
-        </div>
-        <div class="final-cta-actions final-cta-actions-compact">
-          <button class="button button-primary" type="button" id="visit-toggle-bottom">Demander une visite technique</button>
-          <a class="button button-ghost" href="{{ url_for('main.public_quote_print', quote_number=quote.quote_number) }}" target="_blank" rel="noreferrer">Telecharger mon pre-devis</a>
-        </div>
-      </div>
+        <article class="compact-block compact-actions-block">
+          <a class="button button-primary compact-action" href="{{ url_for('main.public_quote_print', quote_number=quote.quote_number) }}" target="_blank" rel="noreferrer">Telecharger mon devis officiel (PDF)</a>
+          <button class="button button-ghost compact-action" type="button" id="visit-toggle-bottom">Demander une visite technique</button>
+        </article>
+      </aside>
     </section>
   </main>
 
@@ -240,7 +149,6 @@
     };
   </script>
   <script src="{{ url_for('static', filename='js/public-result.js') }}"></script>
-  <script src="{{ url_for('static', filename='js/advisor.js') }}"></script>
   <script src="{{ url_for('static', filename='js/pwa.js') }}?v=20260901-1"></script>
   {% if print_mode %}
     <script>

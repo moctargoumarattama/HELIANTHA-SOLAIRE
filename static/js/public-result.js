@@ -2,8 +2,6 @@
 const publicUrls = window.PUBLIC_QUOTE_URLS || {};
 
 let activeOffer = publicView.recommended_offer || (publicView.offers || [])[0] || null;
-let equipmentAutoScrollRaf = null;
-let equipmentAutoScrollPaused = false;
 window.PUBLIC_QUOTE_ACTIVE = activeOffer;
 
 initScrollReveal();
@@ -65,11 +63,13 @@ function renderCurrentOffer(immediate = false) {
   if (!offer) return;
   window.PUBLIC_QUOTE_ACTIVE = offer;
 
+  swapContent("#compact-offer-name", () => renderCompactTitle(offer), immediate);
+  swapContent("#compact-solution-list", () => renderCompactSolution(offer), immediate);
+  swapContent("#compact-total-ttc", () => renderCompactPrice(offer), immediate);
+  swapContent("#compact-total-ht", () => renderCompactPriceLines(offer), immediate);
   swapContent("#result-spotlight", () => renderSpotlight(offer), immediate);
   swapContent("#price-card", () => renderPriceCard(offer), immediate);
   swapContent("#equipment-grid", () => renderEquipment(offer.main_components || []), immediate);
-  swapContent("#solution-diagram", () => renderDiagram(offer.diagram || {}), immediate);
-  swapContent("#energy-flow-summary", () => renderEnergyFlowSummary(offer), immediate);
 }
 
 function isExistingPumpMode() {
@@ -100,11 +100,11 @@ function pumpingExistingSummaryRows(offer) {
   const panelCount = hasValue(final.panels) ? `${displayNumber(final.panels, 0)} × ` : "";
   const panelPower = hasValue(final.panel_power_w) ? displayNumber(final.panel_power_w, 0) : "";
   return [
-    { label: "Pompe existante", value: displayNumber(final.pump_power_cv, 1, "CV") || "À confirmer" },
-    { label: "Panneaux", value: `${panelCount}${panelPower} W`.trim() || "À confirmer" },
-    { label: "Puissance solaire", value: displayNumber(final.pv_power_kwp || final.installed_power_kwp, 2, "kWp") || "À confirmer" },
-    { label: "Variateur", value: driveLabel || "À confirmer" },
-    { label: "Phase", value: phaseLabel(final.phase) || "À confirmer" },
+    { label: "Pompe existante", value: displayNumber(final.pump_power_cv, 1, "CV") || "Validation HeliAntha" },
+    { label: "Panneaux", value: `${panelCount}${panelPower} W`.trim() || "Validation HeliAntha" },
+    { label: "Puissance solaire", value: displayNumber(final.pv_power_kwp || final.installed_power_kwp, 2, "kWp") || "Validation HeliAntha" },
+    { label: "Variateur", value: driveLabel || "Validation HeliAntha" },
+    { label: "Phase", value: phaseLabel(final.phase) || "Validation HeliAntha" },
   ];
 }
 
@@ -112,12 +112,13 @@ function pumpingRecommendedSummaryRows(offer) {
   const final = publicView.final_results || {};
   const panelCount = hasValue(final.panels) ? displayNumber(final.panels, 0) : "";
   const panelPower = hasValue(final.panel_power_w) ? displayNumber(final.panel_power_w, 0) : "";
-  const panelsLabel = panelCount && panelPower ? `${panelCount} × ${panelPower} W` : "À confirmer";
+  const panelsLabel = panelCount && panelPower ? `${panelCount} × ${panelPower} W` : "Validation HeliAntha";
   const driveLabel = [final.drive_brand, displayNumber(final.solar_drive_kw, 2, "kW")].filter(Boolean).join(" ").trim();
   const rows = [
-    { label: "Pompe recommandée", value: displayNumber(final.selected_pump_cv, 1, "CV") || "À confirmer" },
-    { label: "Débit demandé", value: displayNumber(final.flow_m3_h, 2, "m³/h") || "À confirmer" },
-    { label: "HMT demandée", value: displayNumber(final.hmt_m, 1, "m") || "À confirmer" },
+    { label: "Pompe recommandée", value: displayNumber(final.selected_pump_cv, 1, "CV") || "Validation HeliAntha" },
+    ...(final.selected_outlet_diameter ? [{ label: "Sortie de refoulement", value: final.selected_outlet_diameter }] : []),
+    { label: "Débit demandé", value: displayNumber(final.flow_m3_h, 2, "m³/h") || "Validation HeliAntha" },
+    { label: "HMT demandée", value: displayNumber(final.hmt_m, 1, "m") || "Validation HeliAntha" },
   ];
 
   if (final.solar_rule_defined === false) {
@@ -131,24 +132,124 @@ function pumpingRecommendedSummaryRows(offer) {
 
   rows.push(
     { label: "Panneaux", value: panelsLabel },
-    { label: "Puissance solaire", value: displayNumber(final.pv_power_kwp || final.installed_power_kwp, 2, "kWp") || "À confirmer" },
-    { label: "Variateur", value: driveLabel || offerPowerSummary(offer, "drives") || "À confirmer" },
-    { label: "Phase", value: phaseLabel(final.phase) || "À confirmer" },
+    { label: "Puissance solaire", value: displayNumber(final.pv_power_kwp || final.installed_power_kwp, 2, "kWp") || "Validation HeliAntha" },
+    { label: "Variateur", value: driveLabel || offerPowerSummary(offer, "drives") || "Validation HeliAntha" },
+    { label: "Phase", value: phaseLabel(final.phase) || "Validation HeliAntha" },
   );
   return rows;
+}
+
+function renderCompactTitle(offer) {
+  const title = document.querySelector("#compact-offer-name");
+  if (title) title.textContent = offer.name || "Solution HeliAntha";
+}
+
+function renderCompactSolution(offer) {
+  const container = document.querySelector("#compact-solution-list");
+  if (!container) return;
+
+  container.innerHTML = compactSolutionRows(offer).map((row) => `
+    <li>
+      <span>${row.label}</span>
+      <strong>${row.value}</strong>
+    </li>
+  `).join("");
+}
+
+function renderCompactPrice(offer) {
+  const total = document.querySelector("#compact-total-ttc");
+  if (!total) return;
+  const financial = offer.financial_breakdown || {};
+  total.textContent = offer.price_ttc_label || offer.price_label || formatMoney(financial.total_ttc, financial.currency || "DH");
+}
+
+function renderCompactPriceLines(offer) {
+  const financial = offer.financial_breakdown || {};
+  const currency = financial.currency || "DH";
+  const ht = document.querySelector("#compact-total-ht");
+  const vat = document.querySelector("#compact-total-vat");
+  if (ht) ht.textContent = `Total HT : ${formatMoney(financial.total_ht, currency)}`;
+  if (vat) vat.textContent = `TVA : ${formatMoney(financial.vat, currency)}`;
+}
+
+function compactSolutionRows(offer) {
+  if (publicView.project === "photovoltaic") {
+    return compactPhotovoltaicRows(offer);
+  }
+  if (publicView.project === "pumping") {
+    return compactPumpingRows(offer);
+  }
+  return [{ label: "Configuration", value: "Preparation HeliAntha" }];
+}
+
+function compactPhotovoltaicRows(offer) {
+  const final = publicView.final_results || {};
+  const phase = phaseLabel(final.phase);
+  const inverterLine = offerLine(offer, "inverters");
+  const inverterName = [inverterLine?.brand || "SolaX", displayNumber(final.inverter_power_kw || inverterLine?.power_kw, 0, "kW"), phase]
+    .filter(Boolean)
+    .join(" ");
+  return [
+    { label: "Configuration solaire", value: panelConfigurationLabel(final) },
+    { label: "Repartition", value: stringLayoutLabel(final.string_layout) },
+    { label: "Onduleur", value: `Onduleur reseau ${inverterName}`.trim() },
+    { label: "Equipements inclus", value: "Protections AC/DC, cablage, limiteur d'injection & supervision, structure de fixation" },
+  ];
+}
+
+function compactPumpingRows(offer) {
+  const final = publicView.final_results || {};
+  const drive = offerLine(offer, "drives");
+  const driveLabel = [drive?.brand || final.drive_brand, displayNumber(final.solar_drive_kw || drive?.power_kw, 2, "kW"), phaseLabel(final.phase)]
+    .filter(Boolean)
+    .join(" ");
+  const pumpPower = final.selected_pump_cv || final.pump_power_cv || offerPumpPower(offer);
+  const pumpLabel = final.pump_rule_mode === "existing_pump_cv"
+    ? `Pompe existante ${displayNumber(pumpPower, 1, "CV")}`.trim()
+    : `Pompe solaire ${displayNumber(pumpPower, 1, "CV")}`.trim();
+  const rows = [
+    { label: "Pompe", value: final.selected_outlet_diameter ? `${pumpLabel} - refoulement ${final.selected_outlet_diameter}` : pumpLabel },
+  ];
+  if (final.solar_rule_defined === false) {
+    rows.push({ label: "Configuration solaire", value: "Configuration finale preparee par HeliAntha" });
+  } else {
+    rows.push(
+      { label: "Configuration solaire", value: panelConfigurationLabel(final) },
+      { label: "Variateur", value: driveLabel || "Variateur solaire HeliAntha" },
+    );
+  }
+  rows.push({ label: "Equipements inclus", value: "Protections, cablage, structure, installation et mise en service" });
+  return rows;
+}
+
+function panelConfigurationLabel(final) {
+  const count = final.panel_count || final.panels;
+  const power = final.panel_power_w;
+  const peak = final.installed_power_kwp || final.pv_power_kwp;
+  if (hasValue(count) && hasValue(power) && hasValue(peak)) {
+    return `${formatNumber(count, 0)} panneaux × ${displayNumber(power, 0, "W")} (Puissance crete : ${displayNumber(peak, 2, "kWc")})`;
+  }
+  if (hasValue(count) && hasValue(power)) {
+    return `${formatNumber(count, 0)} panneaux × ${displayNumber(power, 0, "W")}`;
+  }
+  return "Configuration solaire HeliAntha";
+}
+
+function stringLayoutLabel(layout) {
+  if (!Array.isArray(layout) || !layout.length) return "Repartition optimisee par HeliAntha";
+  const unique = [...new Set(layout.map((value) => Number(value)))];
+  if (unique.length === 1) {
+    return `${layout.length} strings de ${formatNumber(unique[0], 0)} panneaux`;
+  }
+  return `${layout.length} strings : ${layout.map((value) => formatNumber(value, 0)).join(" + ")} panneaux`;
 }
 
 function renderPriceCard(offer) {
   const price = document.querySelector("#offer-price");
   const subprice = document.querySelector("#offer-subprice");
 
-  const taxBasisUnconfirmed = offer.tax_basis_confirmation_required === true;
   const priceText = offer.price_label || offer.price_ttc_label || "Prix à confirmer";
-  const subpriceText = taxBasisUnconfirmed
-    ? (offer.price_tax_note || "Nature HT/TTC du prix de la pompe à confirmer.")
-    : offer.price_ttc_label
-      ? "Estimation TTC"
-      : "Prix préparé par HeliAntha";
+  const subpriceText = offer.price_ttc_label ? "Estimation TTC" : "Prix préparé par HeliAntha";
 
   if (price) price.textContent = priceText;
   if (subprice) subprice.textContent = subpriceText;
@@ -179,96 +280,16 @@ function renderEquipment(components) {
     return;
   }
 
-  const hideTechnicalMetadata = publicView.project === "pumping";
   container.innerHTML = components.map((item) => {
-    const referenceMarkup = hideTechnicalMetadata
-      ? ""
-      : item.reference
-        ? `<p class="offer-meta">Reference ${item.reference}</p>`
-        : `<p class="offer-meta">Reference finale a confirmer</p>`;
-    const sourceMarkup = hideTechnicalMetadata
-      ? ""
-      : `<span class="equipment-source">${sourceLabel(item.source_type)}</span>`;
     return `
       <article class="equipment-card">
         <span class="equipment-icon">${iconForEquipment(item.category)}</span>
         <small>${labelForCategory(item.category)}</small>
         <h3>${item.title || "Materiel a confirmer"}</h3>
-        <p>${item.summary || "A confirmer lors de l'etude technique"}</p>
-        ${referenceMarkup}
-        ${sourceMarkup}
+        <p>${item.summary || "Validation HeliAntha"}</p>
       </article>
     `;
   }).join("");
-
-  startEquipmentAutoScroll(container);
-}
-
-function startEquipmentAutoScroll(container) {
-  if (!container || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    return;
-  }
-
-  if (equipmentAutoScrollRaf) {
-    cancelAnimationFrame(equipmentAutoScrollRaf);
-    equipmentAutoScrollRaf = null;
-  }
-
-  let lastTime = performance.now();
-  const speed = 10; // pixels per second
-  let direction = 1;
-  const pauseFor = (ms) => {
-    equipmentAutoScrollPaused = true;
-    window.setTimeout(() => {
-      equipmentAutoScrollPaused = false;
-      lastTime = performance.now();
-    }, ms);
-  };
-
-  const tick = (now) => {
-    const delta = (now - lastTime) / 1000;
-    lastTime = now;
-
-    if (!equipmentAutoScrollPaused && container.scrollWidth > container.clientWidth + 2) {
-      const maxScroll = container.scrollWidth - container.clientWidth;
-      let next = container.scrollLeft + direction * speed * delta;
-
-      if (next >= maxScroll) {
-        next = maxScroll;
-        direction = -1;
-        pauseFor(1600);
-      } else if (next <= 0) {
-        next = 0;
-        direction = 1;
-        pauseFor(1600);
-      }
-
-      container.scrollLeft = next;
-    }
-
-    equipmentAutoScrollRaf = requestAnimationFrame(tick);
-  };
-
-  container.onmouseenter = () => {
-    equipmentAutoScrollPaused = true;
-  };
-  container.onmouseleave = () => {
-    equipmentAutoScrollPaused = false;
-    lastTime = performance.now();
-  };
-  container.onfocusin = () => {
-    equipmentAutoScrollPaused = true;
-  };
-  container.onfocusout = () => {
-    equipmentAutoScrollPaused = false;
-    lastTime = performance.now();
-  };
-  container.onwheel = () => {
-    pauseFor(500);
-  };
-
-  equipmentAutoScrollPaused = false;
-  equipmentAutoScrollRaf = requestAnimationFrame(tick);
 }
 
 function renderDiagram(diagram) {
@@ -299,14 +320,14 @@ function buildDiagramMarkup(diagram) {
           <span class="diagram-connector"></span>
           ${diagramNode("⚙️", "Variateur", [offerLine(offer, "drives")?.brand, offerLine(offer, "drives")?.model].filter(Boolean).join(" ") || displayNumber(final.solar_drive_kw, 2, "kW"))}
           <span class="diagram-connector"></span>
-          ${diagramNode("💧", "Pompe", displayNumber(final.pump_power_cv, 1, "CV") || "À confirmer")}
+          ${diagramNode("💧", "Pompe", displayNumber(final.pump_power_cv, 1, "CV") || "Validation HeliAntha")}
         </div>
       `;
     }
     if (isRecommendedPumpMode() && final.solar_rule_defined === false) {
       return `
         <div class="diagram-vertical">
-          ${diagramNode("💧", "Pompe recommandée", displayNumber(final.selected_pump_cv, 1, "CV") || "À confirmer")}
+          ${diagramNode("💧", "Pompe recommandée", displayNumber(final.selected_pump_cv, 1, "CV") || "Validation HeliAntha")}
           <span class="diagram-connector"></span>
           ${diagramNode("⚙️", "Configuration solaire", "À définir par HeliAntha")}
         </div>
@@ -317,84 +338,27 @@ function buildDiagramMarkup(diagram) {
       <div class="diagram-vertical">
         ${diagramNode("☀️", "Champ PV", offerPvSummary(offer) || displayNumber(final.pv_power_kwp || final.installed_power_kwp, 2, "kWp"))}
         <span class="diagram-connector"></span>
-        ${diagramNode("⚙️", "Variateur", driveLabel || offerPowerSummary(offer, "drives") || "À confirmer")}
+        ${diagramNode("⚙️", "Variateur", driveLabel || offerPowerSummary(offer, "drives") || "Validation HeliAntha")}
         <span class="diagram-connector"></span>
-        ${diagramNode("💧", "Pompe", displayNumber(final.selected_pump_cv, 1, "CV") || offerPowerSummary(offer, "pumps") || "À confirmer")}
+        ${diagramNode("💧", "Pompe", displayNumber(final.selected_pump_cv, 1, "CV") || offerPowerSummary(offer, "pumps") || "Validation HeliAntha")}
       </div>
     `;
   }
 
-  if (project === "ongrid") {
+  if (project === "photovoltaic") {
+    const strings = Array.isArray(final.string_layout) ? final.string_layout.join(" + ") : "";
     return `
       <div class="diagram-vertical">
-        ${diagramNode("☀️", "Panneaux", offerPvSummary(offer) || displayNumber(final.pv_power_kwp || final.installed_power_kwp, 2, "kWp"))}
+        ${diagramNode("☀️", "Champ PV", offerPvSummary(offer) || displayNumber(final.installed_power_kwp, 2, "kWc"))}
         <span class="diagram-connector"></span>
-        ${diagramNode("⚡", "Onduleur", offerPowerSummary(offer, "inverters") || displayNumber(final.inverter_selected_kw, 2, "kW"))}
+        ${diagramNode("⚡", "Onduleur SolaX", offerPowerSummary(offer, "inverters") || displayNumber(final.inverter_power_kw, 2, "kW"))}
         <span class="diagram-connector"></span>
-        ${diagramNode("🏢", "Bâtiment", displayNumber(final.annual_production_kwh, 0, "kWh/an"))}
-        <span class="diagram-connector"></span>
-        ${diagramNode("🔌", "Réseau", "Complément si nécessaire")}
+        ${diagramNode("🏢", "Consommation", strings ? `${strings} panneaux/string` : "On-Grid")}
       </div>
     `;
   }
 
-  if (project === "ev") {
-    return `
-      <div class="diagram-vertical">
-        ${diagramNode("🏠", "Installation", displayNumber(final.available_power_kw, 2, "kW disponibles"))}
-        <span class="diagram-connector"></span>
-        ${diagramNode("⚡", "Borne", offerPowerSummary(offer, "ev_chargers") || displayNumber(final.charger_power_kw, 2, "kW"))}
-        <span class="diagram-connector"></span>
-        ${diagramNode("🚗", "Véhicule", displayNumber(final.recharge_time_h, 2, "h estimées"))}
-      </div>
-    `;
-  }
-
-  if (project === "thermal") {
-    return `
-      <div class="diagram-vertical">
-        ${diagramNode("☀️", "Capteurs", displayNumber(final.collector_surface_m2, 2, "m²"))}
-        <span class="diagram-connector"></span>
-        ${diagramNode("♨️", "Ballon", offerThermalSummary(offer) || displayNumber(final.tank_capacity_l, 0, "L"))}
-        <span class="diagram-connector"></span>
-        ${diagramNode("🚿", "Eau chaude", displayNumber(final.daily_hot_water_l, 0, "L/j"))}
-      </div>
-    `;
-  }
-
-  if (project === "hybrid") {
-    return `
-      <div class="diagram-hybrid">
-        <div class="diagram-hybrid-top">
-          ${diagramNode("☀️", "Champ PV", offerPvSummary(offer) || displayNumber(final.pv_power_kwp || final.installed_power_kwp, 2, "kWp"))}
-        </div>
-        <span class="diagram-connector"></span>
-        <div class="diagram-hybrid-center">
-          ${diagramNode("⚡", "Onduleur hybride", offerPowerSummary(offer, "inverters") || displayNumber(final.inverter_selected_kw, 2, "kW"))}
-        </div>
-        <div class="diagram-branches">
-          ${diagramNode("🔋", "Batterie", offerBatterySummary(offer) || displayNumber(final.battery_commercial_kwh, 2, "kWh"))}
-          ${diagramNode("🏠", "Charges", displayNumber(final.daily_consumption_kwh, 2, "kWh/j"))}
-        </div>
-      </div>
-    `;
-  }
-
-  return `
-    <div class="diagram-hybrid">
-      <div class="diagram-hybrid-top">
-        ${diagramNode("☀️", "Champ PV", offerPvSummary(offer) || displayNumber(final.pv_power_kwp || final.installed_power_kwp, 2, "kWp"))}
-      </div>
-      <span class="diagram-connector"></span>
-      <div class="diagram-hybrid-center">
-        ${diagramNode("⚡", "Onduleur", offerPowerSummary(offer, "inverters") || displayNumber(final.inverter_selected_kw, 2, "kW"))}
-      </div>
-      <div class="diagram-branches">
-        ${diagramNode("🔋", "Batterie", offerBatterySummary(offer) || displayNumber(final.battery_commercial_kwh, 2, "kWh"))}
-        ${diagramNode("🏠", "Maison", displayNumber(final.daily_consumption_kwh, 2, "kWh/j"))}
-      </div>
-    </div>
-  `;
+  return "";
 }
 
 function diagramNode(icon, title, value) {
@@ -402,7 +366,7 @@ function diagramNode(icon, title, value) {
     <article class="diagram-node">
       <span>${icon}</span>
       <strong>${title}</strong>
-      <small>${value || "À confirmer"}</small>
+      <small>${value || "Validation HeliAntha"}</small>
     </article>
   `;
 }
@@ -420,19 +384,10 @@ function energyFlowSummary(offer) {
     }
     return "Le champ photovoltaïque alimente le variateur puis la pompe.";
   }
-  if (project === "ongrid") {
-    return `Les panneaux alimentent l’onduleur puis le bâtiment. Le réseau reste disponible en complément si nécessaire. Puissance solaire affichée : ${offerPvSummary(offer) || displayNumber(final.pv_power_kwp || final.installed_power_kwp, 2, "kWp") || "à confirmer"}.`;
+  if (project === "photovoltaic") {
+    return "Le champ photovoltaïque alimente l’onduleur réseau SolaX puis le tableau électrique du site.";
   }
-  if (project === "ev") {
-    return `L’installation alimente la borne de recharge, puis le véhicule. La puissance de charge retenue est de ${offerPowerSummary(offer, "ev_chargers") || displayNumber(final.charger_power_kw, 2, "kW") || "à confirmer"}.`;
-  }
-  if (project === "thermal") {
-    return `Les capteurs chauffent le ballon pour couvrir un besoin d’environ ${displayNumber(final.daily_hot_water_l, 0, "L/j") || "à confirmer"} en eau chaude.`;
-  }
-  if (project === "hybrid") {
-    return "Le photovoltaïque alimente l’onduleur hybride, qui répartit l’énergie entre les charges, la batterie et le réseau selon la configuration retenue.";
-  }
-  return "Le photovoltaïque alimente l’onduleur, puis l’énergie est répartie entre la maison et la batterie lorsque le stockage est prévu.";
+  return "";
 }
 
 function buildTechnicalDetails(offer) {
@@ -452,41 +407,15 @@ function buildTechnicalDetails(offer) {
     return rows;
   }
 
-  if (["offgrid", "ongrid", "hybrid"].includes(project)) {
-    rows.push({ label: "Puissance solaire", value: offerPvSummary(offer) || displayNumber(final.pv_power_kwp || final.installed_power_kwp, 2, "kWp") });
-    rows.push({ label: "Panneaux", value: offerPanelSummary(offer) || displayNumber(final.panels, 0, "panneau(x)") });
-  }
-
-  if (["offgrid", "hybrid"].includes(project)) {
-    rows.push({ label: "Onduleur", value: offerPowerSummary(offer, "inverters") || displayNumber(final.inverter_selected_kw, 2, "kW") });
-    rows.push({ label: "Stockage", value: offerBatterySummary(offer) || displayNumber(final.battery_commercial_kwh, 2, "kWh") || "Selon configuration" });
-  }
-
-  if (project === "ongrid") {
-    const metricCoverage = metricValue("Couverture");
-    rows.push({ label: "Onduleur", value: offerPowerSummary(offer, "inverters") || displayNumber(final.inverter_selected_kw, 2, "kW") });
-    rows.push({ label: "Production annuelle", value: displayNumber(final.annual_production_kwh, 0, "kWh/an") });
-    rows.push({ label: "Couverture estimée", value: metricCoverage || "—" });
-  }
-
-  if (project === "ev") {
-    rows.push({ label: "Borne", value: offerPowerSummary(offer, "ev_chargers") || displayNumber(final.charger_power_kw, 2, "kW") });
-    rows.push({ label: "Temps de charge", value: displayNumber(final.recharge_time_h, 2, "h") });
-    rows.push({ label: "Puissance dispo.", value: displayNumber(final.available_power_kw, 2, "kW") });
-  }
-
-  if (project === "thermal") {
-    rows.push({ label: "Capacité du ballon", value: offerThermalSummary(offer) || displayNumber(final.tank_capacity_l, 0, "L") });
-    rows.push({ label: "Capteurs", value: displayNumber(final.collector_surface_m2, 2, "m²") });
-    rows.push({ label: "Besoin d'eau chaude", value: displayNumber(final.daily_hot_water_l, 0, "L/j") });
+  if (project === "photovoltaic") {
+    rows.push({ label: "Puissance cible", value: displayNumber(final.target_kwp, 2, "kWc") });
+    rows.push({ label: "Panneaux", value: `${displayNumber(final.panel_count, 0)} × ${displayNumber(final.panel_power_w, 0, "W")}` });
+    rows.push({ label: "Puissance installée", value: displayNumber(final.installed_power_kwp, 2, "kWc") });
+    rows.push({ label: "Strings", value: Array.isArray(final.string_layout) ? final.string_layout.join(" + ") : "Validation HeliAntha" });
+    rows.push({ label: "Onduleur", value: displayNumber(final.inverter_power_kw, 2, "kW") });
   }
 
   return rows.slice(0, 8);
-}
-
-function metricValue(label) {
-  const metric = (publicView.metrics || []).find((item) => String(item.label || "").toLowerCase().includes(label.toLowerCase()));
-  return metric ? metric.value : "";
 }
 
 function offerLine(offer, category) {
@@ -515,18 +444,6 @@ function offerPumpPower(offer) {
   return null;
 }
 
-function offerBatteryCapacity(offer) {
-  const line = offerLine(offer, "batteries");
-  if (!line || !hasValue(line.capacity_kwh) || !hasValue(line.quantity)) return null;
-  return Number(line.capacity_kwh) * Number(line.quantity);
-}
-
-function offerThermalCapacity(offer) {
-  const line = offerLine(offer, "thermal");
-  if (!line || !hasValue(line.capacity_l)) return null;
-  return Number(line.capacity_l);
-}
-
 function offerPvSummary(offer) {
   const value = offerPvPowerKw(offer);
   return hasValue(value) ? `${formatNumber(value, 2)} kWp` : "";
@@ -536,16 +453,6 @@ function offerPanelSummary(offer) {
   const line = offerLine(offer, "panels");
   if (!line || !hasValue(line.quantity)) return "";
   return `${formatNumber(line.quantity, 0)} panneau(x)`;
-}
-
-function offerBatterySummary(offer) {
-  const value = offerBatteryCapacity(offer);
-  return hasValue(value) ? `${formatNumber(value, 2)} kWh` : "";
-}
-
-function offerThermalSummary(offer) {
-  const value = offerThermalCapacity(offer);
-  return hasValue(value) ? `${formatNumber(value, 0)} L` : "";
 }
 
 function offerPowerSummary(offer, category) {
@@ -563,9 +470,9 @@ function offerPowerSummary(offer, category) {
 
 function primaryEquipmentLabel(offer) {
   const components = offer.main_components || [];
-  if (!components.length) return "À confirmer";
+  if (!components.length) return "Validation HeliAntha";
   const primary = components[0];
-  return [primary.title, primary.summary].filter(Boolean).join(" · ") || "À confirmer";
+  return [primary.title, primary.summary].filter(Boolean).join(" · ") || "Validation HeliAntha";
 }
 
 function displayNumber(value, digits, unit) {
@@ -576,6 +483,11 @@ function displayNumber(value, digits, unit) {
 function displayNumberValue(value, digits) {
   if (!hasValue(value)) return "—";
   return formatNumber(value, digits);
+}
+
+function formatMoney(value, currency = "DH") {
+  if (!hasValue(value)) return "-";
+  return `${formatNumber(value, 0)} ${currency}`.trim();
 }
 
 function hasValue(value) {
@@ -607,11 +519,9 @@ function iconForEquipment(category) {
   return {
     panels: "☀️",
     inverters: "⚡",
-    batteries: "🔋",
     pumps: "💧",
     drives: "⚙️",
-    thermal: "♨️",
-    ev_chargers: "🔌",
+    structures: "▦",
   }[category] || "🧩";
 }
 
@@ -619,11 +529,9 @@ function labelForCategory(category) {
   return {
     panels: "Panneaux",
     inverters: "Onduleur",
-    batteries: "Batterie",
     pumps: "Pompe",
     drives: "Variateur",
-    thermal: "Thermique",
-    ev_chargers: "Borne EV",
+    structures: "Structure",
   }[category] || "Matériel";
 }
 
@@ -633,8 +541,8 @@ function sourceLabel(sourceType) {
     manufacturer: "Donnée produit",
     fallback: "Valeur de secours",
     demo: "HeliAntha",
-    manual_validation: "À confirmer",
-  }[sourceType] || "À confirmer";
+    manual_validation: "Validation HeliAntha",
+  }[sourceType] || "Validation HeliAntha";
 }
 
 function isActiveOffer(offer) {

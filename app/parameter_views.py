@@ -11,7 +11,6 @@ SOURCE_OPTIONS = [
     ("manufacturer", "🏭 Fabricant"),
     ("reference", "📚 Référentiel technique"),
     ("physical_constant", "🔬 Constante physique"),
-    ("local_data", "📍 Donnée locale"),
 ]
 
 
@@ -36,8 +35,6 @@ def format_display_value(param: dict[str, Any]) -> str:
     if kind == "duration_days":
         suffix = "jour" if abs(value) <= 1 else "jours"
         return f"{format_number(value, 1)} {suffix}"
-    if kind == "psh":
-        return f"{format_number(value, 1)} h solaires équivalentes / jour"
     if kind == "power_w":
         return f"{format_number(value, 0)} W"
     if kind == "gravity":
@@ -69,7 +66,6 @@ def display_input_suffix(param: dict[str, Any]) -> str:
         "percent": "%",
         "multiplier_margin": "% de marge",
         "duration_days": "jour(s)",
-        "psh": "h/jour",
         "power_w": "W",
         "gravity": "m/s²",
         "density": "kg/m³",
@@ -170,7 +166,6 @@ def technical_term(key: str) -> str:
     return {
         "battery_dod": "Depth of Discharge (DoD)",
         "pv_performance_ratio": "Performance Ratio (PR)",
-        "productible_default_psh": "Peak Sun Hours (PSH)",
         "inverter_peak_factor": "Peak factor",
         "pump_hydraulic_losses_rate": "Hydraulic losses rate",
     }.get(key, "")

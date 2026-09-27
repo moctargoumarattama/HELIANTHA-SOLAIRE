@@ -108,14 +108,14 @@
     <h2>Commercial</h2>
     <div class="form-grid">
       <label>
-        <span data-current-price-label>{{ "Prix actuel *" if current_category == "pumps" else "Prix HT *" }}</span>
+        <span data-current-price-label>{{ "Prix interne PT *" if current_category == "pumps" else "Prix HT *" }}</span>
         <input type="number" step="any" name="sale_price" value="{{ product.get('sale_price', '') if product else '' }}" required>
-        <small data-pump-price-note {% if current_category != 'pumps' %}hidden{% endif %}>Le prix courant vient du catalogue. Sa nature HT/TTC doit être confirmée si la fiche source ne la précise pas.</small>
+        <small data-pump-price-note {% if current_category != 'pumps' %}hidden{% endif %}>Prix Catalogue pompe interne. Le prix client est calculé dans Règles Pompage.</small>
         {% if errors.get('sale_price') %}<small class="field-error">{{ errors.get('sale_price') }}</small>{% endif %}
       </label>
 
       <label>
-        <span data-vat-label>{{ "TVA (si confirmée)" if current_category == "pumps" else "TVA *" }}</span>
+        <span data-vat-label>{{ "TVA pompe dans Règles Pompage" if current_category == "pumps" else "TVA *" }}</span>
         <input
           type="number"
           step="any"

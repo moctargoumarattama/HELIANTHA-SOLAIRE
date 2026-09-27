@@ -12,7 +12,7 @@ from typing import Any
 
 
 MAIN_EQUIPMENT_CATEGORIES = {
-    "panels", "batteries", "inverters", "pumps", "drives", "ev_chargers", "thermal"
+    "panels", "pumps", "drives"
 }
 
 
@@ -52,6 +52,7 @@ class PricingEngine:
         "cabling": "CÃ¢blage",
         "structure": "Structure",
         "installation": "Installation",
+        "transport": "Transport",
         "labor": "Main-d'oeuvre",
     }
 
@@ -74,9 +75,6 @@ class PricingEngine:
         warnings: list[dict[str, Any]] = []
         demo_prices = False
         line_items: list[dict[str, Any]] = []
-        tax_basis_confirmation_required = False
-        pump_price_tax_basis = ""
-        pump_tax_warning_added = False
 
         global_vat_rate = _decimal(context.r("vat_rate", 0))
 
@@ -84,27 +82,7 @@ class PricingEngine:
             financial_category = item.get("financial_category") or self._financial_category(item)
             total = _money(item.get("total_price"))
             categories[financial_category] = categories.get(financial_category, Decimal("0")) + total
-            price_tax_basis = str(
-                item.get("price_tax_basis")
-                or (item.get("technical_specs") or {}).get("price_tax_basis")
-                or ""
-            ).strip().lower()
-            is_pump_line = project == "pumping" and item.get("category") == "pumps"
-            if is_pump_line:
-                pump_price_tax_basis = price_tax_basis or pump_price_tax_basis
-            if is_pump_line and (price_tax_basis == "unconfirmed" or item.get("vat_rate") in (None, "")):
-                line_vat_rate = Decimal("0")
-                tax_basis_confirmation_required = True
-                if price_tax_basis == "unconfirmed" and not pump_tax_warning_added:
-                    warnings.append(_warning(
-                        "PUMP_PRICE_TAX_BASIS_UNCONFIRMED",
-                        "La nature HT/TTC du prix de la pompe n'est pas confirmée.",
-                        "Confirmer la nature HT/TTC du prix pompe dans l'admin catalogue.",
-                        item.get("description") or "pompe",
-                    ))
-                    pump_tax_warning_added = True
-            else:
-                line_vat_rate = _decimal(item.get("vat_rate") if item.get("vat_rate") not in (None, "") else global_vat_rate)
+            line_vat_rate = self._line_vat_rate(project, item, financial_category, global_vat_rate)
             line_items.append({
                 "category": financial_category,
                 "total": _decimal(total),
@@ -269,15 +247,38 @@ class PricingEngine:
             "warnings": self._deduplicate_warnings(warnings),
             "contains_demo_prices": demo_prices,
             "is_final_price": not warnings,
-            "tax_basis_confirmation_required": tax_basis_confirmation_required,
-            "pump_price_tax_basis": pump_price_tax_basis,
+            "tax_basis_confirmation_required": False,
+            "pump_price_tax_basis": "",
         }
+
+    @staticmethod
+    def _line_vat_rate(
+        project: str,
+        item: dict[str, Any],
+        financial_category: str,
+        global_vat_rate: Decimal,
+    ) -> Decimal:
+        explicit = item.get("vat_rate")
+        if explicit not in (None, ""):
+            return _decimal(explicit)
+        if project == "pumping":
+            category = str(item.get("category") or "").strip().lower()
+            component = str(item.get("component") or "").strip().lower()
+            role = str(item.get("role") or "").strip().lower()
+            if category == "panels":
+                return Decimal("0.10")
+            if financial_category == "transport" or category == "transport" or component == "transport" or "transport" in role:
+                return Decimal("0.10")
+            return Decimal("0.20")
+        return global_vat_rate
 
     @staticmethod
     def _financial_category(item: dict[str, Any]) -> str:
         category = item.get("category")
         if category in MAIN_EQUIPMENT_CATEGORIES:
             return "principal_equipment"
+        if category == "transport":
+            return "transport"
         if category == "protections":
             return "protections"
         if category == "cables":

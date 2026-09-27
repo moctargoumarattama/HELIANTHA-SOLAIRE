@@ -14,28 +14,18 @@ from typing import Any
 
 COMPONENT_LABELS = {
     "panel": "Panneau photovoltaïque",
-    "battery": "Batterie",
-    "inverter": "Onduleur",
     "pump": "Pompe",
     "pump_drive": "Variateur de pompage",
     "coffret": "Coffret de protection",
     "cabling_accessories": "Câblage et accessoires",
     "installation": "Installation et mise en service",
-    "ev_charger": "Borne EV",
-    "thermal_tank": "Ballon solaire",
-    "thermal_collector": "Capteur solaire thermique",
     "protection_dc": "Protection DC",
     "protection_ac": "Protection AC",
-    "protection_battery": "Protection batterie",
     "protection_motor": "Protection moteur",
-    "ev_protection": "Protection dédiée borne EV",
     "cable_dc": "Câble photovoltaïque DC",
     "cable_ac": "Câble AC",
-    "cable_battery": "Câble batterie",
     "cable_motor": "Câble moteur",
-    "ev_cable": "Câble borne EV",
     "structure": "Structure photovoltaïque",
-    "thermal_structure": "Support solaire thermique",
     "accessory": "Accessoires",
 }
 
@@ -266,41 +256,4 @@ class BOMBuilder:
         data: dict[str, Any],
         final: dict[str, Any],
     ) -> list[dict[str, Any]]:
-        panels = int(final.get("panels") or selections.get("panel", {}).get("quantity") or 0)
-        distance = float(data.get("distance") or data.get("cable_length") or 0)
-
-        def item(component: str, category: str, description: str, code: str, message: str,
-                 quantity: float = 1, unit: str = "lot", specs: dict[str, Any] | None = None) -> dict[str, Any]:
-            return {
-                "component": component,
-                "category": category,
-                "description": description,
-                "quantity": quantity,
-                "unit": unit,
-                "technical_specs": specs or {},
-                "warning_code": code,
-                "warning_message": message,
-                "recommendation": "Choisir et dimensionner la référence lors de la validation technique.",
-            }
-
-        placeholders: list[dict[str, Any]] = []
-        if project in {"offgrid", "hybrid", "ongrid"}:
-            placeholders.extend([
-                item("protection_dc", "protections", "Sectionnement et protection du champ photovoltaïque", "PROTECTION_SIZING_REQUIRED", "Les protections DC restent à dimensionner."),
-                item("protection_ac", "protections", "Protection AC et coffret", "PROTECTION_SIZING_REQUIRED", "La protection AC reste à dimensionner."),
-                item("cable_dc", "cables", "Câblage solaire DC", "CABLE_SIZING_REQUIRED", "La section et la longueur du câble DC restent à confirmer.", specs={"length_m": distance or None, "section_theoretical_mm2": None, "section_selected_mm2": None}),
-                item("structure", "structures", "Structure adaptée au support du site", "STRUCTURE_SELECTION_REQUIRED", "La structure doit être confirmée selon le type de toiture ou de sol.", quantity=max(panels, 1), unit="support panneau", specs={"panel_quantity": panels, "mounting_type": data.get("mounting_type") or data.get("roof_type") or "à confirmer"}),
-            ])
-        if project in {"offgrid", "hybrid"}:
-            placeholders.extend([
-                item("protection_battery", "protections", "Protection batterie", "PROTECTION_SIZING_REQUIRED", "La protection batterie reste à dimensionner."),
-                item("cable_battery", "cables", "Câblage batterie", "CABLE_SIZING_REQUIRED", "La section du câble batterie reste à confirmer.", specs={"section_theoretical_mm2": None, "section_selected_mm2": None}),
-            ])
-        if project == "ev":
-            placeholders.extend([
-                item("ev_protection", "protections", "Disjoncteur et différentiel dédiés à la borne", "PROTECTION_SIZING_REQUIRED", "La protection dédiée à la borne reste à dimensionner."),
-                item("ev_cable", "cables", "Câble d'alimentation de la borne", "CABLE_SIZING_REQUIRED", "La section du câble EV reste à confirmer.", quantity=max(distance, 1), unit="m" if distance else "lot", specs={"length_m": distance or None, "section_theoretical_mm2": None, "section_selected_mm2": None}),
-            ])
-        if project == "thermal":
-            placeholders.append(item("thermal_structure", "structures", "Support du système solaire thermique", "STRUCTURE_SELECTION_REQUIRED", "Le support thermique doit être confirmé selon le site."))
-        return placeholders
+        return []

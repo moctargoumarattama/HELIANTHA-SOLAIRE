@@ -128,6 +128,14 @@
             <th>Statut</th>
             <th>Action</th>
           </tr>
+          {% elif section.key == "pump_sale_parameters" %}
+          <tr>
+            <th>Coefficient 1</th>
+            <th>Coefficient 2</th>
+            <th>TVA pompe</th>
+            <th>Statut</th>
+            <th>Action</th>
+          </tr>
           {% elif section.key == "vat_pricing" %}
           <tr>
             <th>Appliquée à</th>
@@ -170,6 +178,12 @@
               <td>{{ rule.display_unit_price_ht }}</td>
               <td><span class="status{% if not rule.active %} inactive{% endif %}">{{ rule.display_active }}</span></td>
               <td>{{ render_editor(rule, section, "Modifier", "save_rule") }}</td>
+            {% elif section.key == "pump_sale_parameters" %}
+              <td><strong>{{ rule.display_coefficient_1 }}</strong></td>
+              <td>{{ rule.display_coefficient_2 }}</td>
+              <td>{{ rule.display_vat_rate }}</td>
+              <td><span class="status{% if not rule.active %} inactive{% endif %}">{{ rule.display_active }}</span></td>
+              <td>{{ render_editor(rule, section, "Modifier", "save_rule", False) }}</td>
             {% elif section.key == "vat_pricing" %}
               <td><strong>{{ rule.display_applies_to }}</strong></td>
               <td>{{ rule.display_vat_rate }}</td>

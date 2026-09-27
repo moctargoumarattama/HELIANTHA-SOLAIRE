@@ -28,6 +28,21 @@
   </article>
 </section>
 
+<section class="stat-grid">
+  <article>
+    <small>Coefficient 1 pompe</small>
+    <b>{{ pump_sale_parameters.coefficient_1_label }}</b>
+  </article>
+  <article>
+    <small>Coefficient 2 pompe</small>
+    <b>{{ pump_sale_parameters.coefficient_2_label }}</b>
+  </article>
+  <article>
+    <small>TVA pompe</small>
+    <b>{{ pump_sale_parameters.vat_rate_label }}</b>
+  </article>
+</section>
+
 <section class="admin-grid two">
   <article class="panel">
     <h2>Méthode de sélection</h2>
@@ -36,7 +51,7 @@
       <li>Le système consulte les courbes Débit/HMT enregistrées.</li>
       <li>Les pompes insuffisantes sont éliminées.</li>
       <li>Parmi les pompes capables de couvrir le besoin, le plus petit CV suffisant est retenu.</li>
-      <li>Si plusieurs solutions du même CV conviennent, la moins chère selon le prix Admin actuel est retenue.</li>
+      <li>Si plusieurs solutions du même CV conviennent, le PT interne Admin le plus faible est retenu.</li>
       <li>Le CV sélectionné est envoyé vers la règle solaire HeliAntha.</li>
       <li>La règle solaire fournit panneaux, variateur et phase.</li>
     </ol>
@@ -91,9 +106,11 @@
           <tr>
             <th>CV</th>
             <th>Variante</th>
+            <th>Refoulement</th>
             <th>Débit vérifié</th>
             <th>HMT disponible</th>
-            <th>Prix Admin actuel</th>
+            <th>PT interne</th>
+            <th>Prix client TTC</th>
             <th>Statut</th>
             <th>Lecture métier</th>
           </tr>
@@ -103,9 +120,11 @@
             <tr class="candidate-{{ candidate.status_tone }}">
               <td><strong>{{ candidate.cv_label }}</strong></td>
               <td>Variante {{ candidate.variant_index }}</td>
+              <td>{{ candidate.outlet_diameter }}</td>
               <td>{{ candidate.interval_label }}</td>
               <td>{{ candidate.hmt_label }}</td>
-              <td>{{ candidate.price_label }}</td>
+              <td>{{ candidate.internal_pt_label }}</td>
+              <td>{{ candidate.sale_ttc_label }}</td>
               <td><span class="status candidate-status">{{ candidate.status }}</span></td>
               <td>{{ candidate.reason }}</td>
             </tr>
@@ -119,6 +138,14 @@
     <article class="panel">
       <h2>Décision</h2>
       <h3>{{ analysis.decision.title }}</h3>
+      {% if analysis.decision.status == "selected" %}
+      <dl class="info-list compact-info">
+        <dt>Refoulement</dt><dd>{{ analysis.decision.selected_outlet_diameter or "—" }}</dd>
+        <dt>PT interne</dt><dd>{{ analysis.decision.selected_pt_label }}</dd>
+        <dt>Prix HT</dt><dd>{{ analysis.decision.selected_sale_ht_label }}</dd>
+        <dt>Prix TTC</dt><dd>{{ analysis.decision.selected_sale_ttc_label }}</dd>
+      </dl>
+      {% endif %}
       <ul class="clean-list decision-list">
         {% for line in analysis.decision.lines %}
           <li>{{ line }}</li>
@@ -169,9 +196,11 @@
               <h3>{{ variant.label }}</h3>
               <dl class="info-list compact-info">
                 <dt>kW</dt><dd>{{ variant.power_kw }}</dd>
+                <dt>Refoulement</dt><dd>{{ variant.outlet_diameter }}</dd>
                 <dt>Tension</dt><dd>{{ variant.voltage }}</dd>
                 <dt>Courant</dt><dd>{{ variant.current }}</dd>
-                <dt>Prix Admin</dt><dd>{{ variant.price }}</dd>
+                <dt>PT interne</dt><dd>{{ variant.internal_pt }}</dd>
+                <dt>Prix TTC</dt><dd>{{ variant.sale_ttc }}</dd>
               </dl>
               <div class="table-wrap mini-table">
                 <table>

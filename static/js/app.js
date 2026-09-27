@@ -1,5 +1,6 @@
 const STORAGE_KEY = "heliantha_phase4_wizard";
 const company = window.HELIANTHA_COMPANY || {};
+const ACTIVE_PROJECTS = new Set(["pumping", "photovoltaic"]);
 
 const DEVICE_LIBRARY = {
   "Éclairage": [
@@ -37,44 +38,58 @@ const WIZARD_PROJECT_META = window.HELIANTHA_WIZARD_PROJECTS || {
     summary_fields: ["pump_existing", "existing_pump_cv", "flow_m3_h", "hmt_m"],
     supports_loads: false,
   },
-  off_grid: {
-    engine_project: "offgrid",
-    aliases: ["offgrid"],
-    payload_fields: ["energy_mode", "daily_kwh", "peak_kw", "autonomy", "city", "notes", "loads"],
-    summary_fields: ["energy_mode", "daily_kwh", "peak_kw", "autonomy", "city", "loads"],
-    supports_loads: true,
-  },
   photovoltaic: {
-    engine_project: "ongrid",
-    aliases: ["ongrid"],
-    payload_fields: ["building", "monthly_kwh", "bill", "day_profile", "network", "roof_area", "city"],
-    summary_fields: ["building", "monthly_kwh", "bill", "day_profile", "network", "roof_area", "city"],
-    supports_loads: false,
-  },
-  hybrid: {
-    engine_project: "hybrid",
-    aliases: [],
-    payload_fields: ["energy_mode", "daily_kwh", "monthly_kwh", "bill", "peak_kw", "priority_kwh", "autonomy", "objective", "city", "loads"],
-    summary_fields: ["energy_mode", "daily_kwh", "monthly_kwh", "bill", "peak_kw", "priority_kwh", "autonomy", "objective", "city", "loads"],
-    supports_loads: true,
-  },
-  thermal: {
-    engine_project: "thermal",
-    aliases: [],
-    payload_fields: ["people", "building", "daily_hot_water_l", "thermal_target_temp", "thermal_inlet_temp", "city"],
-    summary_fields: ["people", "building", "daily_hot_water_l", "thermal_target_temp", "thermal_inlet_temp", "city"],
-    supports_loads: false,
-  },
-  ev_charging: {
-    engine_project: "ev",
-    aliases: ["ev"],
-    payload_fields: ["vehicle", "vehicle_battery", "daily_km", "consumption_kwh_100km", "phases", "available_power", "charger_power", "vehicle_ac_max", "distance", "city"],
-    summary_fields: ["vehicle", "vehicle_battery", "daily_km", "consumption_kwh_100km", "phases", "available_power", "charger_power", "vehicle_ac_max", "distance", "city"],
+    engine_project: "photovoltaic",
+    aliases: ["ongrid", "on_grid"],
+    payload_fields: ["meter_type", "phase", "monthly_consumption_kwh"],
+    summary_fields: ["meter_type", "phase", "monthly_consumption_kwh"],
     supports_loads: false,
   },
 };
 
 const PROJECTS = {
+  photovoltaic: {
+    label: "Réduire ma consommation",
+    icon: "☀️",
+    description: "Dimensionnez une solution On-Grid pour réduire votre facture.",
+    steps: [
+      {
+        id: "meter_type",
+        type: "fields",
+        title: "Quel est votre type de compteur ?",
+        description: "Cette information est conservée dans le dossier, sans influencer la météo ni une ville.",
+        fields: [
+          choiceField("meter_type", "Type de compteur", [
+            { value: "numerique", label: "Numérique" },
+            { value: "mecanique", label: "Mécanique" },
+          ], "numerique"),
+        ],
+      },
+      {
+        id: "grid_type",
+        type: "fields",
+        title: "Quel est votre type de réseau ?",
+        description: "Le type de réseau fixe les contraintes de strings et le choix de l’onduleur.",
+        fields: [
+          choiceField("phase", "Type de réseau", [
+            { value: "monophase", label: "Monophasé" },
+            { value: "triphase", label: "Triphasé" },
+          ], "monophase"),
+        ],
+      },
+      {
+        id: "monthly_consumption",
+        type: "fields",
+        title: "Quelle est votre consommation mensuelle ?",
+        description: "Saisissez la consommation en kWh indiquée sur votre facture.",
+        fields: [
+          numberField("monthly_consumption_kwh", "Consommation mensuelle", "kWh/mois", "", { required: true, min: 1 }),
+        ],
+      },
+      commonContactStep(),
+      recapStep(),
+    ],
+  },
   pumping: {
     label: "Pompage solaire",
     icon: "💧",
@@ -112,193 +127,6 @@ const PROJECTS = {
             min: 0.01,
             help: "HMT : hauteur manométrique totale de l’installation.",
           }),
-        ],
-      },
-      commonContactStep(),
-      recapStep(),
-    ],
-  },
-  off_grid: {
-    label: "Site sans réseau",
-    icon: "🏠",
-    description: "Installation hors réseau avec batteries et autonomie.",
-    steps: [
-      energyModeStep("loads"),
-      loadsStep(),
-      {
-        id: "direct_energy",
-        type: "fields",
-        showIf: (state) => state.answers.energy_mode !== "loads",
-        title: "Votre consommation",
-        description: "Si vous connaissez déjà vos besoins, vous pouvez les saisir directement.",
-        fields: [
-          numberField("daily_kwh", "Consommation quotidienne", "kWh / jour", "12"),
-          numberField("peak_kw", "Puissance simultanée", "kW", "4"),
-        ],
-      },
-      {
-        id: "storage",
-        type: "fields",
-        title: "Autonomie et localisation",
-        description: "L’autonomie et la ville influencent directement la batterie et la production solaire.",
-        fields: [
-          numberField("autonomy", "Autonomie souhaitée", "jours", "1"),
-          textField("city", "Ville du projet", "ex. Agadir", "Agadir"),
-          textareaField("notes", "Informations utiles", "Type de site, réseau absent, contrainte particulière…", ""),
-        ],
-      },
-      commonContactStep(),
-      recapStep(),
-    ],
-  },
-  photovoltaic: {
-    label: "Réduire ma consommation",
-    icon: "☀️",
-    description: "Réduire la consommation électrique du bâtiment.",
-    steps: [
-      {
-        id: "building",
-        type: "fields",
-        title: "Votre bâtiment et votre consommation",
-        description: "Une estimation mensuelle suffit pour lancer une première étude.",
-        fields: [
-          selectField("building", "Type de bâtiment", [
-            ["Maison", "Maison"],
-            ["Entreprise", "Entreprise"],
-            ["Ferme", "Ferme"],
-            ["Hôtel", "Hôtel"],
-          ], "Entreprise"),
-          numberField("monthly_kwh", "Consommation mensuelle", "kWh / mois", "900"),
-          numberField("bill", "Montant moyen de la facture", "DH / mois", ""),
-        ],
-      },
-      {
-        id: "installation",
-        type: "fields",
-        title: "Votre installation",
-        description: "Ces informations aident à adapter la solution à l’espace et au profil d’usage.",
-        fields: [
-          selectField("day_profile", "Profil de consommation", [
-            ["jour", "Surtout le jour"],
-            ["equilibre", "Équilibrée"],
-            ["soir", "Surtout le soir"],
-          ], "jour"),
-          selectField("network", "Type de réseau", [
-            ["", "Je ne connais pas"],
-            ["monophase", "Monophasé"],
-            ["triphase", "Triphasé"],
-          ], ""),
-          numberField("roof_area", "Surface disponible", "m²", "80"),
-          textField("city", "Ville du projet", "ex. Casablanca", "Casablanca"),
-        ],
-      },
-      commonContactStep(),
-      recapStep(),
-    ],
-  },
-  hybrid: {
-    label: "Système hybride",
-    icon: "🔋",
-    description: "Photovoltaïque, batteries et réseau pour plus de continuité.",
-    steps: [
-      energyModeStep("loads"),
-      loadsStep({ hybrid: true }),
-      {
-        id: "direct_energy",
-        type: "fields",
-        showIf: (state) => state.answers.energy_mode !== "loads",
-        title: "Charges totales et charges prioritaires",
-        description: "Si vous connaissez déjà vos besoins, indiquez la consommation globale et les charges à secourir.",
-        fields: [
-          numberField("daily_kwh", "Consommation quotidienne totale", "kWh / jour", "10"),
-          numberField("peak_kw", "Puissance simultanée", "kW", "4"),
-          numberField("priority_kwh", "Charges prioritaires", "kWh / jour", ""),
-        ],
-      },
-      {
-        id: "storage",
-        type: "fields",
-        title: "Autonomie et objectif",
-        description: "Le système hybride peut viser le secours, le confort ou l’optimisation.",
-        fields: [
-          numberField("autonomy", "Autonomie sur batterie", "jours", "0.5"),
-          textField("objective", "Objectif principal", "ex. Secours pendant les coupures", "Secours pendant les coupures"),
-          textField("city", "Ville du projet", "ex. Rabat", "Rabat"),
-        ],
-      },
-      commonContactStep(),
-      recapStep(),
-    ],
-  },
-  thermal: {
-    label: "Chauffage solaire",
-    icon: "♨️",
-    description: "Eau chaude solaire pour maison, hôtel ou activité.",
-    steps: [
-      {
-        id: "usage",
-        type: "fields",
-        title: "Votre besoin en eau chaude",
-        description: "Le nombre d’utilisateurs suffit pour une première estimation.",
-        fields: [
-          numberField("people", "Nombre d’utilisateurs", "personnes", "4"),
-          selectField("building", "Type de bâtiment", [
-            ["Maison", "Maison"],
-            ["Hôtel", "Hôtel"],
-            ["Restaurant", "Restaurant"],
-            ["Autre", "Autre"],
-          ], "Maison"),
-          numberField("daily_hot_water_l", "Besoin journalier si connu", "L / jour", ""),
-        ],
-      },
-      {
-        id: "thermal_settings",
-        type: "fields",
-        title: "Température et localisation",
-        description: "Si vous ne connaissez pas une valeur, HeliAntha utilisera la valeur de secours prévue.",
-        fields: [
-          numberField("thermal_target_temp", "Température d’eau chaude souhaitée", "°C", ""),
-          numberField("thermal_inlet_temp", "Température d’eau froide si connue", "°C", ""),
-          textField("city", "Ville du projet", "ex. Fès", "Fès"),
-        ],
-      },
-      commonContactStep(),
-      recapStep(),
-    ],
-  },
-  ev_charging: {
-    label: "Recharge électrique",
-    icon: "🚗",
-    description: "Une borne adaptée au véhicule, au réseau et à l’usage réel.",
-    steps: [
-      {
-        id: "vehicle",
-        type: "fields",
-        title: "Votre véhicule et votre usage",
-        description: "Même si vous n’avez pas toutes les informations, nous pouvons avancer avec une estimation.",
-        fields: [
-          textField("vehicle", "Véhicule", "marque et modèle", ""),
-          numberField("vehicle_battery", "Capacité batterie si connue", "kWh", "60"),
-          numberField("daily_km", "Kilométrage quotidien", "km / jour", ""),
-          numberField("consumption_kwh_100km", "Consommation si connue", "kWh / 100 km", ""),
-        ],
-      },
-      {
-        id: "ev_installation",
-        type: "fields",
-        title: "Votre installation électrique",
-        description: "La puissance disponible et le type de réseau orientent la borne recommandée.",
-        fields: [
-          selectField("phases", "Réseau", [
-            ["", "Je ne connais pas cette information"],
-            ["monophase", "Monophasé"],
-            ["triphase", "Triphasé"],
-          ], ""),
-          numberField("available_power", "Puissance disponible", "kW", "11"),
-          numberField("charger_power", "Puissance de borne souhaitée", "kW", "11"),
-          numberField("vehicle_ac_max", "Limite de charge AC si connue", "kW", ""),
-          numberField("distance", "Distance tableau-borne", "m", "15"),
-          textField("city", "Ville du projet", "ex. Tanger", "Tanger"),
         ],
       },
       commonContactStep(),
@@ -444,8 +272,17 @@ function bindLanding() {
   });
 
   document.querySelectorAll("[data-project]").forEach((button) => {
+    if (!isProjectAvailable(button.dataset.project)) {
+      button.dataset.comingSoon = "true";
+      const action = button.querySelector(".project-action");
+      if (action) action.textContent = "Bientot disponible";
+    }
     button.addEventListener("click", (event) => {
       event.preventDefault();
+      if (!isProjectAvailable(button.dataset.project)) {
+        toast("Ce parcours est bientot disponible.");
+        return;
+      }
       openWizard(button.dataset.project);
     });
   });
@@ -534,6 +371,10 @@ function normalizeProjectKey(project) {
   return "";
 }
 
+function isProjectAvailable(project) {
+  return ACTIVE_PROJECTS.has(normalizeProjectKey(project));
+}
+
 function getProjectMeta(project) {
   const key = normalizeProjectKey(project);
   return key ? WIZARD_PROJECT_META[key] || null : null;
@@ -598,6 +439,9 @@ function loadState() {
   try {
     const loaded = { ...defaultState(), ...JSON.parse(sessionStorage.getItem(STORAGE_KEY) || "{}") };
     loaded.project = normalizeProjectKey(loaded.project) || "";
+    if (loaded.project && !isProjectAvailable(loaded.project)) {
+      loaded.project = "";
+    }
     loaded.answers = pruneProjectAnswers(loaded.project, loaded.answers);
     loaded.loads = pruneProjectLoads(loaded.project, loaded.loads, loaded.answers);
     loaded.contact = loaded.contact || {};
@@ -625,7 +469,7 @@ function persistState() {
 
 function setActiveProject(project, { reset = false } = {}) {
   const normalized = normalizeProjectKey(project);
-  if (!normalized) {
+  if (!normalized || !isProjectAvailable(normalized)) {
     return false;
   }
   const current = normalizeProjectKey(state.project);
@@ -655,7 +499,11 @@ function setActiveProject(project, { reset = false } = {}) {
 function openWizard(project = "") {
   const normalized = normalizeProjectKey(project);
   if (project && !normalized) {
-    toast("Projet non reconnu.");
+    toast("Ce parcours est bientot disponible.");
+    return;
+  }
+  if (normalized && !isProjectAvailable(normalized)) {
+    toast("Ce parcours est bientot disponible.");
     return;
   }
   if (normalized) {
@@ -846,6 +694,9 @@ function getFieldLabel(project, fieldName) {
     energy_mode: "Mode de saisie",
     daily_kwh: "Consommation quotidienne",
     monthly_kwh: "Consommation mensuelle",
+    monthly_consumption_kwh: "Consommation mensuelle",
+    meter_type: "Type de compteur",
+    phase: "Type de réseau",
     peak_kw: "Puissance simultanée",
     autonomy: "Autonomie",
     objective: "Objectif principal",
@@ -1030,7 +881,7 @@ function renderProjectStep() {
       <h2>Quel est votre projet ?</h2>
       <p>Choisissez le besoin principal. Le questionnaire s’adaptera automatiquement.</p>
       <div class="project-grid">
-        ${Object.entries(PROJECTS).map(([key, project]) => `
+        ${Object.entries(PROJECTS).filter(([key]) => isProjectAvailable(key)).map(([key, project]) => `
           <button class="project-card ${normalizeProjectKey(state.project) === key ? "active" : ""}" type="button" data-pick-project="${key}">
             <span class="project-icon">${project.icon}</span>
             <strong>${project.label}</strong>
@@ -1643,6 +1494,9 @@ function buildRecapItems(payload) {
     items.push(["Localisation", data.city || state.contact.location]);
   }
   if (!pumpingProject) {
+    if (data.meter_type) items.push(["Compteur", data.meter_type === "mecanique" ? "Mécanique" : "Numérique"]);
+    if (data.phase) items.push(["Réseau", data.phase === "triphase" ? "Triphasé" : "Monophasé"]);
+    if (data.monthly_consumption_kwh) items.push(["Consommation mensuelle", `${formatNumber(data.monthly_consumption_kwh)} kWh / mois`]);
     if (data.daily_kwh) items.push(["Consommation", `${formatNumber(data.daily_kwh)} kWh / jour`]);
     if (data.monthly_kwh) items.push(["Consommation mensuelle", `${formatNumber(data.monthly_kwh)} kWh / mois`]);
     if (data.peak_kw) items.push(["Puissance simultanée", `${formatNumber(data.peak_kw)} kW`]);
@@ -1840,7 +1694,7 @@ function buildApiPayload() {
     }
   }
 
-  if (project !== "pumping" && !data.city && state.contact.location) {
+  if (!["pumping", "photovoltaic"].includes(project) && !data.city && state.contact.location) {
     data.city = state.contact.location;
   }
   if (projectUsesLoadLibrary(project, state.answers) && state.loads.length) {
@@ -1885,7 +1739,7 @@ async function calculate() {
 function renderAnalysisStep() {
   const analysisSteps = [
     "Besoin énergétique analysé",
-    "Données locales prises en compte",
+    "Règles HeliAntha appliquées",
     "Dimensionnement effectué",
     "Catalogue HeliAntha analysé",
     "Compatibilités vérifiées",

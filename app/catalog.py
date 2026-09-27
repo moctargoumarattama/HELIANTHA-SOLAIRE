@@ -15,6 +15,8 @@ from collections.abc import Mapping
 from typing import Any
 from urllib.parse import urlparse
 
+from .pump_catalog_data import PUMP_OUTLET_DIAMETERS
+
 
 CATALOG_CATEGORIES = {
     "panels": {
@@ -98,6 +100,7 @@ TECHNICAL_FIELDS = {
     "pumps": [
         {"key": "power_hp", "label": "Puissance", "kind": "number", "unit": "CV", "required": True},
         {"key": "power_kw", "label": "Puissance", "kind": "number", "unit": "kW"},
+        {"key": "outlet_diameter", "label": "Sortie de refoulement", "kind": "choice", "choices": PUMP_OUTLET_DIAMETERS},
         {"key": "phases", "label": "Phase", "kind": "choice", "choices": ("monophase", "triphase")},
         {"key": "voltage_v", "label": "Tension", "kind": "number", "unit": "V"},
         {"key": "current_a", "label": "Courant", "kind": "number", "unit": "A"},
@@ -526,6 +529,8 @@ def product_completeness(product: Mapping[str, Any]) -> dict[str, Any]:
     }
     if category in capability_by_category:
         checks.append(capability_by_category[category])
+    if category == "pumps":
+        checks.append(("Sortie de refoulement", specs.get("outlet_diameter")))
     for field in TECHNICAL_FIELDS.get(category, []):
         if field.get("required"):
             field_value = (

@@ -33,30 +33,15 @@ from app.pumping_rules import (
 from app.parameter_views import format_display_value
 from app.services import BOMBuilder, CompatibilityChecker, PricingEngine as ServicePricingEngine, ProductSelector
 from app.services.compatibility import as_float, normalize_text, spec_value
+from app.services.ongrid_service import calculate_ongrid
+from app.services.pump_pricing import calculate_pump_sale_price
 from app.services.pump_selector import NO_STANDARD_PUMP_MESSAGE, select_pump_for_duty
 
 
-PSH_BY_CITY = {
-    "casablanca": 5.1,
-    "rabat": 5.0,
-    "marrakech": 5.8,
-    "agadir": 5.7,
-    "ouarzazate": 6.2,
-    "fes": 5.3,
-    "fès": 5.3,
-    "tanger": 4.8,
-    "laayoune": 6.0,
-    "laâyoune": 6.0,
-}
-
 MAIN_EQUIPMENT_CATEGORIES = {
     "panels",
-    "batteries",
-    "inverters",
     "pumps",
     "drives",
-    "ev_chargers",
-    "thermal",
 }
 
 
@@ -171,6 +156,7 @@ class ContextView:
             if "pumping_solar_rules" in context
             else default_pumping_rules
         )
+        self.ongrid_parameters = deepcopy(context.get("ongrid_parameters") or {})
         self.reference = dict(context.get("technical_reference") or TECHNICAL_REFERENCE)
 
     @staticmethod
@@ -312,17 +298,6 @@ class ContextView:
             "technical_specs": {"surface_m2": 2.6},
         }
 
-    def psh_source(self, city: str) -> dict[str, Any]:
-        normalized = city.strip().lower()
-        if normalized in PSH_BY_CITY:
-            return {
-                "value": PSH_BY_CITY[normalized],
-                "source_type": "local_data",
-                "source_name": f"Ville: {city.strip() or normalized}",
-                "source_reference": "base_locale_psh",
-            }
-        return self.parameter_source("productible_default_psh", 5.4)
-
     def pumping_rule_rows(self, rule_type: str | None = None) -> list[dict[str, Any]]:
         rows = list(self.pumping_rules.values())
         if rule_type:
@@ -340,6 +315,15 @@ class ContextView:
 
     def pumping_rule(self, rule_type: str, **criteria: Any) -> dict[str, Any] | None:
         return find_pumping_rule(self.pumping_rule_rows(rule_type), rule_type, **criteria)
+
+    def pump_sale_parameters(self) -> dict[str, Any]:
+        rule = self.pumping_rule("pump_sale_parameters") or {}
+        return {
+            "coefficient_1": rule.get("coefficient_1", 0.5),
+            "coefficient_2": rule.get("coefficient_2", 1.3),
+            "vat_rate": rule.get("vat_rate", 0.20),
+            "source_rule_key": rule.get("rule_key") or "pump-sale-parameters",
+        }
 
 
 class PricingEngine:
@@ -394,11 +378,7 @@ class CalculationEngine:
     def calculate(self, project: str, data: dict[str, Any], context: dict[str, Any] | None = None) -> dict[str, Any]:
         calculators: dict[str, Callable[[dict[str, Any], ContextView], CalculationResult]] = {
             "pumping": self._pumping,
-            "offgrid": self._offgrid,
-            "ongrid": self._ongrid,
-            "hybrid": self._hybrid,
-            "ev": self._ev,
-            "thermal": self._thermal,
+            "photovoltaic": self._photovoltaic,
         }
         if project not in calculators:
             raise ValidationError("Type de projet non reconnu.")
@@ -493,6 +473,33 @@ class CalculationEngine:
         data: dict[str, Any],
         cfg: ContextView,
     ) -> CalculationResult:
+        if project == "photovoltaic":
+            bom = {
+                "version": "ongrid-1.0",
+                "lines": technical.selected_equipment,
+                "material_total": round(sum(float(line.get("total_price") or 0) for line in technical.selected_equipment), 2),
+                "currency": "DH",
+                "line_count": len(technical.selected_equipment),
+                "unpriced_line_count": 0,
+                "manual_validation_line_count": 0,
+                "warnings": [],
+            }
+            technical.intermediate_results["bom"] = bom
+            technical.intermediate_results["technical_configuration"] = {
+                "sections": [
+                    {
+                        "title": "Configuration On-Grid",
+                        "items": [
+                            {"label": "Panneaux", "value": f"{technical.final_results.get('panel_count')} x {technical.final_results.get('panel_power_w')} W"},
+                            {"label": "Strings", "value": " + ".join(str(item) for item in technical.final_results.get("string_layout") or [])},
+                            {"label": "Onduleur", "value": f"{technical.final_results.get('inverter_power_kw')} kW"},
+                        ],
+                    }
+                ]
+            }
+            technical.intermediate_results["compatibility"] = {"status": "compatible", "checks": []}
+            technical.intermediate_results["product_selections"] = {}
+            return technical
         selector = ProductSelector(cfg.all_products, self.compatibility)
         bundle = self._catalog_bundle(project, technical, data, cfg, selector)
         bom = self.bom_builder.build(
@@ -692,182 +699,7 @@ class CalculationEngine:
                 selected_product=selected_product,
             )
 
-        if project == "ongrid":
-            roof_area = float(final.get("roof_area_m2") or 0) or None
-            panel_selection = selector.select_panel(float(final.get("pv_target_kwp") or final.get("pv_power_kwp") or 0), roof_area_m2=roof_area)
-            selections["panel"] = panel_selection
-            panel_product = panel_selection.get("selected_product") or cfg.panel()
-            panel_power_source = cfg.product_value_or_parameter(
-                panel_product,
-                "power_w",
-                "pv_panel_default_w",
-                float(final.get("panel_power_w") or cfg.p("pv_panel_default_w", 590)),
-            )
-            panels = int(panel_selection.get("quantity") or final.get("panels") or 0)
-            installed_kwp = panels * panel_power_source["value"] / WATTS_PER_KILOWATT if panels else float(final.get("pv_power_kwp") or 0)
-            resolved_sources["pv_panel_default_w"] = self._resolved_source(
-                "Puissance panneau utilisee",
-                panel_power_source,
-                display_kind="power_w",
-                key="pv_panel_default_w",
-                category="Photovoltaique",
-                role="Produit ou valeur de secours",
-            )
-            final_updates.update({
-                "panel_power_w": panel_power_source["value"],
-                "panels": panels or final.get("panels"),
-                "panel_count_theoretical": float(final.get("pv_target_kwp") or 0) * WATTS_PER_KILOWATT / max(panel_power_source["value"], 1),
-                "pv_power_kwp": installed_kwp or final.get("pv_power_kwp"),
-                "installed_power_kwp": installed_kwp or final.get("pv_power_kwp"),
-            })
-            inverter_selection = selector.select_inverter(
-                (installed_kwp or float(final.get("pv_power_kwp") or 0)) / max(cfg.p("pv_dc_ac_ratio_max", 1.30), 0.1),
-                project=project,
-                installed_pv_kwp=installed_kwp or float(final.get("pv_power_kwp") or 0),
-                panel=panel_product if panel_selection.get("selected_product") else None,
-                panel_count=panels or None,
-                dc_ac_ratio_min=cfg.p("pv_dc_ac_ratio_min", 0.80),
-                dc_ac_ratio_max=cfg.p("pv_dc_ac_ratio_max", 1.30),
-            )
-            selections["inverter"] = inverter_selection
-            inverter_product = inverter_selection.get("selected_product")
-            final_updates["inverter_selected_kw"] = float((inverter_product or {}).get("power_kw") or (inverter_product or {}).get("rated_power_kw") or final.get("inverter_selected_kw") or 0)
-            maybe_support("structure", "structures", "Support des modules photovoltaiques.", quantity=max(1, panels))
-            maybe_support("protection_dc", "protections", "Protection DC du champ photovoltaique.", tokens=("dc",))
-            maybe_support("protection_ac", "protections", "Protection AC du tableau et de l'onduleur.", tokens=("ac",))
-            maybe_support("cable_dc", "cables", "Cable DC photovoltaique de liaison.")
-            compat_items["panel_inverter"] = inverter_selection.get("compatibility") or {}
-            technical_configuration["sections"].append({
-                "title": "Configuration photovoltaique retenue",
-                "items": [
-                    {"label": "Panneau retenu", "value": self._product_label(panel_product), "details": "; ".join(panel_selection.get("reasons") or [])},
-                    {"label": "Onduleur retenu", "value": self._product_label(inverter_product), "details": "; ".join(inverter_selection.get("reasons") or [])},
-                ],
-            })
-            calculation_blocks.append(self._calc_block("Selection catalogue", [
-                self._calc_item("Panneau retenu", self._product_label(panel_product), formula=f"Score {panel_selection.get('selection_score', 0)}/100", note=" ; ".join(panel_selection.get("reasons", [])[:2])),
-                self._calc_item("Onduleur retenu", self._product_label(inverter_product), formula=f"Score {inverter_selection.get('selection_score', 0)}/100", note=" ; ".join(inverter_selection.get("reasons", [])[:2])),
-            ]))
-
-        elif project in {"offgrid", "hybrid"}:
-            daily = float(final.get("energy_reference_kwh_day") or final.get("daily_consumption_kwh") or 0)
-            autonomy = float(final.get("autonomy_days") or 1)
-            battery_margin = cfg.p("battery_capacity_margin", 0.10)
-            battery_selection = selector.select_battery(
-                daily * autonomy,
-                battery_margin=battery_margin,
-                fallback_dod=cfg.p("battery_dod", 0.80),
-                fallback_efficiency=cfg.p("battery_efficiency", 0.93),
-                required_power_kw=float(final.get("peak_load_kw") or 0),
-            )
-            selections["battery"] = battery_selection
-            battery_product = battery_selection.get("selected_product")
-            battery_qty = int(battery_selection.get("quantity") or 0)
-            battery_dod_source = cfg.product_value_or_parameter(
-                battery_product,
-                ("depth_of_discharge", "dod_percent", "battery_dod"),
-                "battery_dod",
-                cfg.p("battery_dod", 0.80),
-            )
-            battery_eff_source = cfg.product_value_or_parameter(
-                battery_product,
-                ("round_trip_efficiency", "efficiency_percent", "efficiency"),
-                "battery_efficiency",
-                cfg.p("battery_efficiency", 0.93),
-            )
-            battery_theoretical = daily * autonomy / max(battery_dod_source["value"] * battery_eff_source["value"], 0.1)
-            battery_target = battery_theoretical * (1 + battery_margin)
-            battery_unit = float((battery_product or {}).get("capacity_kwh") or 0)
-            final_updates.update({
-                "battery_dod": battery_dod_source["value"],
-                "battery_efficiency": battery_eff_source["value"],
-                "battery_theoretical_kwh": battery_theoretical,
-                "battery_target_kwh": battery_target,
-                "battery_commercial_kwh": (battery_qty * battery_unit) or final.get("battery_commercial_kwh"),
-                "battery_configuration": (
-                    f"{battery_qty} module(s) x {battery_unit:.2f} kWh"
-                    if battery_qty and battery_unit else final.get("battery_configuration", "A confirmer")
-                ),
-            })
-            resolved_sources["battery_dod"] = self._resolved_source(
-                "Part utilisable batterie utilisee",
-                battery_dod_source,
-                display_kind="percent",
-                key="battery_dod",
-                category="Batteries",
-                role="Produit ou valeur de secours",
-            )
-            resolved_sources["battery_efficiency"] = self._resolved_source(
-                "Rendement batterie utilise",
-                battery_eff_source,
-                display_kind="percent",
-                key="battery_efficiency",
-                category="Batteries",
-                role="Produit ou valeur de secours",
-            )
-
-            panel_selection = selector.select_panel(float(final.get("pv_target_kwp") or final.get("pv_power_kwp") or 0))
-            selections["panel"] = panel_selection
-            panel_product = panel_selection.get("selected_product") or cfg.panel()
-            panel_power_source = cfg.product_value_or_parameter(
-                panel_product,
-                "power_w",
-                "pv_panel_default_w",
-                float(final.get("panel_power_w") or cfg.p("pv_panel_default_w", 590)),
-            )
-            panels = int(panel_selection.get("quantity") or final.get("panels") or 0)
-            installed_kwp = panels * panel_power_source["value"] / WATTS_PER_KILOWATT if panels else float(final.get("pv_power_kwp") or 0)
-            final_updates.update({
-                "panel_power_w": panel_power_source["value"],
-                "panels": panels or final.get("panels"),
-                "panel_count_theoretical": float(final.get("pv_target_kwp") or 0) * WATTS_PER_KILOWATT / max(panel_power_source["value"], 1),
-                "pv_power_kwp": installed_kwp or final.get("pv_power_kwp"),
-                "installed_power_kwp": installed_kwp or final.get("pv_power_kwp"),
-            })
-            resolved_sources["pv_panel_default_w"] = self._resolved_source(
-                "Puissance panneau utilisee",
-                panel_power_source,
-                display_kind="power_w",
-                key="pv_panel_default_w",
-                category="Photovoltaique",
-                role="Produit ou valeur de secours",
-            )
-            inverter_selection = selector.select_inverter(
-                float(final.get("inverter_calculated_kw") or final.get("inverter_selected_kw") or 0),
-                project=project,
-                installed_pv_kwp=installed_kwp or float(final.get("pv_power_kwp") or 0),
-                panel=panel_product if panel_selection.get("selected_product") else None,
-                panel_count=panels or None,
-                battery=battery_product,
-                battery_quantity=max(1, battery_qty),
-                required_battery_power_kw=float(final.get("peak_load_kw") or 0),
-                dc_ac_ratio_min=cfg.p("pv_dc_ac_ratio_min", 0.80),
-                dc_ac_ratio_max=cfg.p("pv_dc_ac_ratio_max", 1.30),
-            )
-            selections["inverter"] = inverter_selection
-            inverter_product = inverter_selection.get("selected_product")
-            final_updates["inverter_selected_kw"] = float((inverter_product or {}).get("power_kw") or (inverter_product or {}).get("rated_power_kw") or final.get("inverter_selected_kw") or 0)
-            maybe_support("structure", "structures", "Support des modules photovoltaiques.", quantity=max(1, panels))
-            maybe_support("protection_dc", "protections", "Protection DC du champ photovoltaique.", tokens=("dc",))
-            maybe_support("protection_ac", "protections", "Protection AC du tableau et de l'onduleur.", tokens=("ac",))
-            maybe_support("cable_dc", "cables", "Cable DC photovoltaique de liaison.")
-            maybe_support("cable_battery", "cables", "Cable batterie / onduleur.")
-            compat_items["battery_inverter"] = inverter_selection.get("compatibility") or {}
-            technical_configuration["sections"].append({
-                "title": "Configuration electrique retenue",
-                "items": [
-                    {"label": "Panneau retenu", "value": self._product_label(panel_product), "details": "; ".join(panel_selection.get("reasons") or [])},
-                    {"label": "Batterie retenue", "value": self._product_label(battery_product), "details": "; ".join(battery_selection.get("reasons") or [])},
-                    {"label": "Onduleur retenu", "value": self._product_label(inverter_product), "details": "; ".join(inverter_selection.get("reasons") or [])},
-                ],
-            })
-            calculation_blocks.append(self._calc_block("Selection catalogue", [
-                self._calc_item("Panneau retenu", self._product_label(panel_product), formula=f"Score {panel_selection.get('selection_score', 0)}/100", note=" ; ".join(panel_selection.get("reasons", [])[:2])),
-                self._calc_item("Batterie retenue", self._product_label(battery_product), formula=f"Score {battery_selection.get('selection_score', 0)}/100", note=" ; ".join(battery_selection.get("reasons", [])[:2])),
-                self._calc_item("Onduleur retenu", self._product_label(inverter_product), formula=f"Score {inverter_selection.get('selection_score', 0)}/100", note=" ; ".join(inverter_selection.get("reasons", [])[:2])),
-            ]))
-
-        elif project == "pumping":
+        if project == "pumping":
             pump_rule_key = final.get("pumping_rule_key")
             pump_rule_mode = str(final.get("pump_rule_mode") or "").strip().lower()
             recommended_curve_mode = pump_rule_mode == "recommended_curve"
@@ -875,6 +707,8 @@ class CalculationEngine:
             pump_cv_label = f"{pump_cv:.1f}".rstrip("0").rstrip(".")
             pump_designation = f"Pompe solaire {pump_cv_label} CV" if pump_cv > 0 else "Pompe solaire"
             selected_pump = None
+            pump_sale = None
+            selected_outlet_diameter = ""
 
             if recommended_curve_mode:
                 selected_pump = find_catalog_product_by_identity(
@@ -883,30 +717,55 @@ class CalculationEngine:
                 )
                 if not selected_pump:
                     raise ValidationError("Pompe catalogue introuvable pour le besoin sélectionné.")
+                sale_parameters = cfg.pump_sale_parameters()
+                pump_internal_pt = float(
+                    selected_pump.get("sale_price")
+                    or final.get("selected_pump_internal_price")
+                    or final.get("selected_pump_price")
+                    or 0
+                )
+                pump_sale = calculate_pump_sale_price(
+                    pump_internal_pt,
+                    sale_parameters["coefficient_1"],
+                    sale_parameters["coefficient_2"],
+                    sale_parameters["vat_rate"],
+                )
+                selected_outlet_diameter = str(
+                    spec_value(selected_pump, "outlet_diameter", "discharge_outlet")
+                    or final.get("selected_outlet_diameter")
+                    or ""
+                ).strip()
                 pump_snapshot = deepcopy(selected_pump)
                 pump_snapshot["reference"] = ""
+                pump_snapshot["sale_price"] = pump_sale["price_ht"]
                 pump_snapshot["description"] = pump_designation
                 pump_snapshot["technical_specs"] = deepcopy(pump_snapshot.get("technical_specs") or {})
                 if pump_cv > 0:
                     pump_snapshot["technical_specs"]["power_hp"] = pump_cv
-                if final.get("pump_price_tax_basis"):
-                    pump_snapshot["technical_specs"]["price_tax_basis"] = final.get("pump_price_tax_basis")
+                if selected_outlet_diameter:
+                    pump_snapshot["technical_specs"]["outlet_diameter"] = selected_outlet_diameter
+                pump_snapshot["technical_specs"].update({
+                    "price_tax_basis": "internal_pt",
+                    "internal_price_pt": pump_sale["internal_pt"],
+                    "pump_sale_coefficient_1": pump_sale["coefficient_1"],
+                    "pump_sale_coefficient_2": pump_sale["coefficient_2"],
+                    "pump_sale_price_ttc": pump_sale["price_ttc"],
+                    "pump_sale_price_ht": pump_sale["price_ht"],
+                    "pump_sale_vat_amount": pump_sale["vat_amount"],
+                    "pump_sale_vat_rate": pump_sale["vat_rate"],
+                })
                 pump_selection = build_rule_selection(
                     "pump",
                     category="pumps",
                     quantity=1,
-                    unit_price_ht=float(selected_pump.get("sale_price") or final.get("selected_pump_price") or 0),
+                    unit_price_ht=pump_sale["price_ht"],
                     reference="",
                     brand=str(selected_pump.get("brand") or ""),
                     model=str(selected_pump.get("model") or ""),
                     description=pump_designation,
                     role="Pompe solaire",
                     financial_category="principal_equipment",
-                    vat_rate=(
-                        selected_pump.get("vat_rate")
-                        if selected_pump.get("vat_rate") is not None
-                        else final.get("pump_vat_rate")
-                    ),
+                    vat_rate=pump_sale["vat_rate"],
                     source_reference="",
                     source_name=" ".join(
                         part
@@ -917,7 +776,7 @@ class CalculationEngine:
                         if part
                     ).strip() or "Catalogue pompes HeliAntha",
                     technical_specs=deepcopy(pump_snapshot.get("technical_specs") or {}),
-                    price_status="catalog_price" if float(selected_pump.get("sale_price") or 0) > 0 else "to_confirm",
+                    price_status="catalog_price" if pump_sale["internal_pt"] > 0 else "to_confirm",
                     source_type="catalog",
                     selected_product=pump_snapshot,
                 )
@@ -942,17 +801,15 @@ class CalculationEngine:
                 final_updates.update({
                     "pump_power_cv": pump_cv,
                     "pump_power_kw": float(final.get("pump_power_kw") or round(pump_cv * 0.7355, 2) or 0),
-                    "selected_pump_price": float(selected_pump.get("sale_price") or final.get("selected_pump_price") or 0),
-                    "pump_vat_rate": (
-                        selected_pump.get("vat_rate")
-                        if selected_pump.get("vat_rate") is not None
-                        else final.get("pump_vat_rate")
-                    ),
-                    "pump_price_tax_basis": str(
-                        final.get("pump_price_tax_basis")
-                        or spec_value(selected_pump, "price_tax_basis")
-                        or ""
-                    ),
+                    "selected_outlet_diameter": selected_outlet_diameter,
+                    "selected_pump_internal_price": pump_sale["internal_pt"],
+                    "pump_vat_rate": pump_sale["vat_rate"],
+                    "pump_price_tax_basis": "internal_pt",
+                    "pump_sale_coefficient_1": pump_sale["coefficient_1"],
+                    "pump_sale_coefficient_2": pump_sale["coefficient_2"],
+                    "pump_sale_price_ttc": pump_sale["price_ttc"],
+                    "pump_sale_price_ht": pump_sale["price_ht"],
+                    "pump_sale_vat_amount": pump_sale["vat_amount"],
                 })
 
             if pump_rule_mode == "no_standard_pump":
@@ -1370,40 +1227,6 @@ class CalculationEngine:
                 intermediate_updates["pumping_rule_title"] = final.get("pumping_rule_title") or pump_rule_key
                 intermediate_updates["catalogue_reliability_score"] = reliability["score"]
 
-        elif project == "ev":
-            charger_selection = selector.select_ev_charger(
-                float(final.get("charger_power_kw") or 0),
-                available_power_kw=float(final.get("available_power_kw") or 0),
-                phases=str(data.get("phases") or final.get("phases") or "").lower(),
-                quantity=max(1, ceil(float(data.get("chargers") or 1))),
-            )
-            selections["ev_charger"] = charger_selection
-            charger_product = charger_selection.get("selected_product")
-            final_updates["charger_power_kw"] = float((charger_product or {}).get("power_kw") or final.get("charger_power_kw") or 0)
-            maybe_support("ev_protection", "protections", "Protection dediee a la borne EV.", tokens=("ac", "ev"))
-            maybe_support("ev_cable", "cables", "Cable borne EV.")
-            compat_items["ev_network"] = charger_selection.get("compatibility") or {}
-            technical_configuration["sections"].append({
-                "title": "Configuration borne EV retenue",
-                "items": [
-                    {"label": "Borne retenue", "value": self._product_label(charger_product), "details": "; ".join(charger_selection.get("reasons") or [])},
-                ],
-            })
-
-        elif project == "thermal":
-            tank_selection = selector.select_thermal_tank(float(final.get("tank_capacity_l") or 0))
-            collector_selection = selector.select_thermal_collector(int(final.get("collectors") or 1))
-            selections["thermal_tank"] = tank_selection
-            selections["thermal_collector"] = collector_selection
-            maybe_support("thermal_structure", "structures", "Support du systeme solaire thermique.")
-            technical_configuration["sections"].append({
-                "title": "Configuration thermique retenue",
-                "items": [
-                    {"label": "Ballon retenu", "value": self._product_label(tank_selection.get('selected_product')), "details": "; ".join(tank_selection.get("reasons") or [])},
-                    {"label": "Capteur retenu", "value": self._product_label(collector_selection.get('selected_product')), "details": "; ".join(collector_selection.get("reasons") or [])},
-                ],
-            })
-
         for component, selection in selections.items():
             warnings_list.extend(selection.get("warnings") or [])
             reliability_adjustments.extend(self._selection_reliability_adjustments(component, selection))
@@ -1749,6 +1572,75 @@ class CalculationEngine:
             "installed_kwp": installed_kwp,
         }
 
+    def _photovoltaic(self, d: dict[str, Any], cfg: ContextView) -> CalculationResult:
+        try:
+            result = calculate_ongrid(
+                d,
+                {
+                    "ongrid_parameters": cfg.ongrid_parameters,
+                    "products": cfg.all_products,
+                },
+            )
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from exc
+
+        final = result["final_results"]
+        parameters = result["parameters"]
+        inputs = result["inputs"]
+        string_layout = " + ".join(str(item) for item in final.get("string_layout") or [])
+        blocks = [
+            self._calc_block("Dimensionnement On-Grid", [
+                self._calc_item("Consommation mensuelle", f"{inputs['monthly_consumption_kwh']:.2f} kWh", note="Saisie client."),
+                self._calc_item("PSH fixe", f"{parameters['psh_hours']:.2f} h", note="Parametre administrable On-Grid, sans ville ni meteo."),
+                self._calc_item("Puissance cible", f"{final['target_kwp']:.2f} kWc", formula="(kWh/mois / 30) / PSH"),
+                self._calc_item("Panneaux", f"{final['panel_count']} x {final['panel_power_w']} W", formula="Arrondi superieur compatible strings."),
+                self._calc_item("Onduleur SolaX", f"{final['inverter_power_kw']:.2f} kW", formula="Calibre actif >= puissance DC installee."),
+            ]),
+        ]
+        return CalculationResult(
+            "photovoltaic",
+            "Installation solaire On-Grid",
+            (
+                f"{final['panel_count']} panneaux de {final['panel_power_w']} W, "
+                f"{final['installed_power_kwp']:.2f} kWc installes."
+            ),
+            inputs,
+            [
+                "PSH fixe administrable, sans ville ni meteo.",
+                "Strings equilibres selon les bornes HeliAntha.",
+                "Onduleur SolaX actif immediatement superieur ou egal a la puissance DC.",
+            ],
+            {
+                key: {
+                    "key": key,
+                    "value": value,
+                    "source_type": "heliantha",
+                    "source_name": "Regles On-Grid Admin",
+                }
+                for key, value in parameters.items()
+            },
+            {"calculation_blocks": blocks},
+            [],
+            final,
+            result["selected_equipment"],
+            CALCULATOR_VERSIONS["OnGridCalculator"],
+            [
+                {"label": "Puissance cible", "value": f"{final['target_kwp']:.2f} kWc"},
+                {"label": "Panneaux", "value": f"{final['panel_count']} x {final['panel_power_w']} W"},
+                {"label": "Puissance installee", "value": f"{final['installed_power_kwp']:.2f} kWc"},
+                {"label": "Strings", "value": string_layout},
+                {"label": "Onduleur", "value": f"{final['inverter_power_kw']:.2f} kW"},
+            ],
+            self._reliability("photovoltaic", inputs, [("monthly_consumption_kwh", 35), ("phase", 20), ("meter_type", 10)]),
+            self._steps([
+                ("Consommation", f"{inputs['monthly_consumption_kwh']:.2f} kWh/mois", "Base de dimensionnement unique."),
+                ("Strings", string_layout, "Equilibrage fixe HeliAntha."),
+                ("Chiffrage", f"{len(result['selected_equipment'])} postes", "Catalogue + forfaits administrables."),
+            ]),
+            {"ongrid_parameters": {"source_type": "heliantha", "source_name": "Base On-Grid Admin"}},
+            "photovoltaic",
+        )
+
     def _pumping(self, d: dict[str, Any], cfg: ContextView) -> CalculationResult:
         pump_existing = d.get("pump_existing") in (True, 1, "1", "true", "yes", "oui")
         existing_pump_cv = normalize_pump_cv(d.get("existing_pump_cv") or d.get("pump_power_cv") or d.get("pump_cv"))
@@ -1772,6 +1664,7 @@ class CalculationEngine:
                 0.20,
             )
             final = {
+                "pump_existing": True,
                 "pump_power_kw": pump_power_kw,
                 "pump_power_cv": existing_pump_cv,
                 "existing_pump_cv": existing_pump_cv,
@@ -2058,7 +1951,7 @@ class CalculationEngine:
         selected_cv = float(selection["selected_pump_cv"])
         duty = selection["duty"]
         price = selection.get("current_price")
-        tax_basis = str(specs.get("price_tax_basis") or "unconfirmed")
+        outlet_diameter = str(spec_value(pump, "outlet_diameter", "discharge_outlet") or "").strip()
         pump_power_kw = float(pump.get("power_kw") or specs.get("power_kw") or 0)
         result.inputs = dict(inputs)
         result.summary = (
@@ -2067,7 +1960,7 @@ class CalculationEngine:
         )
         result.assumptions = [
             "Sélection sur les points Débit/HMT des fiches HeliAntha.",
-            "Départage au plus petit CV suffisant, puis au prix Admin le plus bas à CV égal.",
+            "Départage au plus petit CV suffisant, puis au PT interne le plus bas à CV égal.",
             "Aucune interpolation hydraulique et aucune marge automatique.",
         ]
         result.final_results.pop("existing_pump_cv", None)
@@ -2078,9 +1971,9 @@ class CalculationEngine:
             "selected_pump_cv": selected_cv,
             "pump_power_cv": selected_cv,
             "pump_power_kw": pump_power_kw,
-            "selected_pump_price": price,
-            "pump_vat_rate": pump.get("vat_rate"),
-            "pump_price_tax_basis": tax_basis,
+            "selected_outlet_diameter": outlet_diameter,
+            "selected_pump_internal_price": price,
+            "pump_price_tax_basis": "internal_pt",
             "flow_m3_h": flow_m3_h,
             "hmt_m": hmt_m,
             "solar_rule_defined": True,
@@ -2089,6 +1982,7 @@ class CalculationEngine:
         result.intermediate_results.update({
             "selected_pump_id": pump.get("id"),
             "selected_pump_cv": selected_cv,
+            "selected_outlet_diameter": outlet_diameter,
             "available_hmt_m": duty["available_hmt_m"],
             "flow_interval_start_m3_h": duty["interval_start_m3_h"],
             "flow_interval_end_m3_h": duty["interval_end_m3_h"],
@@ -2102,7 +1996,7 @@ class CalculationEngine:
                 self._calc_block("Sélection sur courbe HeliAntha", [
                     self._calc_item("Intervalle de débit", f"{duty['interval_start_m3_h']:g} → {duty['interval_end_m3_h']:g} m3/h", formula="Aucune interpolation"),
                     self._calc_item("HMT disponible retenue", duty["available_hmt_m"], "m", formula="Plus faible HMT des bornes de l'intervalle"),
-                    self._calc_item("Pompe retenue", selected_cv, "CV", formula="Plus petit CV suffisant, puis prix Admin"),
+                    self._calc_item("Pompe retenue", selected_cv, "CV", formula="Plus petit CV suffisant, puis PT interne"),
                 ]),
                 self._calc_block("Configuration solaire HeliAntha", [
                     self._calc_item("Panneaux retenus", result.final_results.get("panels"), "panneaux", decimals=0, formula="Règle exacte du CV retenu"),
@@ -2129,6 +2023,7 @@ class CalculationEngine:
             role="Sélection hydraulique",
         )
         result.metrics = [
+            *([{"label": "Sortie de refoulement", "value": outlet_diameter}] if outlet_diameter else []),
             {"label": "Pompe recommandée", "value": f"{selected_cv:g} CV"},
             {"label": "Débit demandé", "value": f"{flow_m3_h:g} m³/h"},
             {"label": "HMT demandée", "value": f"{hmt_m:g} m"},
@@ -2137,25 +2032,16 @@ class CalculationEngine:
         ]
         result.reliability = self._apply_reliability_adjustments(
             self._reliability("pumping", inputs, [("flow_m3_h", 24), ("hmt_m", 24)]),
-            [("Courbe HeliAntha", 2, "passed"), ("Prix Admin courant", 0, "ok")],
+            [("Courbe HeliAntha", 2, "passed"), ("PT interne courant", 0, "ok")],
         )
         result.reasoning_steps = self._steps([
             ("Débit + HMT", f"{flow_m3_h:g} m³/h + {hmt_m:g} m", "Besoin saisi directement."),
             ("Pompes capables", f"{selection['sufficient_candidate_count']} solution(s)", "Couverture vérifiée sur les intervalles de courbe."),
             ("CV retenu", f"{selected_cv:g} CV", "Plus petit CV suffisant."),
-            ("Prix à CV égal", f"{float(price):g} DH" if price is not None else "À confirmer", "Prix courant du Catalogue Admin."),
+            ("PT à CV égal", f"{float(price):g} DH" if price is not None else "À confirmer", "Prix interne courant du Catalogue Admin."),
             ("Règle HeliAntha", str(result.final_results.get("pumping_rule_title") or ""), "Correspondance solaire exacte, sans arrondi."),
         ])
-        result.warnings = [
-            warning(
-                "PUMP_PRICE_TAX_BASIS_UNCONFIRMED",
-                "warning",
-                "La fiche source indique seulement « PRIX » : la nature HT/TTC du prix pompe reste à confirmer.",
-                "pump_price_tax_basis",
-                tax_basis,
-                "Confirmer la nature fiscale du prix depuis le Catalogue Admin.",
-            )
-        ] if tax_basis == "unconfirmed" else []
+        result.warnings = []
         return result
 
     def _recommended_pump_without_solar_rule(
@@ -2170,7 +2056,7 @@ class CalculationEngine:
         selected_cv = float(selection["selected_pump_cv"])
         duty = selection["duty"]
         price = selection.get("current_price")
-        tax_basis = str(specs.get("price_tax_basis") or "unconfirmed")
+        outlet_diameter = str(spec_value(pump, "outlet_diameter", "discharge_outlet") or "").strip()
         message = (
             f"La pompe adaptée a été identifiée à {selected_cv:g} CV, "
             "mais la configuration solaire HeliAntha correspondante doit encore être définie."
@@ -2185,15 +2071,6 @@ class CalculationEngine:
                 "Définir la règle solaire HeliAntha pour ce CV.",
             )
         ]
-        if tax_basis == "unconfirmed":
-            warnings.append(warning(
-                "PUMP_PRICE_TAX_BASIS_UNCONFIRMED",
-                "warning",
-                "La fiche source indique seulement « PRIX » : la nature HT/TTC du prix pompe reste à confirmer.",
-                "pump_price_tax_basis",
-                tax_basis,
-                "Confirmer la nature fiscale du prix depuis le Catalogue Admin.",
-            ))
         final = {
             "pump_existing": False,
             "selected_pump_id": pump.get("id"),
@@ -2201,9 +2078,9 @@ class CalculationEngine:
             "selected_pump_cv": selected_cv,
             "pump_power_cv": selected_cv,
             "pump_power_kw": float(pump.get("power_kw") or specs.get("power_kw") or 0),
-            "selected_pump_price": price,
-            "pump_vat_rate": pump.get("vat_rate"),
-            "pump_price_tax_basis": tax_basis,
+            "selected_outlet_diameter": outlet_diameter,
+            "selected_pump_internal_price": price,
+            "pump_price_tax_basis": "internal_pt",
             "flow_m3_h": flow_m3_h,
             "hmt_m": hmt_m,
             "solar_rule_defined": False,
@@ -2236,7 +2113,7 @@ class CalculationEngine:
             self._calc_block("Sélection sur courbe HeliAntha", [
                 self._calc_item("Intervalle de débit", f"{duty['interval_start_m3_h']:g} → {duty['interval_end_m3_h']:g} m3/h", formula="Aucune interpolation"),
                 self._calc_item("HMT disponible retenue", duty["available_hmt_m"], "m", formula="Plus faible HMT des bornes de l'intervalle"),
-                self._calc_item("Pompe retenue", selected_cv, "CV", formula="Plus petit CV suffisant, puis prix Admin"),
+                self._calc_item("Pompe retenue", selected_cv, "CV", formula="Plus petit CV suffisant, puis PT interne"),
                 self._calc_item("Configuration solaire", "À définir", formula=f"Aucune règle exacte pour {selected_cv:g} CV"),
             ]),
         ]
@@ -2253,6 +2130,7 @@ class CalculationEngine:
             {
                 "selected_pump_id": pump.get("id"),
                 "selected_pump_cv": selected_cv,
+                "selected_outlet_diameter": outlet_diameter,
                 "available_hmt_m": duty["available_hmt_m"],
                 "flow_interval_start_m3_h": duty["interval_start_m3_h"],
                 "flow_interval_end_m3_h": duty["interval_end_m3_h"],
@@ -2266,6 +2144,7 @@ class CalculationEngine:
             CALCULATOR_VERSIONS["PumpCalculator"],
             [
                 {"label": "Pompe recommandée", "value": f"{selected_cv:g} CV"},
+                *([{"label": "Sortie de refoulement", "value": outlet_diameter}] if outlet_diameter else []),
                 {"label": "Débit demandé", "value": f"{flow_m3_h:g} m³/h"},
                 {"label": "HMT demandée", "value": f"{hmt_m:g} m"},
                 {"label": "Configuration solaire", "value": "À définir"},
@@ -2276,766 +2155,12 @@ class CalculationEngine:
             ),
             self._steps([
                 ("Débit + HMT", f"{flow_m3_h:g} m³/h + {hmt_m:g} m", "Besoin saisi directement."),
-                ("CV retenu", f"{selected_cv:g} CV", "Plus petit CV suffisant, puis prix Admin."),
+                ("CV retenu", f"{selected_cv:g} CV", "Plus petit CV suffisant, puis PT interne Admin."),
                 ("Règle solaire", "À définir", "Aucun arrondi et aucun fallback."),
             ]),
             resolved_sources,
             "pumping",
         )
-
-    def _offgrid(self, d: dict[str, Any], cfg: ContextView) -> CalculationResult:
-        daily = max(number(d, "daily_kwh", 8), 1)
-        autonomy_source = cfg.parameter_source("autonomy_default_days", 1)
-        autonomy = max(number(d, "autonomy", autonomy_source["value"]), 0.25)
-        peak = max(number(d, "peak_kw", daily / 5), 0.5)
-        city = text(d, "city")
-        battery_margin_source = cfg.parameter_source("battery_capacity_margin", 0.10)
-        inverter_peak_source = cfg.parameter_source("inverter_peak_factor", 1.25)
-        pv_ratio_source = cfg.parameter_source("pv_performance_ratio", 0.80)
-        psh_source = cfg.psh_source(city)
-        battery_product = cfg.product("batteries")
-        battery_dod_source = cfg.parameter_source("battery_dod", 0.80)
-        battery_efficiency_source = cfg.parameter_source("battery_efficiency", 0.93)
-        for _ in range(2):
-            battery_theoretical = daily * autonomy / max(
-                battery_dod_source["value"] * battery_efficiency_source["value"],
-                0.1,
-            )
-            battery_required = battery_theoretical * (1 + battery_margin_source["value"])
-            battery_product = cfg.product("batteries", "capacity_kwh", min(battery_required, 10.24)) or cfg.product("batteries")
-            battery_dod_source = cfg.product_value_or_parameter(
-                battery_product,
-                ("depth_of_discharge", "dod", "battery_dod"),
-                "battery_dod",
-                battery_dod_source["value"],
-            )
-            battery_efficiency_source = cfg.product_value_or_parameter(
-                battery_product,
-                ("round_trip_efficiency", "efficiency", "battery_efficiency"),
-                "battery_efficiency",
-                battery_efficiency_source["value"],
-            )
-        battery_theoretical = daily * autonomy / max(
-            battery_dod_source["value"] * battery_efficiency_source["value"],
-            0.1,
-        )
-        battery_required = battery_theoretical * (1 + battery_margin_source["value"])
-        battery_product = cfg.product("batteries", "capacity_kwh", min(battery_required, 10.24)) or cfg.product("batteries")
-        battery_unit = float(battery_product.get("capacity_kwh") or 5.12) if battery_product else 5.12
-        battery_qty = max(1, ceil(battery_required / battery_unit))
-        battery_commercial = battery_qty * battery_unit
-        psh = psh_source["value"]
-        pv_theoretical = daily / max(psh * pv_ratio_source["value"], 0.1)
-        panel = cfg.panel()
-        pv_bundle = self._pv_target_bundle(pv_theoretical, panel, cfg)
-        panel_power_source = pv_bundle["panel_power_source"]
-        panels = pv_bundle["panels"]
-        pv_kwp = pv_bundle["installed_kwp"]
-        pv_target_kwp = pv_bundle["pv_target_kwp"]
-        inverter_kw = round_up(peak * inverter_peak_source["value"], 0.5)
-        inverter = cfg.product("inverters", "power_kw", inverter_kw, "hybride") or cfg.product("inverters", "power_kw", inverter_kw)
-        equipment = [self._line(panel, panels, "Champ photovoltaïque")]
-        if battery_product:
-            equipment.append(self._line(battery_product, battery_qty, "Stockage batterie"))
-        if inverter:
-            equipment.append(self._line(inverter, 1, "Onduleur/chargeur"))
-        warnings = []
-        if not d.get("daily_kwh"):
-            warnings.append(warning("CONSUMPTION_ESTIMATED", "warning", "La consommation quotidienne est estimée.", "daily_kwh", daily, "Faire un relevé détaillé des appareils."))
-        if not city:
-            warnings.append(warning("CITY_MISSING", "warning", "La ville n'est pas renseignée : productible solaire par défaut utilisé.", "city", "", "Renseigner la localisation du projet."))
-        elif psh_source["source_type"] != "local_data":
-            warnings.append(warning("PSH_FALLBACK_USED", "warning", "Aucune donnée locale d'ensoleillement n'a été trouvée pour cette ville : la valeur de secours est utilisée.", "city", city, "Prévoir une donnée locale HeliAntha ou une mesure site."))
-        if panel_power_source["source_type"] != "manufacturer":
-            warnings.append(warning("PV_PANEL_FALLBACK_USED", "warning", "Aucun panneau catalogue précis n'a été utilisé : le calcul s'appuie sur une puissance panneau de secours.", "pv_panel_default_w", panel_power_source["value"], "Vérifier le catalogue avant validation finale."))
-        if battery_dod_source["source_type"] != "manufacturer":
-            warnings.append(warning("BATTERY_DOD_FALLBACK_USED", "info", "La part utilisable batterie vient d'une valeur globale de secours et non d'une batterie produit.", "battery_dod", battery_dod_source["value"], "Utiliser la fiche technique de la batterie retenue si disponible."))
-        if battery_product is None:
-            warnings.append(warning("BATTERY_CATALOG_MISSING", "critical", "Aucune batterie catalogue n'est disponible pour matérialiser le besoin calculé.", "battery_required_kwh", battery_required, "Compléter le catalogue batteries."))
-        elif battery_commercial + 1e-6 < battery_required:
-            warnings.append(warning("BATTERY_CATALOG_LIMIT", "warning", "La batterie catalogue retenue reste inférieure à la capacité cible calculée.", "battery_required_kwh", battery_required, "Prévoir une solution catalogue supérieure."))
-        if inverter is None:
-            warnings.append(warning("INVERTER_CATALOG_MISSING", "critical", "Aucun onduleur catalogue compatible n'a été trouvé.", "inverter_calculated_kw", inverter_kw, "Compléter le catalogue onduleurs."))
-        elif float(inverter.get("power_kw") or 0) + 1e-6 < inverter_kw:
-            warnings.append(warning("INVERTER_CATALOG_LIMIT", "warning", "L'onduleur catalogue disponible est inférieur à la puissance minimale calculée.", "inverter_calculated_kw", inverter_kw, "Prévoir un modèle supérieur ou compléter le catalogue."))
-        if panels >= 40:
-            warnings.append(warning("PV_PANEL_COUNT_HIGH", "warning", "Le nombre de panneaux retenu est élevé pour une installation Off-Grid.", "panels", panels, "Vérifier les hypothèses de consommation, de site et d'autonomie."))
-        final = {
-            "daily_consumption_kwh": daily,
-            "energy_reference_kwh_day": daily,
-            "autonomy_days": autonomy,
-            "battery_dod": battery_dod_source["value"],
-            "battery_efficiency": battery_efficiency_source["value"],
-            "battery_theoretical_kwh": battery_theoretical,
-            "battery_target_kwh": battery_required,
-            "battery_commercial_kwh": battery_commercial,
-            "pv_theoretical_kwp": pv_theoretical,
-            "pv_target_kwp": pv_target_kwp,
-            "pv_power_kwp": pv_kwp,
-            "pv_loss_method": "performance_ratio_only",
-            "pv_performance_ratio_used": pv_ratio_source["value"],
-            "pv_safety_margin_used": pv_bundle["pv_margin_source"]["value"],
-            "psh_used": psh,
-            "panel_power_w": panel_power_source["value"],
-            "panel_count_theoretical": pv_bundle["panel_count_theoretical"],
-            "panels": panels,
-            "peak_load_kw": peak,
-            "inverter_calculated_kw": inverter_kw,
-            "inverter_selected_kw": float(inverter.get("power_kw") or inverter_kw) if inverter else inverter_kw,
-            "protections": "Protections DC/AC, batterie et terre prévues au chiffrage.",
-            "cabling": "Sections à confirmer selon distances réelles.",
-            "battery_configuration": f"{battery_qty} module(s) × {battery_unit:.2f} kWh",
-        }
-        metrics = [
-            {"label": "Besoin de référence", "value": f"{daily:.1f} kWh/j"},
-            {"label": "Champ PV", "value": f"{pv_kwp:.2f} kWc"},
-            {"label": "Modules", "value": f"{panels} × {panel_power_source['value']:.0f} W"},
-            {"label": "Batterie retenue", "value": f"{battery_commercial:.1f} kWh"},
-            {"label": "Onduleur", "value": f"{final['inverter_selected_kw']:.1f} kW"},
-            {"label": "Autonomie", "value": f"{autonomy:g} jour(s)"},
-        ]
-        used_keys = [
-            "pv_performance_ratio",
-            "pv_safety_margin",
-            "battery_capacity_margin",
-            "inverter_peak_factor",
-            "autonomy_default_days",
-        ]
-        if battery_dod_source["source_reference"] == "battery_dod":
-            used_keys.append("battery_dod")
-        if battery_efficiency_source["source_reference"] == "battery_efficiency":
-            used_keys.append("battery_efficiency")
-        if psh_source["source_type"] != "local_data":
-            used_keys.append("productible_default_psh")
-        if panel_power_source["source_reference"] == "pv_panel_default_w":
-            used_keys.append("pv_panel_default_w")
-        resolved_sources = {
-            "autonomy_default_days": self._resolved_source(
-                "Autonomie batterie utilisée",
-                autonomy_source,
-                display_kind="duration_days",
-                key="autonomy_default_days",
-                category="Batteries",
-                role="Règle HeliAntha",
-            ),
-            "battery_dod": self._resolved_source(
-                "Part utilisable batterie utilisée",
-                battery_dod_source,
-                display_kind="percent",
-                key="battery_dod",
-                category="Batteries",
-                role="Produit ou valeur de secours",
-            ),
-            "battery_efficiency": self._resolved_source(
-                "Rendement batterie utilisé",
-                battery_efficiency_source,
-                display_kind="percent",
-                key="battery_efficiency",
-                category="Batteries",
-                role="Produit ou valeur de secours",
-            ),
-            "battery_capacity_margin": self._resolved_source(
-                "Marge de sécurité batterie",
-                battery_margin_source,
-                display_kind="percent",
-                key="battery_capacity_margin",
-                category="Batteries",
-                role="Règle HeliAntha",
-            ),
-            "pv_performance_ratio": self._resolved_source(
-                "Performance globale photovoltaïque",
-                pv_ratio_source,
-                display_kind="percent",
-                key="pv_performance_ratio",
-                category="Photovoltaïque",
-                role="Paramètre de secours",
-            ),
-            "pv_safety_margin": self._resolved_source(
-                "Marge de dimensionnement photovoltaïque",
-                pv_bundle["pv_margin_source"],
-                display_kind="percent",
-                key="pv_safety_margin",
-                category="Photovoltaïque",
-                role="Règle HeliAntha",
-            ),
-            "productible_default_psh": self._resolved_source(
-                "Ensoleillement utilisé",
-                psh_source,
-                display_kind="psh",
-                key="productible_default_psh",
-                category="Photovoltaïque",
-                role="Donnée locale ou secours",
-            ),
-            "pv_panel_default_w": self._resolved_source(
-                "Puissance panneau utilisée",
-                panel_power_source,
-                display_kind="power_w",
-                key="pv_panel_default_w",
-                category="Photovoltaïque",
-                role="Produit ou valeur de secours",
-            ),
-            "inverter_peak_factor": self._resolved_source(
-                "Marge de puissance de l'onduleur",
-                inverter_peak_source,
-                display_kind="multiplier_margin",
-                key="inverter_peak_factor",
-                category="Onduleurs",
-                role="Règle HeliAntha",
-            ),
-        }
-        reliability = self._apply_reliability_adjustments(
-            self._reliability("offgrid", d, [("daily_kwh", 22), ("peak_kw", 16), ("autonomy", 10), ("city", 10)]),
-            [
-                ("PSH de secours", -5, "fallback") if psh_source["source_type"] != "local_data" else None,
-                ("Panneau de secours", -5, "fallback") if panel_power_source["source_type"] != "manufacturer" else None,
-                ("DoD batterie de secours", -4, "fallback") if battery_dod_source["source_type"] != "manufacturer" else None,
-            ],
-        )
-        calculation_blocks = [
-            self._calc_block("Besoin client", [
-                self._calc_item("Énergie AC journalière", daily, "kWh/j", formula=f"Besoin saisi = {self._format_decimal(daily)} kWh/j"),
-                self._calc_item("Autonomie demandée", autonomy, "jour(s)", decimals=2, formula=f"Autonomie retenue = {self._format_decimal(autonomy)} jour(s)", source=resolved_sources["autonomy_default_days"]),
-                self._calc_item("Puissance simultanée", peak, "kW", formula=f"Puissance retenue = {self._format_decimal(peak)} kW"),
-            ]),
-            self._calc_block("Données locales", [
-                self._calc_item("PSH utilisée", psh, "h/j", formula=f"PSH = {self._format_decimal(psh)} h/j", source=resolved_sources["productible_default_psh"]),
-                self._calc_item("Performance globale PV", pv_ratio_source["value"] * 100, "%", formula=f"PR = {self._format_decimal(pv_ratio_source['value'] * 100)} %", source=resolved_sources["pv_performance_ratio"]),
-                self._calc_item("Marge PV", pv_bundle["pv_margin_source"]["value"] * 100, "%", formula=f"Marge PV = {self._format_decimal(pv_bundle['pv_margin_source']['value'] * 100)} %", source=resolved_sources["pv_safety_margin"]),
-                self._calc_item("Puissance panneau utilisée", panel_power_source["value"], "W", decimals=0, formula=f"Panneau = {self._format_decimal(panel_power_source['value'], 0)} W", source=resolved_sources["pv_panel_default_w"]),
-            ]),
-            self._calc_block("Calcul photovoltaïque", [
-                self._calc_item("Besoin énergétique de référence", daily, "kWh/j", formula=f"Référence PV = {self._format_decimal(daily)} kWh/j"),
-                self._calc_item("Puissance PV théorique", pv_theoretical, "kWp", formula=f"{self._format_decimal(daily)} / ({self._format_decimal(psh)} x {self._format_decimal(pv_ratio_source['value'])}) = {self._format_decimal(pv_theoretical)} kWp"),
-                self._calc_item("Puissance PV cible", pv_target_kwp, "kWp", formula=f"{self._format_decimal(pv_theoretical)} x {self._format_decimal(1 + pv_bundle['pv_margin_source']['value'])} = {self._format_decimal(pv_target_kwp)} kWp"),
-                self._calc_item("Nombre théorique de panneaux", pv_bundle["panel_count_theoretical"], "", formula=f"{self._format_decimal(pv_target_kwp * 1000)} / {self._format_decimal(panel_power_source['value'], 0)} = {self._format_decimal(pv_bundle['panel_count_theoretical'])}"),
-                self._calc_item("Nombre retenu", panels, "panneaux", decimals=0, formula=f"Arrondi supérieur de {self._format_decimal(pv_bundle['panel_count_theoretical'])} = {panels}"),
-                self._calc_item("Puissance installée", pv_kwp, "kWp", formula=f"{panels} x {self._format_decimal(panel_power_source['value'], 0)} / 1000 = {self._format_decimal(pv_kwp)} kWp"),
-            ]),
-            self._calc_block("Calcul batterie", [
-                self._calc_item("Part utilisable utilisée", battery_dod_source["value"] * 100, "%", formula=f"DoD = {self._format_decimal(battery_dod_source['value'] * 100)} %", source=resolved_sources["battery_dod"]),
-                self._calc_item("Rendement batterie utilisé", battery_efficiency_source["value"] * 100, "%", formula=f"Rendement = {self._format_decimal(battery_efficiency_source['value'] * 100)} %", source=resolved_sources["battery_efficiency"]),
-                self._calc_item("Capacité théorique", battery_theoretical, "kWh", formula=f"{self._format_decimal(daily)} x {self._format_decimal(autonomy)} / ({self._format_decimal(battery_dod_source['value'])} x {self._format_decimal(battery_efficiency_source['value'])}) = {self._format_decimal(battery_theoretical)} kWh"),
-                self._calc_item("Capacité cible", battery_required, "kWh", formula=f"{self._format_decimal(battery_theoretical)} x {self._format_decimal(1 + battery_margin_source['value'])} = {self._format_decimal(battery_required)} kWh", source=resolved_sources["battery_capacity_margin"]),
-                self._calc_item("Capacité commerciale retenue", battery_commercial, "kWh", formula=f"{battery_qty} x {self._format_decimal(battery_unit)} = {self._format_decimal(battery_commercial)} kWh"),
-            ]),
-            self._calc_block("Calcul onduleur", [
-                self._calc_item("Puissance minimale onduleur", inverter_kw, "kW", formula=f"{self._format_decimal(peak)} x {self._format_decimal(inverter_peak_source['value'])} = {self._format_decimal(inverter_kw)} kW", source=resolved_sources["inverter_peak_factor"]),
-                self._calc_item("Onduleur retenu", final["inverter_selected_kw"], "kW", formula=f"Catalogue >= {self._format_decimal(inverter_kw)} kW"),
-            ]),
-        ]
-        return CalculationResult(
-            "offgrid",
-            "Installation autonome Off-Grid",
-            f"Production et stockage dimensionnés pour environ {daily:g} kWh consommés par jour.",
-            dict(d),
-            ["Calcul provisoire avec batteries lithium LFP.", "La correction globale photovoltaïque est actuellement portée par le Performance Ratio seul.", "Les charges critiques doivent être confirmées avant commande."],
-            cfg.used_parameters(used_keys),
-            {
-                "energy_reference_kwh_day": daily,
-                "battery_required_kwh": battery_required,
-                "battery_unit_kwh": battery_unit,
-                "pv_theoretical_kwp": pv_theoretical,
-                "pv_target_kwp": pv_target_kwp,
-                "panel_count_theoretical": pv_bundle["panel_count_theoretical"],
-                "inverter_calculated_kw": inverter_kw,
-                "calculation_blocks": calculation_blocks,
-            },
-            warnings,
-            final,
-            equipment,
-            CALCULATOR_VERSIONS["OffGridCalculator"],
-            metrics,
-            reliability,
-            self._steps([
-                ("Consommation", f"{daily:.2f} kWh/j", "Donnée client ou estimation."),
-                ("Performance PV", f"{pv_ratio_source['value']:.0%}", "Le PR porte la correction globale PV de cette version."),
-                ("Batterie", f"{battery_commercial:.2f} kWh", "Besoin × autonomie / DOD / rendement + marge."),
-                ("PV", f"{pv_kwp:.2f} kWc", "Besoin / (PSH × PR), puis marge PV."),
-                ("Onduleur", f"{final['inverter_selected_kw']:.1f} kW", "Puissance simultanée × coefficient sécurité."),
-                ("Equipement", f"{panels} panneaux, {battery_qty} batterie(s)", "Sélection catalogue actif."),
-            ]),
-            resolved_sources,
-            "offgrid",
-        )
-
-    def _ongrid(self, d: dict[str, Any], cfg: ContextView) -> CalculationResult:
-        monthly = max(number(d, "monthly_kwh", 500), 50)
-        city = text(d, "city")
-        roof_area = number(d, "roof_area", 0)
-        day_profile = text(d, "day_profile", "journée").lower()
-        psh_source = cfg.psh_source(city)
-        pv_ratio_source = cfg.parameter_source("pv_performance_ratio", 0.80)
-        annual_consumption = monthly * 12
-        target_coverage = 0.75 if "nuit" not in day_profile else 0.55
-        target_annual = annual_consumption * target_coverage
-        productible_per_kwp = psh_source["value"] * 365 * pv_ratio_source["value"]
-        pv_theoretical = target_annual / max(productible_per_kwp, 1)
-        panel = cfg.panel()
-        pv_bundle = self._pv_target_bundle(pv_theoretical, panel, cfg)
-        panel_power_source = pv_bundle["panel_power_source"]
-        panel_w = pv_bundle["panel_w"]
-        panel_area = float((panel.get("technical_specs") or {}).get("surface_m2", 2.6))
-        panels = pv_bundle["panels"]
-        pv_target_kwp = pv_bundle["pv_target_kwp"]
-        max_panels_by_area = ceil(roof_area / panel_area) if roof_area else panels
-        warnings = []
-        if roof_area and panels > max_panels_by_area:
-            warnings.append(warning("ROOF_AREA_LIMIT", "warning", "La surface disponible semble insuffisante pour le nombre de panneaux calculé.", "roof_area", roof_area, "Vérifier la toiture ou réduire la puissance retenue."))
-            panels = max(1, max_panels_by_area)
-        if not city:
-            warnings.append(warning("CITY_MISSING", "warning", "La localisation n'est pas renseignée.", "city", "", "Renseigner la ville pour améliorer le productible."))
-        elif psh_source["source_type"] != "local_data":
-            warnings.append(warning("PSH_FALLBACK_USED", "warning", "Aucune donnée locale d'ensoleillement n'a été trouvée pour cette ville : la valeur de secours est utilisée.", "city", city, "Prévoir une donnée locale HeliAntha ou une mesure site."))
-        if panel_power_source["source_type"] != "manufacturer":
-            warnings.append(warning("PV_PANEL_FALLBACK_USED", "warning", "Aucun panneau catalogue précis n'a été utilisé : le calcul s'appuie sur une puissance panneau de secours.", "pv_panel_default_w", panel_power_source["value"], "Vérifier le catalogue avant validation finale."))
-        pv_kwp = panels * panel_w / 1000
-        inverter = cfg.product("inverters", "power_kw", pv_kwp, "on-grid") or cfg.product("inverters", "power_kw", pv_kwp)
-        annual_production = round(pv_kwp * productible_per_kwp)
-        coverage = min(95, round(annual_production / annual_consumption * 100))
-        savings = round(annual_production * 1.35)
-        if inverter is None:
-            warnings.append(warning("INVERTER_CATALOG_MISSING", "critical", "Aucun onduleur catalogue compatible n'a été trouvé.", "pv_power_kwp", pv_kwp, "Compléter le catalogue onduleurs."))
-        elif float(inverter.get("power_kw") or 0) + 1e-6 < pv_kwp:
-            warnings.append(warning("INVERTER_CATALOG_LIMIT", "warning", "L'onduleur catalogue disponible est inférieur à la puissance photovoltaïque retenue.", "pv_power_kwp", pv_kwp, "Prévoir un modèle supérieur ou compléter le catalogue."))
-        if panels >= 40:
-            warnings.append(warning("PV_PANEL_COUNT_HIGH", "warning", "Le nombre de panneaux retenu est élevé pour une installation On-Grid.", "panels", panels, "Vérifier les hypothèses de consommation, de site et de surface."))
-        equipment = [self._line(panel, panels, "Champ photovoltaïque")]
-        if inverter:
-            equipment.append(self._line(inverter, 1, "Onduleur réseau"))
-        final = {
-            "monthly_consumption_kwh": monthly,
-            "annual_consumption_kwh": annual_consumption,
-            "consumption_profile": day_profile,
-            "roof_area_m2": roof_area,
-            "location": city,
-            "solar_potential_psh": psh_source["value"],
-            "productible_kwh_kwp_year": productible_per_kwp,
-            "pv_theoretical_kwp": pv_theoretical,
-            "pv_target_kwp": pv_target_kwp,
-            "pv_power_kwp": pv_kwp,
-            "pv_loss_method": "performance_ratio_only",
-            "pv_performance_ratio_used": pv_ratio_source["value"],
-            "pv_safety_margin_used": pv_bundle["pv_margin_source"]["value"],
-            "panel_power_w": panel_w,
-            "panel_count_theoretical": pv_bundle["panel_count_theoretical"],
-            "panels": panels,
-            "inverter_selected_kw": float(inverter.get("power_kw") or pv_kwp) if inverter else round_up(pv_kwp, 0.5),
-            "annual_production_kwh": annual_production,
-            "energy_coverage_percent": coverage,
-            "estimated_savings_dh_year": savings,
-            "protections": "Coffrets DC/AC, parafoudre, sectionneur et mise à la terre.",
-            "cabling": "Câblage DC/AC dimensionné après métrés.",
-        }
-        metrics = [
-            {"label": "Puissance retenue", "value": f"{pv_kwp:.2f} kWc"},
-            {"label": "Modules", "value": f"{panels} × {panel_w:.0f} W"},
-            {"label": "Production estimée", "value": f"{annual_production:,} kWh/an".replace(",", " ")},
-            {"label": "Couverture", "value": f"{coverage} %"},
-            {"label": "Economie indicative", "value": f"{savings:,.0f} DH/an".replace(",", " ")},
-            {"label": "Onduleur", "value": f"{final['inverter_selected_kw']:.1f} kW"},
-        ]
-        used_keys = ["pv_performance_ratio", "pv_safety_margin"]
-        if psh_source["source_type"] != "local_data":
-            used_keys.append("productible_default_psh")
-        if panel_power_source["source_reference"] == "pv_panel_default_w":
-            used_keys.append("pv_panel_default_w")
-        resolved_sources = {
-            "productible_default_psh": self._resolved_source(
-                "Ensoleillement utilisé",
-                psh_source,
-                display_kind="psh",
-                key="productible_default_psh",
-                category="Photovoltaïque",
-                role="Donnée locale ou secours",
-            ),
-            "pv_performance_ratio": self._resolved_source(
-                "Performance globale photovoltaïque",
-                pv_ratio_source,
-                display_kind="percent",
-                key="pv_performance_ratio",
-                category="Photovoltaïque",
-                role="Paramètre de secours",
-            ),
-            "pv_safety_margin": self._resolved_source(
-                "Marge de dimensionnement photovoltaïque",
-                pv_bundle["pv_margin_source"],
-                display_kind="percent",
-                key="pv_safety_margin",
-                category="Photovoltaïque",
-                role="Règle HeliAntha",
-            ),
-            "pv_panel_default_w": self._resolved_source(
-                "Puissance panneau utilisée",
-                panel_power_source,
-                display_kind="power_w",
-                key="pv_panel_default_w",
-                category="Photovoltaïque",
-                role="Produit ou valeur de secours",
-            ),
-        }
-        reliability = self._apply_reliability_adjustments(
-            self._reliability("ongrid", d, [("monthly_kwh", 24), ("city", 14), ("roof_area", 14), ("bill", 8)]),
-            [
-                ("PSH de secours", -5, "fallback") if psh_source["source_type"] != "local_data" else None,
-                ("Panneau de secours", -5, "fallback") if panel_power_source["source_type"] != "manufacturer" else None,
-            ],
-        )
-        calculation_blocks = [
-            self._calc_block("Besoin client", [
-                self._calc_item("Consommation mensuelle", monthly, "kWh/mois", formula=f"Consommation saisie = {self._format_decimal(monthly)} kWh/mois"),
-                self._calc_item("Consommation annuelle", annual_consumption, "kWh/an", formula=f"{self._format_decimal(monthly)} x 12 = {self._format_decimal(annual_consumption)} kWh/an"),
-                self._calc_item("Couverture cible", target_coverage * 100, "%", formula=f"Couverture cible = {self._format_decimal(target_coverage * 100)} %"),
-                self._calc_item("Besoin solaire cible", target_annual, "kWh/an", formula=f"{self._format_decimal(annual_consumption)} x {self._format_decimal(target_coverage)} = {self._format_decimal(target_annual)} kWh/an"),
-            ]),
-            self._calc_block("Données locales", [
-                self._calc_item("PSH utilisée", psh_source["value"], "h/j", formula=f"PSH = {self._format_decimal(psh_source['value'])} h/j", source=resolved_sources["productible_default_psh"]),
-                self._calc_item("Performance globale PV", pv_ratio_source["value"] * 100, "%", formula=f"PR = {self._format_decimal(pv_ratio_source['value'] * 100)} %", source=resolved_sources["pv_performance_ratio"]),
-                self._calc_item("Marge PV", pv_bundle["pv_margin_source"]["value"] * 100, "%", formula=f"Marge PV = {self._format_decimal(pv_bundle['pv_margin_source']['value'] * 100)} %", source=resolved_sources["pv_safety_margin"]),
-                self._calc_item("Puissance panneau utilisée", panel_power_source["value"], "W", decimals=0, formula=f"Panneau = {self._format_decimal(panel_power_source['value'], 0)} W", source=resolved_sources["pv_panel_default_w"]),
-            ]),
-            self._calc_block("Calcul photovoltaïque", [
-                self._calc_item("Productible annuel par kWp", productible_per_kwp, "kWh/kWp/an", formula=f"{self._format_decimal(psh_source['value'])} x 365 x {self._format_decimal(pv_ratio_source['value'])} = {self._format_decimal(productible_per_kwp)}"),
-                self._calc_item("Puissance PV théorique", pv_theoretical, "kWp", formula=f"{self._format_decimal(target_annual)} / {self._format_decimal(productible_per_kwp)} = {self._format_decimal(pv_theoretical)} kWp"),
-                self._calc_item("Puissance PV cible", pv_target_kwp, "kWp", formula=f"{self._format_decimal(pv_theoretical)} x {self._format_decimal(1 + pv_bundle['pv_margin_source']['value'])} = {self._format_decimal(pv_target_kwp)} kWp"),
-                self._calc_item("Nombre théorique de panneaux", pv_bundle["panel_count_theoretical"], "", formula=f"{self._format_decimal(pv_target_kwp * 1000)} / {self._format_decimal(panel_power_source['value'], 0)} = {self._format_decimal(pv_bundle['panel_count_theoretical'])}"),
-                self._calc_item("Nombre retenu", panels, "panneaux", decimals=0, formula=f"Arrondi supérieur de {self._format_decimal(pv_bundle['panel_count_theoretical'])} = {panels}"),
-                self._calc_item("Puissance installée", pv_kwp, "kWp", formula=f"{panels} x {self._format_decimal(panel_power_source['value'], 0)} / 1000 = {self._format_decimal(pv_kwp)} kWp"),
-            ]),
-            self._calc_block("Calcul onduleur", [
-                self._calc_item("Onduleur retenu", final["inverter_selected_kw"], "kW", formula=f"Catalogue >= {self._format_decimal(pv_kwp)} kWc"),
-                self._calc_item("Production annuelle estimée", annual_production, "kWh/an", formula=f"{self._format_decimal(pv_kwp)} x {self._format_decimal(productible_per_kwp)} = {annual_production:.0f} kWh/an"),
-                self._calc_item("Economie estimée", savings, "DH/an", formula=f"{annual_production:.0f} x 1.35 = {savings:.0f} DH/an", decimals=0),
-            ]),
-        ]
-        return CalculationResult(
-            "ongrid",
-            "Installation solaire On-Grid",
-            "Une centrale dimensionnée depuis la consommation et le potentiel solaire disponible.",
-            dict(d),
-            ["Objectif provisoire d'autoconsommation selon le profil indiqué.", "La correction globale photovoltaïque est actuellement portée par le Performance Ratio seul.", "Le tarif d'économie est indicatif."],
-            cfg.used_parameters(used_keys),
-            {
-                "target_coverage": target_coverage,
-                "target_annual_kwh": target_annual,
-                "productible_per_kwp": productible_per_kwp,
-                "pv_theoretical_kwp": pv_theoretical,
-                "pv_target_kwp": pv_target_kwp,
-                "panel_count_theoretical": pv_bundle["panel_count_theoretical"],
-                "max_panels_by_area": max_panels_by_area,
-                "calculation_blocks": calculation_blocks,
-            },
-            warnings,
-            final,
-            equipment,
-            CALCULATOR_VERSIONS["OnGridCalculator"],
-            metrics,
-            reliability,
-            self._steps([
-                ("Consommation mensuelle", f"{monthly:.0f} kWh/mois", "Donnée client."),
-                ("Consommation annuelle", f"{annual_consumption:.0f} kWh/an", "Mensuel × 12."),
-                ("Besoin solaire cible", f"{target_annual:.0f} kWh/an", "Couverture cible selon profil."),
-                ("Puissance PV théorique", f"{pv_theoretical:.2f} kWc", "Besoin cible / productible."),
-                ("Marge PV", f"{pv_bundle['pv_margin_source']['value']:.0%}", "Application unique de la marge PV."),
-                ("Nombre panneaux", f"{panels}", "Puissance cible / puissance panneau, arrondi supérieur."),
-                ("Equipement", f"Onduleur {final['inverter_selected_kw']:.1f} kW", "Sélection catalogue actif."),
-            ]),
-            resolved_sources,
-            "ongrid",
-        )
-
-    def _hybrid(self, d: dict[str, Any], cfg: ContextView) -> CalculationResult:
-        result = self._offgrid(d, cfg)
-        priority_kwh = number(d, "priority_kwh", result.final_results["daily_consumption_kwh"] * 0.65)
-        result.project = "hybrid"
-        result.title = "Installation solaire hybride"
-        result.summary = "Solaire, réseau et batterie coordonnés pour les charges prioritaires."
-        result.calculation_version = CALCULATOR_VERSIONS["HybridCalculator"]
-        result.offer_profile = "hybrid"
-        result.final_results["priority_loads"] = text(d, "objective", "Charges prioritaires")
-        result.final_results["priority_energy_kwh"] = priority_kwh
-        result.final_results["battery_sizing_basis_kwh_day"] = result.final_results["daily_consumption_kwh"]
-        result.metrics.append({"label": "Charges prioritaires", "value": f"{priority_kwh:.1f} kWh/j"})
-        result.assumptions.append("Mode hybride provisoire basé sur le dimensionnement Off-Grid adapté aux charges prioritaires.")
-        result.warnings.append(warning("HYBRID_STORAGE_SIMPLIFIED", "info", "Le stockage hybride reste actuellement dimensionné sur la consommation journalière globale. Les charges prioritaires sont affichées mais ne pilotent pas encore seules la batterie.", "priority_kwh", priority_kwh, "Une future version séparera plus finement consommation totale et charges secourues."))
-        result.intermediate_results["priority_energy_kwh"] = priority_kwh
-        result.intermediate_results["hybrid_storage_limit"] = "battery_sizing_uses_total_daily_consumption"
-        blocks = list(result.intermediate_results.get("calculation_blocks") or [])
-        blocks.append(self._calc_block("Limite actuelle du mode hybride", [
-            self._calc_item("Charges prioritaires affichées", priority_kwh, "kWh/j", formula=f"Valeur retenue = {self._format_decimal(priority_kwh)} kWh/j"),
-            self._calc_item("Base actuelle de dimensionnement batterie", result.final_results["daily_consumption_kwh"], "kWh/j", formula=f"Le calcul batterie reste base sur {self._format_decimal(result.final_results['daily_consumption_kwh'])} kWh/j", note="La separation stricte entre consommation totale et charges secourues sera une evolution future."),
-        ]))
-        result.intermediate_results["calculation_blocks"] = blocks
-        result.reasoning_steps.append({
-            "input": "Charges prioritaires",
-            "rule": "Energie prioritaire estimée ou saisie",
-            "intermediate_result": f"{priority_kwh:.2f} kWh/j",
-            "coefficient": "",
-            "technical_decision": "Configuration hybride avec secours batterie",
-            "selected_equipment": "Onduleur hybride et stockage",
-        })
-        return result
-
-    def _thermal(self, d: dict[str, Any], cfg: ContextView) -> CalculationResult:
-        people = max(ceil(number(d, "people", 4)), 1)
-        building = text(d, "building", "Maison")
-        city = text(d, "city")
-        liters_source = cfg.parameter_source("thermal_liters_per_person", 50)
-        inlet_source = cfg.parameter_source("thermal_inlet_temp", 15)
-        target_source = cfg.parameter_source("thermal_target_temp", 55)
-        losses_source = cfg.parameter_source("thermal_losses", 0.20)
-        collector_liters_source = cfg.parameter_source("thermal_collector_liters", 150)
-        daily_liters = number(d, "daily_hot_water_l", people * liters_source["value"])
-        target = target_source["value"]
-        inlet = inlet_source["value"]
-        delta = max(target - inlet, 1)
-        energy_kwh = daily_liters * delta * WATER_HEAT_WH_PER_LITER_C / 1000
-        corrected = energy_kwh * (1 + losses_source["value"])
-        tank_required = max(daily_liters, people * liters_source["value"])
-        tank = cfg.product("thermal", "capacity_l", tank_required, "ballon solaire") or cfg.product("thermal", "capacity_l", tank_required)
-        tank_capacity = float(tank.get("capacity_l") or ceil(tank_required / 50) * 50) if tank else ceil(tank_required / 50) * 50
-        collector = cfg.product("thermal", subcategory="capteur")
-        collectors = max(1, ceil(tank_capacity / collector_liters_source["value"]))
-        equipment = []
-        if tank:
-            equipment.append(self._line(tank, 1, "Ballon solaire"))
-        if collector:
-            equipment.append(self._line(collector, collectors, "Capteurs solaires thermiques"))
-        warnings = []
-        if not d.get("people") and not d.get("daily_hot_water_l"):
-            warnings.append(warning("HOT_WATER_ESTIMATED", "warning", "Le besoin en eau chaude est estimé depuis le nombre d'occupants par défaut.", "people", people, "Confirmer le profil d'utilisation."))
-        final = {
-            "building_type": building,
-            "people": people,
-            "daily_hot_water_l": daily_liters,
-            "target_temperature_c": target,
-            "inlet_temperature_c": inlet,
-            "daily_energy_kwh": energy_kwh,
-            "losses": losses_source["value"],
-            "corrected_energy_kwh": corrected,
-            "tank_capacity_l": tank_capacity,
-            "collectors": collectors,
-            "collector_surface_m2": collectors * float((collector or {}).get("technical_specs", {}).get("surface_m2", 2)),
-            "location": city,
-            "backup": text(d, "backup", "Appoint électrique à confirmer"),
-            "required_material": "Ballon, capteurs, support, raccordement hydraulique, régulation et appoint.",
-        }
-        metrics = [
-            {"label": "Besoin ECS", "value": f"{daily_liters:.0f} L/j"},
-            {"label": "Ballon retenu", "value": f"{tank_capacity:.0f} L"},
-            {"label": "Capteurs", "value": f"{collectors}"},
-            {"label": "Surface capteurs", "value": f"{final['collector_surface_m2']:.1f} m²"},
-            {"label": "Energie utile", "value": f"{corrected:.1f} kWh/j"},
-            {"label": "Bâtiment", "value": building},
-        ]
-        resolved_sources = {
-            "thermal_liters_per_person": self._resolved_source(
-                "Besoin d'eau chaude par personne",
-                liters_source,
-                display_kind="liters_per_day",
-                key="thermal_liters_per_person",
-                category="Thermique",
-                role="Règle HeliAntha",
-            ),
-            "thermal_inlet_temp": self._resolved_source(
-                "Température d'eau froide utilisée",
-                inlet_source,
-                display_kind="temperature",
-                key="thermal_inlet_temp",
-                category="Thermique",
-                role="Donnée locale ou secours",
-            ),
-            "thermal_target_temp": self._resolved_source(
-                "Température d'eau chaude visée",
-                target_source,
-                display_kind="temperature",
-                key="thermal_target_temp",
-                category="Thermique",
-                role="Règle HeliAntha",
-            ),
-            "thermal_losses": self._resolved_source(
-                "Pertes thermiques estimées",
-                losses_source,
-                display_kind="percent",
-                key="thermal_losses",
-                category="Thermique",
-                role="Règle HeliAntha",
-            ),
-            "thermal_collector_liters": self._resolved_source(
-                "Capacité couverte par capteur utilisée",
-                collector_liters_source,
-                display_kind="liters",
-                key="thermal_collector_liters",
-                category="Thermique",
-                role="Valeur de secours",
-            ),
-        }
-        return CalculationResult(
-            "thermal",
-            "Chauffe-eau solaire",
-            f"Une production d'eau chaude adaptée à {people} personne(s).",
-            dict(d),
-            ["Calcul thermique provisoire basé sur un besoin ECS par personne.", "L'appoint dépendra de l'installation existante."],
-            cfg.used_parameters(["thermal_liters_per_person", "thermal_inlet_temp", "thermal_target_temp", "thermal_losses", "thermal_collector_liters"]),
-            {"delta_temperature_c": delta, "daily_energy_kwh": energy_kwh, "corrected_energy_kwh": corrected, "tank_required_l": tank_required},
-            warnings,
-            final,
-            equipment,
-            CALCULATOR_VERSIONS["SolarThermalCalculator"],
-            metrics,
-            self._reliability("thermal", d, [("people", 18), ("building", 10), ("city", 8), ("daily_hot_water_l", 14)]),
-            self._steps([
-                ("Occupants", f"{people}", "Saisie ou valeur par défaut."),
-                ("Besoin ECS", f"{daily_liters:.0f} L/j", "Occupants × litres/personne."),
-                ("Energie", f"{corrected:.2f} kWh/j", "Volume × écart température + pertes."),
-                ("Ballon", f"{tank_capacity:.0f} L", "Capacité commerciale catalogue."),
-                ("Capteurs", f"{collectors}", "Capacité ballon / couverture par capteur."),
-            ]),
-            resolved_sources,
-            "thermal",
-        )
-
-    def _ev(self, d: dict[str, Any], cfg: ContextView) -> CalculationResult:
-        vehicle = text(d, "vehicle", "Véhicule à confirmer")
-        battery = max(number(d, "vehicle_battery", 50), 10)
-        car_ac_max = max(number(d, "vehicle_ac_max", number(d, "ac_max_power", 22)), 3.7)
-        daily_km = number(d, "daily_km", 50)
-        consumption = max(number(d, "consumption_kwh_100km", 17), 8)
-        available = max(number(d, "available_power", 7.4), 1)
-        requested = number(d, "charger_power", 0)
-        phases = text(d, "phases", text(d, "installation_type", "monophasée")).lower()
-        distance = max(number(d, "distance", 10), 1)
-        charge_efficiency_source = cfg.parameter_source("ev_charge_efficiency", 0.90)
-        safety_source = cfg.parameter_source("ev_safety_factor", 0.10)
-        phase_limit = 7.4 if "tri" not in phases else 22
-        feasible_power = min(available, car_ac_max, phase_limit)
-        choices = [7.4, 11, 22]
-        possible = [p for p in choices if p <= feasible_power + 0.01]
-        recommended = requested or (possible[-1] if possible else 7.4)
-        if requested:
-            retained = min(requested, max(feasible_power, 3.7), 22)
-            retained = min(choices, key=lambda p: abs(p - retained))
-        else:
-            retained = possible[-1] if possible else 7.4
-        charger = cfg.product("ev_chargers", "power_kw", retained)
-        daily_energy = daily_km * consumption / 100
-        recharge_time = battery * 0.8 / max(min(retained, available, car_ac_max) * charge_efficiency_source["value"], 0.1)
-        recommended_available = retained * (1 + safety_source["value"])
-        warnings = []
-        if requested and requested > feasible_power:
-            warnings.append(warning("EV_POWER_NOT_FEASIBLE", "warning", "La puissance de borne demandée dépasse la puissance compatible avec le véhicule ou l'installation.", "charger_power", requested, "Prévoir adaptation électrique ou retenir une borne plus faible."))
-        if retained > available:
-            warnings.append(warning("EV_AVAILABLE_POWER_LOW", "critical", "La puissance disponible est insuffisante pour la borne retenue.", "available_power", available, "Contrôle électrique obligatoire avant devis."))
-        elif available + 1e-6 < recommended_available:
-            warnings.append(warning("EV_SAFETY_MARGIN_LOW", "warning", "La puissance électrique disponible est inférieure à la puissance recommandée pour cette borne avec la marge de sécurité configurée.", "available_power", available, "Vérification électrique recommandée avant validation de la borne."))
-        if charger is None:
-            warnings.append(warning("EV_CATALOG_MISSING", "warning", "Aucune borne catalogue exacte n'a été trouvée pour cette puissance.", "charger_power", retained, "Compléter le catalogue bornes EV."))
-        equipment = []
-        if charger:
-            equipment.append(self._line(charger, max(1, ceil(number(d, "chargers", 1))), "Borne de recharge AC"))
-        final = {
-            "vehicle": vehicle,
-            "vehicle_battery_kwh": battery,
-            "vehicle_ac_max_kw": car_ac_max,
-            "daily_km": daily_km,
-            "consumption_kwh_100km": consumption,
-            "daily_energy_kwh": daily_energy,
-            "available_power_kw": available,
-            "requested_power_kw": requested,
-            "theoretical_recommended_kw": recommended,
-            "charger_power_kw": retained,
-            "recommended_available_power_kw": recommended_available,
-            "ev_safety_factor_used": safety_source["value"],
-            "recharge_time_h": recharge_time,
-            "phases": "Triphasée" if "tri" in phases else "Monophasée",
-            "distance_panel_charger_m": distance,
-            "cable": f"Câble borne EV sur environ {distance:g} m",
-            "protection": "Disjoncteur différentiel dédié, coffret et mise à la terre.",
-            "accessories": "Support, signalétique et mise en service.",
-        }
-        metrics = [
-            {"label": "Borne retenue", "value": f"{retained:g} kW AC"},
-            {"label": "Puissance disponible", "value": f"{available:g} kW"},
-            {"label": "Véhicule", "value": vehicle},
-            {"label": "Recharge 20-100 %", "value": f"≈ {recharge_time:.1f} h"},
-            {"label": "Distance", "value": f"{distance:g} m"},
-            {"label": "Alimentation", "value": final["phases"]},
-        ]
-        resolved_sources = {
-            "ev_charge_efficiency": self._resolved_source(
-                "Rendement de recharge utilisé",
-                charge_efficiency_source,
-                display_kind="percent",
-                key="ev_charge_efficiency",
-                category="Borne EV",
-                role="Valeur de secours",
-            ),
-            "ev_safety_factor": self._resolved_source(
-                "Marge de sécurité EV disponible",
-                safety_source,
-                display_kind="percent",
-                key="ev_safety_factor",
-                category="Borne EV",
-                role="Règle HeliAntha",
-            ),
-        }
-        reliability = self._apply_reliability_adjustments(
-            self._reliability("ev", d, [("vehicle_battery", 14), ("available_power", 18), ("distance", 10), ("vehicle", 8), ("charger_power", 6)]),
-            [
-                ("Marge EV non respectee", -4, "warning") if available + 1e-6 < recommended_available and available + 1e-6 >= retained else None,
-            ],
-        )
-        calculation_blocks = [
-            self._calc_block("Besoin client", [
-                self._calc_item("Batterie véhicule", battery, "kWh", formula=f"Capacité retenue = {self._format_decimal(battery)} kWh"),
-                self._calc_item("Puissance demandée", requested or retained, "kW", formula=f"Demande retenue = {self._format_decimal(requested or retained)} kW"),
-                self._calc_item("Puissance disponible", available, "kW", formula=f"Puissance disponible = {self._format_decimal(available)} kW"),
-            ]),
-            self._calc_block("Vérification électrique", [
-                self._calc_item("Limite compatible", feasible_power, "kW", formula=f"min({self._format_decimal(available)}, {self._format_decimal(car_ac_max)}, {self._format_decimal(phase_limit)}) = {self._format_decimal(feasible_power)} kW"),
-                self._calc_item("Borne retenue", retained, "kW", formula=f"Famille retenue = {self._format_decimal(retained)} kW"),
-                self._calc_item("Marge de sécurité", safety_source["value"] * 100, "%", formula=f"Marge EV = {self._format_decimal(safety_source['value'] * 100)} %", source=resolved_sources["ev_safety_factor"]),
-                self._calc_item("Puissance disponible recommandée", recommended_available, "kW", formula=f"{self._format_decimal(retained)} x {self._format_decimal(1 + safety_source['value'])} = {self._format_decimal(recommended_available)} kW"),
-            ]),
-            self._calc_block("Recharge et equipement", [
-                self._calc_item("Energie quotidienne de conduite", daily_energy, "kWh/j", formula=f"{self._format_decimal(daily_km)} x {self._format_decimal(consumption)} / 100 = {self._format_decimal(daily_energy)} kWh/j"),
-                self._calc_item("Rendement de recharge", charge_efficiency_source["value"] * 100, "%", formula=f"Rendement = {self._format_decimal(charge_efficiency_source['value'] * 100)} %", source=resolved_sources["ev_charge_efficiency"]),
-                self._calc_item("Temps de recharge 20-100 %", recharge_time, "h", formula=f"{self._format_decimal(battery * 0.8)} / ({self._format_decimal(min(retained, available, car_ac_max))} x {self._format_decimal(charge_efficiency_source['value'])}) = {self._format_decimal(recharge_time)} h"),
-                self._calc_item("Borne catalogue retenue", charger.get("model", "Borne EV") if charger else "A confirmer", formula=f"Selection catalogue autour de {self._format_decimal(retained)} kW"),
-            ]),
-        ]
-        return CalculationResult(
-            "ev",
-            "Borne de recharge véhicule électrique",
-            "Une borne AC adaptée au véhicule, au lieu et à l'alimentation disponible.",
-            dict(d),
-            ["Compatibilité véhicule et installation à vérifier sur site.", "Puissances 7,4 / 11 / 22 kW traitées comme familles de bornes AC."],
-            cfg.used_parameters(["ev_charge_efficiency", "ev_safety_factor"]),
-            {
-                "phase_limit_kw": phase_limit,
-                "feasible_power_kw": feasible_power,
-                "daily_energy_kwh": daily_energy,
-                "charge_efficiency": charge_efficiency_source["value"],
-                "recommended_available_power_kw": recommended_available,
-                "calculation_blocks": calculation_blocks,
-            },
-            warnings,
-            final,
-            equipment,
-            CALCULATOR_VERSIONS["EVChargerCalculator"],
-            metrics,
-            reliability,
-            self._steps([
-                ("Batterie véhicule", f"{battery:.1f} kWh", "Donnée véhicule."),
-                ("Puissance compatible", f"{feasible_power:.1f} kW", "Minimum entre véhicule, réseau et phases."),
-                ("Borne retenue", f"{retained:g} kW", "Famille de borne compatible la plus proche."),
-                ("Marge EV", f"{safety_source['value']:.0%}", "Vérification de la puissance disponible recommandée."),
-                ("Durée recharge", f"{recharge_time:.1f} h", "80 % batterie / puissance utile."),
-                ("Equipement", charger.get("model", "Borne EV") if charger else "Borne EV", "Sélection catalogue actif."),
-            ]),
-            resolved_sources,
-            "ev",
-        )
-
 
     def _offers(self, technical: CalculationResult, cfg: ContextView) -> list[dict[str, Any]]:
         variants = self._variant_specs(technical)
@@ -3054,93 +2179,33 @@ class CalculationEngine:
                 "ttc": financial["total_ttc"],
                 "selected_equipment": equipment,
                 "financial_breakdown": financial,
-                "tax_basis_confirmation_required": bool(financial.get("tax_basis_confirmation_required")),
-                "pump_price_tax_basis": financial.get("pump_price_tax_basis") or "",
             })
         return offers
 
     @staticmethod
     def _variant_specs(technical: CalculationResult) -> list[dict[str, Any]]:
-        text_by_profile = {
-            "offgrid": (
-                "Autonomie minimale valide avec capacité commerciale réduite si possible.",
-                "Configuration recommandée avec autonomie demandée.",
-                "Réserve renforcée avec capacité batterie/PV augmentée.",
-            ),
-            "hybrid": (
-                "Secours concentré sur les charges prioritaires.",
-                "Equilibre réseau, solaire et batterie recommandé.",
-                "Autonomie renforcée pour coupures plus longues.",
-            ),
-            "ongrid": (
-                "Puissance PV réduite en conservant une cohérence d'autoconsommation.",
-                "Dimensionnement recommandé depuis la consommation client.",
-                "Production renforcée si surface et budget le permettent.",
-            ),
-            "pumping": (
-                "Champ PV minimal autour de la pompe retenue.",
-                "Dimensionnement recommandé avec marge de pompage.",
-                "Champ PV renforcé pour meilleurs débits en conditions difficiles.",
-            ),
-            "thermal": (
-                "Ballon/capteurs minimum adaptés au besoin estimé.",
-                "Configuration équilibrée pour usage quotidien.",
-                "Réserve renforcée pour confort et usage intensif.",
-            ),
-            "ev": (
-                "Borne compatible au plus proche de la puissance disponible.",
-                "Borne recommandée pour le véhicule et l'installation.",
-                "Pré-équipement renforcé si l'installation le permet.",
-            ),
-        }
-        essential, optimal, performance = text_by_profile.get(technical.offer_profile, text_by_profile["ongrid"])
+        if technical.project == "photovoltaic":
+            return [
+                {
+                    "name": "Solution On-Grid",
+                    "level": "optimal",
+                    "recommended": True,
+                    "description": "Dimensionnement On-Grid HeliAntha.",
+                    "technical_difference": "Panneaux, onduleur, strings et chiffrage selon les règles administrables.",
+                }
+            ]
+        essential = "Champ PV minimal autour de la pompe retenue."
+        optimal = "Dimensionnement recommande avec marge de pompage."
+        performance = "Champ PV renforce pour meilleurs debits en conditions difficiles."
         return [
-            {"name": "Essentiel", "level": "essential", "recommended": False, "description": "Le nécessaire, avec un budget maîtrisé.", "technical_difference": essential},
-            {"name": "Optimal", "level": "optimal", "recommended": True, "description": "Le meilleur équilibre performance et sérénité.", "technical_difference": optimal},
-            {"name": "Performance", "level": "performance", "recommended": False, "description": "Plus de réserve et une évolutivité renforcée.", "technical_difference": performance},
+            {"name": "Essentiel", "level": "essential", "recommended": False, "description": "Le necessaire, avec un budget maitrise.", "technical_difference": essential},
+            {"name": "Optimal", "level": "optimal", "recommended": True, "description": "Le meilleur equilibre performance et serenite.", "technical_difference": optimal},
+            {"name": "Performance", "level": "performance", "recommended": False, "description": "Plus de reserve et une evolutivite renforcee.", "technical_difference": performance},
         ]
 
     @staticmethod
     def _variant_equipment(equipment: list[dict[str, Any]], profile: str, level: str) -> list[dict[str, Any]]:
-        adjusted = deepcopy(equipment)
-        if profile == "pumping":
-            return adjusted
-        if level == "optimal":
-            return adjusted
-        for item in adjusted:
-            category = item.get("category")
-            if item.get("price_status") == "to_confirm" and item.get("product_id") is None:
-                continue
-            qty = float(item.get("quantity", 1) or 1)
-            if level == "essential":
-                if profile in {"offgrid", "hybrid"} and category == "batteries":
-                    item["quantity"] = max(1, qty - 1)
-                elif category == "panels" and qty > 2:
-                    item["quantity"] = max(1, qty - 1)
-                elif profile == "ev" and category == "ev_chargers":
-                    item["quantity"] = qty
-            elif level == "performance":
-                if category in {"batteries", "panels"}:
-                    item["quantity"] = qty + 1
-                elif profile in {"pumping", "ev"} and category in {"drives", "ev_chargers"}:
-                    item["quantity"] = qty
-        for item in adjusted:
-            item["total_price"] = round(float(item.get("quantity", 1)) * float(item.get("unit_price", 0)), 2)
-        return adjusted
-
-    def _pv_from_daily(self, daily_kwh: float, city: str, cfg: ContextView) -> tuple[float, int, dict[str, Any]]:
-        theoretical = self._pv_theoretical(daily_kwh, city, cfg)
-        panel = cfg.panel()
-        pv_bundle = self._pv_target_bundle(theoretical, panel, cfg)
-        return pv_bundle["installed_kwp"], pv_bundle["panels"], panel
-
-    def _pv_theoretical(self, daily_kwh: float, city: str, cfg: ContextView) -> float:
-        return daily_kwh / max(self._psh(city, cfg) * cfg.p("pv_performance_ratio", 0.80), 0.1)
-
-    @staticmethod
-    def _psh(city: str, cfg: ContextView) -> float:
-        return cfg.psh_source(city)["value"]
-
+        return deepcopy(equipment)
     @staticmethod
     def _line(product: dict[str, Any], quantity: float, role: str) -> dict[str, Any]:
         unit_price = float(product.get("sale_price") or 0)
@@ -3205,11 +2270,7 @@ class CalculationEngine:
         }
         mapping = {
             "pumping": "PumpCalculator",
-            "offgrid": "OffGridCalculator",
-            "ongrid": "OnGridCalculator",
-            "hybrid": "HybridCalculator",
-            "thermal": "SolarThermalCalculator",
-            "ev": "EVChargerCalculator",
+            "photovoltaic": "OnGridCalculator",
         }
         versions[mapping[project]] = CALCULATOR_VERSIONS[mapping[project]]
         return versions

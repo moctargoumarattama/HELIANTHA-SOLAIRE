@@ -389,6 +389,18 @@ PUMPING_SOLAR_RULE_DEFAULTS = [
         "sort_order": 20,
     },
     {
+        "rule_key": "pump-sale-parameters",
+        "rule_type": "pump_sale_parameters",
+        "title": "Paramètres de vente pompe",
+        "coefficient_1": 0.5,
+        "coefficient_2": 1.3,
+        "vat_rate": 0.20,
+        "source_type": "heliantha",
+        "source_name": "HeliAntha",
+        "active": 1,
+        "sort_order": 10,
+    },
+    {
         "rule_key": "vat-panels",
         "rule_type": "vat_pricing",
         "title": "Panneaux photovoltaïques",
@@ -399,6 +411,18 @@ PUMPING_SOLAR_RULE_DEFAULTS = [
         "source_name": "HeliAntha",
         "active": 1,
         "sort_order": 10,
+    },
+    {
+        "rule_key": "vat-transport",
+        "rule_type": "vat_pricing",
+        "title": "Transport",
+        "applies_to": "transport",
+        "vat_rate": 0.10,
+        "unit_label": "%",
+        "source_type": "heliantha",
+        "source_name": "HeliAntha",
+        "active": 1,
+        "sort_order": 15,
     },
     {
         "rule_key": "vat-others",
@@ -501,12 +525,25 @@ PUMPING_RULE_SECTIONS = [
         "addable": False,
     },
     {
+        "key": "pump_sale_parameters",
+        "title": "Paramètres de vente pompe",
+        "description": "Prix client calculé depuis le PT interne du Catalogue pompe.",
+        "icon": "DH",
+        "fields": [
+            {"key": "coefficient_1", "label": "Coefficient 1", "kind": "number", "step": "0.01"},
+            {"key": "coefficient_2", "label": "Coefficient 2", "kind": "number", "step": "0.01"},
+            {"key": "vat_rate", "label": "TVA pompe", "unit": "%", "kind": "number", "step": "0.01"},
+        ],
+        "editable": True,
+        "addable": False,
+    },
+    {
         "key": "vat_pricing",
         "title": "TVA Pompage solaire",
         "description": "TVA utilisée pour les panneaux et les autres postes du pompage.",
         "icon": "🧾",
         "fields": [
-            {"key": "applies_to", "label": "Appliquée à", "kind": "select", "options": [("panels", "Panneaux"), ("others", "Autres éléments")]},
+            {"key": "applies_to", "label": "Appliquée à", "kind": "select", "options": [("panels", "Panneaux"), ("transport", "Transport"), ("others", "Autres éléments")]},
             {"key": "vat_rate", "label": "TVA", "unit": "%", "kind": "number", "step": "0.01"},
         ],
         "editable": True,
@@ -557,6 +594,14 @@ def format_percent(value: object) -> str:
     return f"{format_decimal(number, 0)} %"
 
 
+def format_coefficient(value: object) -> str:
+    try:
+        number = float(value)
+    except Exception:
+        return "—"
+    return format_decimal(number, 2)
+
+
 def format_price(value: object | None) -> str:
     if value in (None, ""):
         return "À compléter"
@@ -584,6 +629,7 @@ def format_pricing_mode(value: object) -> str:
 def format_applies_to(value: object) -> str:
     return {
         "panels": "Panneaux",
+        "transport": "Transport",
         "others": "Autres éléments",
     }.get(str(value or ""), "À préciser")
 
@@ -620,6 +666,8 @@ def _rule_value_for_summary(rule: dict[str, object], key: str) -> str:
         return format_price(rule.get(key))
     if key == "vat_rate":
         return format_percent(rule.get(key))
+    if key in {"coefficient_1", "coefficient_2"}:
+        return format_coefficient(rule.get(key))
     if key == "phase":
         return format_phase(rule.get(key))
     if key == "pricing_mode":
@@ -661,6 +709,12 @@ def summarize_rule(rule: dict[str, object]) -> str:
     if rule_type == "installation_pricing":
         cv_range = f"{format_cv(rule.get('min_cv'))} → {format_cv(rule.get('max_cv'))}"
         return " · ".join([cv_range, format_pricing_mode(rule.get("pricing_mode")), format_price(rule.get("unit_price_ht"))])
+    if rule_type == "pump_sale_parameters":
+        return " · ".join([
+            f"Coefficient 1 {format_coefficient(rule.get('coefficient_1'))}",
+            f"Coefficient 2 {format_coefficient(rule.get('coefficient_2'))}",
+            f"TVA {format_percent(rule.get('vat_rate'))}",
+        ])
     if rule_type == "vat_pricing":
         return " · ".join([format_applies_to(rule.get("applies_to")), format_percent(rule.get("vat_rate"))])
     return "Règle HeliAntha"
@@ -682,6 +736,8 @@ def decorate_rule(rule: dict[str, object]) -> dict[str, object]:
     item["display_min_cv"] = format_cv(item.get("min_cv"))
     item["display_max_cv"] = format_cv(item.get("max_cv"))
     item["display_unit_price_ht"] = format_price(item.get("unit_price_ht"))
+    item["display_coefficient_1"] = format_coefficient(item.get("coefficient_1"))
+    item["display_coefficient_2"] = format_coefficient(item.get("coefficient_2"))
     item["display_pricing_mode"] = format_pricing_mode(item.get("pricing_mode"))
     item["display_applies_to"] = format_applies_to(item.get("applies_to"))
     item["display_vat_rate"] = format_percent(item.get("vat_rate"))
@@ -709,7 +765,7 @@ def rule_matches(rule: dict[str, object], **criteria: object) -> bool:
         if expected in (None, ""):
             continue
         value = rule.get(key)
-        if key in {"pump_cv", "panel_power_w", "drive_power_kw", "unit_price_ht", "vat_rate", "min_cv", "max_cv"}:
+        if key in {"pump_cv", "panel_power_w", "drive_power_kw", "unit_price_ht", "vat_rate", "min_cv", "max_cv", "coefficient_1", "coefficient_2"}:
             try:
                 if abs(float(value or 0) - float(expected)) > 0.05:
                     return False

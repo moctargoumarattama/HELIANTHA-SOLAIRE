@@ -1,6 +1,6 @@
 from copy import deepcopy
-from datetime import datetime, timedelta
-from json import dumps as json_dumps, loads as json_loads
+from datetime import datetime
+from json import dumps as json_dumps
 from pathlib import Path
 from random import randint
 from uuid import uuid4
@@ -23,31 +23,18 @@ from .calculators import CalculationEngine, ValidationError
 from .db import (
     dashboard_stats,
     authenticate_user,
-    get_calculation_parameter,
-    get_advisor_knowledge,
-    get_advisor_runtime_assets,
     get_product,
     get_quote,
     get_primary_admin_user,
     get_user,
     get_quote_by_number,
-    list_calculation_parameters,
-    list_calculation_parameter_history,
     list_company_settings,
-    list_pricing_rules,
     list_pumping_solar_rules,
+    list_ongrid_parameters,
     list_products,
     list_quotes,
     list_users,
-    list_advisor_unknown_messages,
-    list_advisor_learning_log,
-    list_advisor_messages,
-    list_advisor_intent_examples,
-    list_advisor_synonyms,
     load_calculation_context,
-    save_advisor_intent_example,
-    save_advisor_knowledge_item,
-    save_advisor_synonym,
     save_user,
     save_product,
     save_quote,
@@ -56,15 +43,13 @@ from .db import (
     create_pumping_solar_rule,
     delete_user,
     set_product_active,
-    update_calculation_parameter,
     update_company_setting,
-    update_advisor_unknown_status,
-    update_pricing_rule,
+    update_ongrid_parameters,
     update_pumping_solar_rule,
     update_quote_selected_offer,
     update_quote_status,
 )
-from .defaults import CATEGORY_PRESENTATION, PROJECT_LABELS, PUBLIC_PROJECTS, QUOTE_STATUSES, SOURCE_TYPES
+from .defaults import PROJECT_LABELS, PUBLIC_PROJECTS, QUOTE_STATUSES
 from .pumping_rules import (
     PUMPING_RULE_SECTIONS,
     format_cv,
@@ -76,26 +61,14 @@ from .pumping_rules import (
     normalize_pump_cv,
     parse_number,
 )
-from .parameter_views import (
-    SOURCE_OPTIONS,
-    filter_and_group_parameters,
-    format_display_value,
-    parse_display_value,
-)
-from .public_presenters import build_public_quote_payload, company_profile
-from .services.advisor import AdvisorService
-from .services.advisor.entities import extract_dynamic_matches
-from .services.advisor.intents import detect_intents
-from .services.advisor.knowledge import search_knowledge
-from .services.advisor.learning import similar_occurrence_count
-from .services.advisor.rules import contains_any, detect_project, normalize
+from .public_presenters import build_public_quote_payload, company_profile, sanitize_calculation_result_for_public
 from .services.pump_selector import NO_STANDARD_PUMP_MESSAGE, curve_head_for_flow, select_pump_for_duty
+from .services.pump_pricing import calculate_pump_sale_price
 from .wizard_projects import engine_project_for, normalize_wizard_project, wizard_projects_payload
 
 
 bp = Blueprint("main", __name__)
 engine = CalculationEngine()
-advisor_service = AdvisorService(engine)
 CATALOG_SORT_OPTIONS = [
     {"value": "catalog", "label": "Ordre catalogue"},
     {"value": "brand", "label": "Marque"},
@@ -109,6 +82,16 @@ CATALOG_STOCK_OPTIONS = [
     {"value": "available", "label": "Stock disponible"},
     {"value": "empty", "label": "Stock a confirmer / nul"},
 ]
+HIDDEN_COMPANY_SETTING_KEYS = {
+    "pdf_amount_note",
+    "pdf_check_payee",
+    "pdf_check_address",
+    "pdf_contact_phone",
+    "pdf_contact_email",
+    "pdf_footer",
+    "pdf_payment_terms",
+    "quote_validity_days",
+}
 PWA_CACHE_NAME = "heliantha-pwa-v4"
 APP_ASSET_VERSION = "20260901-1"
 PWA_ASSET_VERSION = "20260901-1"
@@ -119,103 +102,8 @@ PWA_CORE_PATHS = [
     "/static/css/admin.css",
     f"/static/js/app.js?v={APP_ASSET_VERSION}",
     "/static/js/public-result.js",
-    "/static/js/advisor.js",
     f"/static/js/pwa.js?v={PWA_ASSET_VERSION}",
 ]
-
-PRICING_RULE_PRESENTATION = {
-    "vat_rate": {
-        "title": "TVA",
-        "group": "Prix de vente",
-        "icon": "🧾",
-        "help": "Taxe appliquée au total hors taxe.",
-    },
-    "accessories_rate": {
-        "title": "Accessoires",
-        "group": "Compléments techniques",
-        "icon": "🔩",
-        "help": "Petits accessoires nécessaires autour du matériel principal.",
-    },
-    "protections_rate": {
-        "title": "Protections électriques",
-        "group": "Compléments techniques",
-        "icon": "🛡️",
-        "help": "Protections, coffrets et éléments de sécurité.",
-    },
-    "cabling_rate": {
-        "title": "Câblage",
-        "group": "Compléments techniques",
-        "icon": "🔌",
-        "help": "Câbles et raccordements estimés.",
-    },
-    "structure_rate": {
-        "title": "Structure de pose",
-        "group": "Compléments techniques",
-        "icon": "🏗️",
-        "help": "Supports, rails et éléments de fixation.",
-    },
-    "installation_base": {
-        "title": "Installation",
-        "group": "Services",
-        "icon": "🛠️",
-        "help": "Frais minimum pour la pose de l’installation.",
-    },
-    "labor_base": {
-        "title": "Main-d’œuvre",
-        "group": "Services",
-        "icon": "👷",
-        "help": "Temps de travail de base prévu pour l’équipe.",
-    },
-    "commissioning_fee": {
-        "title": "Mise en service",
-        "group": "Services",
-        "icon": "✅",
-        "help": "Contrôle et démarrage de l’installation.",
-    },
-}
-
-PRICING_GROUP_ORDER = ["Prix de vente", "Compléments techniques", "Services", "Autres"]
-PRICING_RULES_HIDDEN = {"travel_fixed", "travel_cost_per_km", "margin_rate", "study_fee", "other_costs"}
-
-ADVISOR_STATUS_LABELS = {
-    "new": "À vérifier",
-    "learned": "Validés",
-    "ignored": "Ignorés",
-}
-
-ADVISOR_PROJECT_LABELS = {
-    "pumping": "Pompage solaire",
-    "offgrid": "Site sans réseau",
-    "ongrid": "Réduire ma consommation",
-    "hybrid": "Solaire avec batteries",
-    "thermal": "Chauffage solaire",
-    "ev": "Recharge électrique",
-}
-
-ADVISOR_INTENT_LABELS = {
-    "request_visit": "Demande de visite",
-    "request_human": "Parler à quelqu’un",
-    "ask_price": "Question de prix",
-    "ask_explanation": "Question technique",
-    "ask_equipment": "Question matériel",
-    "request_quote": "Lancer une étude",
-    "change_project": "Changer de projet",
-    "start_project": "Démarrer le projet",
-    "greeting": "Bonjour",
-    "thanks": "Remerciement",
-    "give_information": "Information donnée",
-    "restart": "Reprendre le projet",
-}
-
-ADVISOR_KNOWLEDGE_LABELS = {
-    "battery": "Batteries",
-    "inverter": "Onduleur",
-    "pumping": "Pompage solaire",
-    "thermal": "Thermique",
-    "ev": "Recharge électrique",
-    "quote": "Prix et devis",
-    "general": "Réponse HeliAntha",
-}
 
 
 def _is_placeholder_equipment_line(item: dict) -> bool:
@@ -273,7 +161,9 @@ def _display_equipment_lines(lines):
         power_cv = row.get("power_cv") or specs.get("power_hp")
         if category == "pumps":
             cv_label = clean_number(power_cv, 1)
-            return f"Pompe solaire {cv_label} CV" if cv_label else "Pompe solaire"
+            outlet = str(specs.get("outlet_diameter") or row.get("outlet_diameter") or "").strip()
+            designation = f"Pompe solaire {cv_label} CV" if cv_label else "Pompe solaire"
+            return f"{designation} - Refoulement {outlet}" if outlet else designation
 
         power_w = row.get("power_w") or specs.get("power_w") or specs.get("panel_power_w")
         if component == "panel" or category == "panels":
@@ -317,6 +207,14 @@ def _display_equipment_lines(lines):
         specs = row.get("technical_specs") or {}
         row["display_reference"] = ""
         row["display_designation"] = simple_designation(row, specs)
+        unit_ht = float(row.get("unit_price") or 0)
+        total_ht = float(row.get("total_price") or 0)
+        vat_rate = float(row.get("vat_rate") or 0)
+        row["display_unit_price_ht"] = unit_ht
+        row["display_total_price_ht"] = total_ht
+        row["display_vat_rate"] = f"{clean_number(vat_rate * 100, 1)} %"
+        row["display_vat_amount"] = round(total_ht * vat_rate, 2)
+        row["display_total_ttc"] = round(total_ht + row["display_vat_amount"], 2)
         display_lines.append(row)
     return display_lines
 
@@ -332,170 +230,13 @@ def _financial_summary_rows(financial_breakdown: dict) -> list[dict]:
 
     return [
         {"label": "Matériel", "amount": total("principal_equipment")},
-        {"label": "Compléments", "amount": total("accessories", "protections", "cabling", "structure")},
+        {"label": "Compléments", "amount": total("accessories", "protections", "cabling", "structure", "transport")},
         {"label": "Pose", "amount": total("installation", "labor")},
         {"label": "Total HT", "amount": float(financial_breakdown.get("total_ht") or 0), "emphasis": True},
         {"label": "TVA", "amount": float(financial_breakdown.get("vat") or 0)},
         {"label": "Net à payer", "amount": float(financial_breakdown.get("total_ttc") or 0), "emphasis": True},
     ]
 
-
-def _advisor_status_label(status: str | None) -> str:
-    return ADVISOR_STATUS_LABELS.get(status or "new", "À vérifier")
-
-
-def _advisor_project_label(project_type: str | None) -> str:
-    if not project_type:
-        return "Projet à préciser"
-    return ADVISOR_PROJECT_LABELS.get(project_type, project_type)
-
-
-def _advisor_intent_label(intent: str | None) -> str:
-    return ADVISOR_INTENT_LABELS.get(intent or "", "À préciser")
-
-
-def _advisor_knowledge_label(category: str | None) -> str:
-    return ADVISOR_KNOWLEDGE_LABELS.get(category or "", "Réponse HeliAntha")
-
-
-def _advisor_title_from_message(message: str) -> str:
-    text = " ".join(str(message or "").split()).strip(" .,!?:;\"'«»")
-    if not text:
-        return "Nouvelle question"
-    words = text.split()
-    if len(text) <= 48:
-        return text[:1].upper() + text[1:]
-    return " ".join(words[:6]).rstrip(" ,;:") + "…"
-
-
-def _advisor_keywords_from_message(message: str) -> str:
-    tokens = []
-    for token in normalize(message).split():
-        if len(token) < 4:
-            continue
-        if token in {"avec", "sans", "pour", "dans", "votre", "votre", "cette", "cela", "quand", "comment", "pourquoi"}:
-            continue
-        if token not in tokens:
-            tokens.append(token)
-    return ", ".join(tokens[:5])
-
-
-def _advisor_context(item: dict) -> dict:
-    try:
-        context = json_loads(item.get("context_json") or "{}")
-    except Exception:
-        context = {}
-    return context if isinstance(context, dict) else {}
-
-
-def _build_advisor_suggestion(item: dict, runtime_assets: dict) -> dict:
-    original = str(item.get("original_message") or "").strip()
-    normalized = str(item.get("normalized_message") or normalize(original))
-    context = _advisor_context(item)
-    detected_project = (
-        item.get("project_type")
-        or context.get("project_type")
-        or (detect_project(original, runtime_assets.get("synonyms"), runtime_assets.get("intent_examples")) or {}).get("project")
-        or ""
-    )
-    intents = detect_intents(original, runtime_assets.get("intent_examples") or [])
-    top_intent = intents[0]["intent"] if intents else "give_information"
-    top_confidence = intents[0]["confidence"] if intents else 0
-    knowledge_hit = search_knowledge(original, detected_project, runtime_assets.get("knowledge"))
-    synonym_hits = extract_dynamic_matches(original, runtime_assets.get("synonyms"))
-    question_like = "?" in original or contains_any(
-        normalized,
-        [
-            "comment",
-            "pourquoi",
-            "combien",
-            "c est quoi",
-            "cest quoi",
-            "dure",
-            "autonomie",
-            "pluie",
-            "fonctionne",
-            "marchent",
-            "marche",
-            "expliquer",
-        ],
-    )
-
-    if synonym_hits:
-        match = max(synonym_hits, key=lambda row: row.get("score", 0))
-        canonical_term = match.get("canonical_term") or ""
-        variant = match.get("variant") or original
-        return {
-            "mode": "synonym",
-            "title": "Expression reconnue",
-            "label": f'« {variant} » → « {canonical_term or variant} »',
-            "note": _advisor_project_label(match.get("project_type") or detected_project),
-            "primary_label": "✓ Valider",
-            "action": "save_synonym",
-            "canonical_term": canonical_term or variant,
-            "variant": variant,
-            "category": match.get("category") or "",
-            "project_type": match.get("project_type") or detected_project,
-        }
-
-    if knowledge_hit and (question_like or top_intent in {"ask_price", "ask_explanation", "ask_equipment"}):
-        question = knowledge_hit.get("question") or original
-        return {
-            "mode": "knowledge_existing",
-            "title": "Réponse HeliAntha",
-            "label": knowledge_hit.get("title") or _advisor_knowledge_label(knowledge_hit.get("category")),
-            "note": "Question fréquente déjà connue.",
-            "primary_label": "✓ Utiliser cette réponse",
-            "action": "save_knowledge",
-            "category": knowledge_hit.get("category") or "general",
-            "question": question,
-            "title_input": knowledge_hit.get("title") or _advisor_title_from_message(question),
-            "answer": knowledge_hit.get("answer") or "",
-            "keywords": knowledge_hit.get("keywords") or "",
-        }
-
-    if top_confidence >= 70 or item.get("intent") in ADVISOR_INTENT_LABELS:
-        intent = item.get("intent") or top_intent
-        return {
-            "mode": "intent",
-            "title": "Ce que le client veut faire",
-            "label": _advisor_intent_label(intent),
-            "note": _advisor_project_label(detected_project),
-            "primary_label": "✓ Valider",
-            "action": "save_intent",
-            "intent": intent,
-            "example_text": original,
-            "project_type": detected_project,
-        }
-
-    if question_like:
-        question = original or normalized
-        return {
-            "mode": "knowledge_new",
-            "title": "Nouvelle question fréquente",
-            "label": _advisor_title_from_message(question),
-            "note": _advisor_project_label(detected_project),
-            "primary_label": "Enregistrer la réponse",
-            "action": "save_knowledge",
-            "category": context.get("project_type") or detected_project or "general",
-            "question": question,
-            "title_input": _advisor_title_from_message(question),
-            "answer": "",
-            "keywords": _advisor_keywords_from_message(question),
-        }
-
-    intent = item.get("intent") or top_intent or "give_information"
-    return {
-        "mode": "intent",
-        "title": "À vérifier",
-        "label": _advisor_intent_label(intent),
-        "note": _advisor_project_label(detected_project),
-        "primary_label": "✓ Valider",
-        "action": "save_intent",
-        "intent": intent,
-        "example_text": original,
-        "project_type": detected_project,
-    }
 
 
 @bp.before_app_request
@@ -646,40 +387,13 @@ def health():
     return jsonify(status="ok", engine=engine.version)
 
 
-def _advisor_session_key():
-    if not session.get("advisor_session_key"):
-        session["advisor_session_key"] = uuid4().hex
-    return session["advisor_session_key"]
-
-
-@bp.post("/api/advisor/message")
-def advisor_message():
-    payload = request.get_json(silent=True) or {}
-    reply = advisor_service.handle_message(
-        _advisor_session_key(),
-        str(payload.get("message", "")),
-        payload.get("state") or {},
-    )
-    return jsonify(reply)
-
-
-@bp.post("/api/advisor/calculate")
-def advisor_calculate():
-    payload = request.get_json(silent=True) or {}
-    reply = advisor_service.calculate(
-        _advisor_session_key(),
-        payload.get("state") or {},
-        payload.get("contact") or {},
-    )
-    return jsonify(reply), 200 if reply.get("ok", True) else 400
-
 
 @bp.post("/api/calculate")
 def calculate():
     payload = request.get_json(silent=True) or {}
     project = normalize_wizard_project(payload.get("project_type") or payload.get("project") or "")
-    if not project:
-        return jsonify(error="Projet non reconnu."), 400
+    if project not in {"pumping", "photovoltaic"}:
+        return jsonify(error="Ce parcours est bientot disponible."), 410
     engine_project = engine_project_for(project)
     data = payload.get("data") or {}
     contact = payload.get("contact") or {}
@@ -696,7 +410,8 @@ def calculate():
     result["project_type"] = project
     save_quote(result["quote_number"], engine_project, data, contact, result)
     result["public_url"] = url_for("main.public_quote", quote_number=result["quote_number"])
-    return jsonify(result)
+    public_result = sanitize_calculation_result_for_public(result)
+    return jsonify(public_result)
 
 
 @bp.get("/simulation/<quote_number>")
@@ -715,6 +430,7 @@ def public_quote_print(quote_number):
     quote = get_quote_by_number(quote_number)
     if not quote:
         abort(404)
+    company = company_profile(list_company_settings())
     save_quote_client_event(quote["id"], quote["quote_number"], "print_view", "predevis")
     display_equipment_lines = _display_equipment_lines(quote.get("selected_equipment") or [])
     financial_summary_rows = _financial_summary_rows(quote.get("financial_breakdown") or {})
@@ -722,6 +438,7 @@ def public_quote_print(quote_number):
         "admin/quote_pdf.html",
         quote=quote,
         project_labels=PROJECT_LABELS,
+        company=company,
         display_equipment_lines=display_equipment_lines,
         financial_summary_rows=financial_summary_rows,
     )
@@ -820,6 +537,45 @@ def _method_pump_power(product):
     return normalize_pump_cv(specs.get("power_hp") or product.get("power_hp"))
 
 
+def _method_pump_outlet_diameter(product):
+    specs = product.get("technical_specs") or {}
+    return str(specs.get("outlet_diameter") or product.get("outlet_diameter") or "").strip()
+
+
+def _method_pump_sale_parameters(context):
+    rule = next(
+        (
+            dict(row)
+            for row in (context.get("pumping_solar_rules") or {}).values()
+            if row.get("rule_type") == "pump_sale_parameters" and int(row.get("active", 1) or 0) == 1
+        ),
+        {},
+    )
+    coefficient_1 = float(rule.get("coefficient_1") or 0.5)
+    coefficient_2 = float(rule.get("coefficient_2") or 1.3)
+    vat_rate = float(rule.get("vat_rate") or 0.20)
+    if vat_rate > 1:
+        vat_rate = vat_rate / 100
+    return {
+        "coefficient_1": coefficient_1,
+        "coefficient_2": coefficient_2,
+        "vat_rate": vat_rate,
+        "coefficient_1_label": _method_decimal(coefficient_1, 2),
+        "coefficient_2_label": _method_decimal(coefficient_2, 2),
+        "vat_rate_label": f"{_method_decimal(vat_rate * 100, 1)} %",
+        "formula_label": "TTC = PT x coefficient 1 x coefficient 2",
+    }
+
+
+def _method_pump_sale(product, sale_parameters):
+    return calculate_pump_sale_price(
+        product.get("sale_price"),
+        sale_parameters["coefficient_1"],
+        sale_parameters["coefficient_2"],
+        sale_parameters["vat_rate"],
+    )
+
+
 def _method_pump_curve(product):
     points = product.get("pump_curve_points") or []
     return [
@@ -843,7 +599,12 @@ def _method_active_curve_pumps(context):
         power_hp = _method_pump_power(product)
         if not curve or power_hp <= 0:
             continue
-        pumps.append({**product, "_method_power_hp": power_hp, "_method_curve": curve})
+        pumps.append({
+            **product,
+            "_method_power_hp": power_hp,
+            "_method_outlet_diameter": _method_pump_outlet_diameter(product),
+            "_method_curve": curve,
+        })
     return sorted(
         pumps,
         key=lambda item: (
@@ -896,7 +657,7 @@ def _method_policy_label(policy):
     }.get(str(policy or ""), "Débit hors courbe enregistrée.")
 
 
-def _method_candidates(pumps, flow_m3_h, hmt_m):
+def _method_candidates(pumps, flow_m3_h, hmt_m, sale_parameters):
     candidates = []
     variant_counts = {}
     for pump in pumps:
@@ -917,17 +678,25 @@ def _method_candidates(pumps, flow_m3_h, hmt_m):
             status = "Hors courbe"
             status_tone = "muted"
             reason = "Le débit demandé n'est pas couvert par les points enregistrés."
+        sale = _method_pump_sale(pump, sale_parameters)
         candidates.append({
+            "product_id": pump.get("id"),
+            "reference": pump.get("reference"),
             "cv": cv,
             "cv_label": format_cv(cv),
             "variant_index": variant_counts[cv],
+            "outlet_diameter": pump.get("_method_outlet_diameter") or "—",
             "interval_label": _method_interval_label(duty),
             "hmt_label": f"{_method_decimal(available_hmt, 1)} m" if available_hmt is not None else "—",
             "status": status,
             "status_tone": status_tone,
             "compatible": compatible,
-            "price": float(pump.get("sale_price") or 0) if pump.get("sale_price") not in (None, "") else None,
-            "price_label": format_price(pump.get("sale_price")),
+            "internal_pt": sale["internal_pt"],
+            "internal_pt_label": format_price(sale["internal_pt"]),
+            "sale_ht": sale["price_ht"],
+            "sale_ht_label": format_price(sale["price_ht"]),
+            "sale_ttc": sale["price_ttc"],
+            "sale_ttc_label": format_price(sale["price_ttc"]),
             "reason": reason,
         })
     return candidates
@@ -972,6 +741,20 @@ def _method_decision(selection, candidates, rule):
         for candidate in compatible
         if abs(candidate["cv"] - selected_cv) <= 1e-9
     ]
+    selected_product = selection.get("product") or {}
+    selected_candidate = next(
+        (
+            candidate
+            for candidate in same_cv_compatible
+            if (
+                candidate.get("product_id") and candidate.get("product_id") == selected_product.get("id")
+            )
+            or (
+                candidate.get("reference") and candidate.get("reference") == selected_product.get("reference")
+            )
+        ),
+        same_cv_compatible[0] if same_cv_compatible else None,
+    )
     compatible_cvs = []
     for candidate in compatible:
         if not any(abs(candidate["cv"] - existing) <= 1e-9 for existing in compatible_cvs):
@@ -993,7 +776,7 @@ def _method_decision(selection, candidates, rule):
     if len(same_cv_compatible) > 1:
         lines.append(
             f"{len(same_cv_compatible)} solutions {format_cv(selected_cv)} couvrent le besoin ; "
-            "le prix Admin actuel le plus faible les départage."
+            "le PT interne Admin le plus faible les départage."
         )
     if not rule:
         lines.append("La configuration solaire HeliAntha correspondante n'est pas encore définie.")
@@ -1005,13 +788,16 @@ def _method_decision(selection, candidates, rule):
         "title": f"{format_cv(selected_cv)} retenu",
         "selected_cv": selected_cv,
         "selected_cv_label": format_cv(selected_cv),
-        "selected_price_label": format_price(selection.get("current_price")),
+        "selected_pt_label": format_price(selection.get("current_price")),
+        "selected_sale_ht_label": (selected_candidate or {}).get("sale_ht_label") or "—",
+        "selected_sale_ttc_label": (selected_candidate or {}).get("sale_ttc_label") or "—",
+        "selected_outlet_diameter": (selected_candidate or {}).get("outlet_diameter") or "",
         "solar_rule_missing": not bool(rule),
         "lines": lines,
     }
 
 
-def _method_performance_groups(pumps):
+def _method_performance_groups(pumps, sale_parameters):
     groups = []
     by_cv = {}
     for pump in pumps:
@@ -1020,12 +806,16 @@ def _method_performance_groups(pumps):
         group = {"cv": cv, "cv_label": format_cv(cv), "variants": []}
         for index, pump in enumerate(variants, start=1):
             specs = pump.get("technical_specs") or {}
+            sale = _method_pump_sale(pump, sale_parameters)
             group["variants"].append({
                 "label": f"Variante technique {index}",
+                "outlet_diameter": pump.get("_method_outlet_diameter") or "—",
                 "power_kw": format_power_kw(pump.get("power_kw") or specs.get("power_kw")),
                 "voltage": f"{_method_decimal(pump.get('voltage') or specs.get('voltage_v'), 0)} V" if (pump.get("voltage") or specs.get("voltage_v")) not in (None, "") else "—",
                 "current": f"{_method_decimal(pump.get('current_amp') or specs.get('current_a'), 1)} A" if (pump.get("current_amp") or specs.get("current_a")) not in (None, "") else "—",
-                "price": format_price(pump.get("sale_price")),
+                "internal_pt": format_price(sale["internal_pt"]),
+                "sale_ht": format_price(sale["price_ht"]),
+                "sale_ttc": format_price(sale["price_ttc"]),
                 "points": pump["_method_curve"],
             })
         groups.append(group)
@@ -1034,6 +824,7 @@ def _method_performance_groups(pumps):
 
 def _pumping_method_view(flow_value="", hmt_value=""):
     context = load_calculation_context()
+    sale_parameters = _method_pump_sale_parameters(context)
     pumps = _method_active_curve_pumps(context)
     pump_rules = _method_pump_rules(context)
     summary = {
@@ -1051,7 +842,7 @@ def _pumping_method_view(flow_value="", hmt_value=""):
             error = "Saisissez un débit et une HMT strictement supérieurs à 0."
         else:
             selection = select_pump_for_duty(context.get("products") or [], flow, hmt)
-            candidates = _method_candidates(pumps, flow, hmt)
+            candidates = _method_candidates(pumps, flow, hmt, sale_parameters)
             selected_cv = float(selection["selected_pump_cv"]) if selection else None
             rule = _method_rule_for_cv(context, selected_cv) if selected_cv else None
             selected_duty = selection.get("duty") if selection else None
@@ -1070,7 +861,8 @@ def _pumping_method_view(flow_value="", hmt_value=""):
         "hmt_value": hmt_value,
         "analysis": analysis,
         "error": error,
-        "performance_groups": _method_performance_groups(pumps),
+        "pump_sale_parameters": sale_parameters,
+        "performance_groups": _method_performance_groups(pumps, sale_parameters),
         "solar_rules": [
             {
                 "cv": format_cv(rule.get("pump_cv")),
@@ -1183,12 +975,14 @@ def admin_quote_pdf(quote_id):
     quote = get_quote(quote_id)
     if not quote:
         abort(404)
+    company = company_profile(list_company_settings())
     display_equipment_lines = _display_equipment_lines(quote.get("selected_equipment") or [])
     financial_summary_rows = _financial_summary_rows(quote.get("financial_breakdown") or {})
     return render_template(
         "admin/quote_pdf.html",
         quote=quote,
         project_labels=PROJECT_LABELS,
+        company=company,
         display_equipment_lines=display_equipment_lines,
         financial_summary_rows=financial_summary_rows,
     )
@@ -1297,78 +1091,6 @@ def admin_catalog_toggle(product_id):
     return redirect(url_for("main.admin_catalog"))
 
 
-@bp.route("/admin/parametres-calcul", methods=["GET", "POST"])
-def admin_calculation_parameters():
-    if request.method == "POST":
-        param_id = int(request.form.get("parameter_id", "0"))
-        param = get_calculation_parameter(param_id)
-        if not param:
-            abort(404)
-        if not param.get("admin_visible"):
-            abort(403)
-        if not param.get("editable"):
-            abort(403)
-        try:
-            value = parse_display_value(param.get("display_kind") or param.get("unit") or "", request.form.get("display_value", ""))
-        except ValueError:
-            return redirect(url_for("main.admin_calculation_parameters", error="value"))
-
-        update_calculation_parameter(
-            param_id,
-            value,
-            active=request.form.get("active") == "on",
-            source_type="heliantha",
-            source_name="HeliAntha",
-            source_reference="",
-            validated_by="",
-            validated_at="",
-            changed_by=session.get("admin_user", "admin"),
-            change_comment=request.form.get("change_comment", "").strip(),
-        )
-        return redirect(url_for(
-            "main.admin_calculation_parameters",
-            q=request.args.get("q", ""),
-            category=request.args.get("category", ""),
-            updated=param_id,
-        ))
-
-    parameters = [
-        param
-        for param in list_calculation_parameters(admin_visible_only=True)
-        if param.get("category") != "Pompage"
-    ]
-    groups = filter_and_group_parameters(
-        parameters,
-        search=request.args.get("q", ""),
-        category=request.args.get("category", ""),
-    )
-    categories = {key: value for key, value in CATEGORY_PRESENTATION.items() if key != "Pompage"}
-    history = _format_parameter_history(list_calculation_parameter_history())
-    return render_template(
-        "admin/calculation_parameters.html",
-        groups=groups,
-        parameters=parameters,
-        filters=request.args,
-        categories=categories,
-        source_options=SOURCE_OPTIONS,
-        source_types=SOURCE_TYPES,
-        history=history,
-    )
-
-
-@bp.route("/admin/tarification", methods=["GET", "POST"])
-def admin_pricing():
-    if request.method == "POST":
-        for rule in list_pricing_rules():
-            value = request.form.get(f"value_{rule['id']}", rule["value"])
-            parsed_value = _float_or_none(value) or 0
-            if rule.get("unit") == "ratio" and abs(parsed_value) > 1:
-                parsed_value = parsed_value / 100
-            active = request.form.get(f"active_{rule['id']}") == "on"
-            update_pricing_rule(rule["id"], parsed_value, active)
-        return redirect(url_for("main.admin_pricing"))
-    return render_template("admin/pricing.html", pricing_groups=_decorate_pricing_rules(list_pricing_rules()))
-
 
 @bp.route("/admin/regles-pompage", methods=["GET", "POST"])
 def admin_pumping_rules():
@@ -1433,115 +1155,133 @@ def admin_pumping_rules():
     )
 
 
-@bp.get("/admin/referentiel-technique")
-def admin_references():
-    return redirect(url_for("main.admin_calculation_parameters"))
-
-
-@bp.route("/admin/conseiller", methods=["GET", "POST"])
-def admin_advisor():
-    status = request.args.get("status", "new").strip() or "new"
-    if status not in {"new", "learned", "ignored"}:
-        status = "new"
-
+@bp.route("/admin/regles-ongrid", methods=["GET", "POST"])
+def admin_ongrid_rules():
+    saved = False
     if request.method == "POST":
-        action = request.form.get("action", "").strip()
-        item_id = request.form.get("item_id", type=int)
-        admin_name = session.get("admin_user", "HeliAntha")
-        if action == "ignore" and item_id:
-            update_advisor_unknown_status(item_id, "ignored")
-        elif action == "save_intent" and item_id:
-            save_advisor_intent_example(
-                request.form.get("intent", "").strip(),
-                request.form.get("example_text", "").strip(),
-                project_type=request.form.get("project_type", "").strip(),
-                validated_by=admin_name,
-            )
-            update_advisor_unknown_status(item_id, "learned")
-        elif action == "save_synonym" and item_id:
-            save_advisor_synonym(
-                request.form.get("canonical_term", "").strip(),
-                request.form.get("variant", "").strip(),
-                category=request.form.get("category", "").strip(),
-                project_type=request.form.get("project_type", "").strip(),
-                validated_by=admin_name,
-            )
-            update_advisor_unknown_status(item_id, "learned")
-        elif action == "save_knowledge" and item_id:
-            save_advisor_knowledge_item(
-                request.form.get("category", "").strip() or "general",
-                request.form.get("title", "").strip() or request.form.get("question", "").strip(),
-                request.form.get("question", "").strip(),
-                request.form.get("answer", "").strip(),
-                keywords=request.form.get("keywords", "").strip(),
-                validated_by=admin_name,
-            )
-            update_advisor_unknown_status(item_id, "learned")
-        return redirect(url_for("main.admin_advisor", status=status))
+        values = {
+            key.removeprefix("value_"): value
+            for key, value in request.form.items()
+            if key.startswith("value_")
+        }
+        update_ongrid_parameters(values, changed_by=session.get("admin_user", "HeliAntha"))
+        return redirect(url_for("main.admin_ongrid_rules", saved=1))
 
-    unknown_messages = list_advisor_unknown_messages(status=status)
-    for item in unknown_messages:
-        item["similar_count"] = similar_occurrence_count(item, unknown_messages)
-        item["project_label"] = _advisor_project_label(item.get("project_type"))
-        item["status_label"] = _advisor_status_label(item.get("status"))
-
-    runtime_assets = get_advisor_runtime_assets()
-    current_item = unknown_messages[0] if unknown_messages else None
-    suggestion = _build_advisor_suggestion(current_item, runtime_assets) if current_item else None
-    knowledge_rows = get_advisor_knowledge()
-    synonym_rows = list_advisor_synonyms()
-    intent_example_rows = list_advisor_intent_examples()
-    conversation_rows = list_advisor_messages(limit=24)
-    learning_log = list_advisor_learning_log(limit=24)
-
-    today = datetime.now()
-    week_threshold = today - timedelta(days=7)
-    weekly_count = 0
-    for row in learning_log:
-        created_at = str(row.get("created_at") or "")
-        try:
-            created = datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S")
-        except ValueError:
-            continue
-        if created >= week_threshold:
-            weekly_count += 1
-    for item in knowledge_rows:
-        item["category_label"] = _advisor_knowledge_label(item.get("category"))
-    for item in intent_example_rows:
-        item["intent_label"] = _advisor_intent_label(item.get("intent"))
-    for item in conversation_rows:
-        item["role_label"] = "Client" if item.get("role") == "user" else "Conseiller"
-    for item in learning_log:
-        item["learning_label"] = {
-            "intent": "Ce que les clients veulent faire",
-            "synonym": "Expressions reconnues",
-            "knowledge": "Réponses HeliAntha",
-        }.get(item.get("learning_type"), "Historique")
+    groups = [
+        {
+            "key": "per_panel",
+            "title": "Prix ajoutés pour chaque panneau",
+            "intro": "Ces montants se multiplient automatiquement par le nombre de panneaux du devis.",
+            "keys": ["protection_acdc_per_pv", "cablage_acdc_per_pv", "installation_per_pv", "transport_per_pv"],
+        },
+        {
+            "key": "injection",
+            "title": "Limiteur d'injection",
+            "intro": "C'est le boîtier qui limite l'injection vers le réseau. Le forfait dépend du type de réseau et de la puissance installée.",
+            "keys": ["injection_limit_mono", "injection_limit_tri_threshold", "injection_limit_tri_low", "injection_limit_tri_high"],
+        },
+        {
+            "key": "taxes",
+            "title": "Taxes et soleil utilisé pour l'estimation",
+            "intro": "Ces valeurs servent à calculer le prix TTC et la taille de l'installation. Le soleil utilisé ici est une valeur fixe, pas une ville.",
+            "keys": ["vat_pv_rate", "vat_transport_rate", "vat_standard_rate", "psh_hours"],
+        },
+    ]
+    friendly = {
+        "protection_acdc_per_pv": {
+            "label": "Protection électrique par panneau",
+            "help": "Montant ajouté pour protéger l'installation électrique de chaque panneau.",
+            "formula": "Calcul : nombre de panneaux x ce montant.",
+            "suffix": "DH par panneau",
+        },
+        "cablage_acdc_per_pv": {
+            "label": "Câbles et accessoires par panneau",
+            "help": "Montant ajouté pour le câblage nécessaire à chaque panneau.",
+            "formula": "Calcul : nombre de panneaux x ce montant.",
+            "suffix": "DH par panneau",
+        },
+        "installation_per_pv": {
+            "label": "Pose par panneau",
+            "help": "Main-d'oeuvre de pose et mise en service pour chaque panneau.",
+            "formula": "Calcul : nombre de panneaux x ce montant.",
+            "suffix": "DH par panneau",
+        },
+        "transport_per_pv": {
+            "label": "Transport par panneau",
+            "help": "Part transport ajoutée pour chaque panneau.",
+            "formula": "Calcul : nombre de panneaux x ce montant.",
+            "suffix": "DH par panneau",
+        },
+        "injection_limit_mono": {
+            "label": "Forfait limiteur en monophasé",
+            "help": "Montant ajouté quand le client a un réseau monophasé.",
+            "formula": "Calcul : forfait fixe si le réseau est monophasé.",
+            "suffix": "DH",
+        },
+        "injection_limit_tri_threshold": {
+            "label": "Seuil grande installation triphasée",
+            "help": "Au-dessus de cette puissance, le système utilise le forfait triphasé élevé.",
+            "formula": "Ce seuil sépare les petites et grandes installations triphasées.",
+            "suffix": "kW",
+        },
+        "injection_limit_tri_low": {
+            "label": "Forfait triphasé jusqu'au seuil",
+            "help": "Montant ajouté en triphasé lorsque la puissance reste sous le seuil.",
+            "formula": "Calcul : forfait fixe si puissance installée <= seuil.",
+            "suffix": "DH",
+        },
+        "injection_limit_tri_high": {
+            "label": "Forfait triphasé au-dessus du seuil",
+            "help": "Montant ajouté en triphasé lorsque la puissance dépasse le seuil.",
+            "formula": "Calcul : forfait fixe si puissance installée > seuil.",
+            "suffix": "DH",
+        },
+        "vat_pv_rate": {
+            "label": "TVA sur les panneaux",
+            "help": "Taux de TVA appliqué uniquement aux panneaux.",
+            "formula": "Calcul : prix HT panneaux x ce taux.",
+            "suffix": "%",
+        },
+        "vat_transport_rate": {
+            "label": "TVA sur le transport",
+            "help": "Taux de TVA appliqué uniquement au transport.",
+            "formula": "Calcul : transport HT x ce taux.",
+            "suffix": "%",
+        },
+        "vat_standard_rate": {
+            "label": "TVA sur les autres postes",
+            "help": "Taux de TVA appliqué à l'onduleur, la structure, la protection, le câblage, le limiteur et la pose.",
+            "formula": "Calcul : chaque autre poste HT x ce taux.",
+            "suffix": "%",
+        },
+        "psh_hours": {
+            "label": "Soleil moyen utilisé pour l'estimation",
+            "help": "Nombre d'heures de soleil retenu pour tous les calculs On-Grid. Ce n'est pas lié à une ville.",
+            "formula": "Calcul : puissance cible = consommation par jour / ce nombre.",
+            "suffix": "heures",
+        },
+    }
+    parameters = {}
+    for row in list_ongrid_parameters():
+        item = dict(row)
+        item.update(friendly.get(row["key"], {}))
+        parameters[row["key"]] = item
     return render_template(
-        "admin/advisor.html",
-        unknown_messages=unknown_messages,
-        current_item=current_item,
-        suggestion=suggestion,
-        knowledge_rows=knowledge_rows,
-        synonym_rows=synonym_rows,
-        intent_example_rows=intent_example_rows,
-        conversation_rows=conversation_rows,
-        learning_log=learning_log,
-        runtime_assets=runtime_assets,
-        filters=request.args,
-        current_status=status,
-        current_status_label=_advisor_status_label(status),
-        current_index=1 if current_item else 0,
-        remaining_count=max(len(unknown_messages) - 1, 0),
-        pending_count=len(unknown_messages),
-        weekly_count=weekly_count,
-        response_count=len(runtime_assets.get("knowledge") or []),
+        "admin/ongrid_rules.html",
+        parameters=parameters,
+        groups=groups,
+        saved=bool(request.args.get("saved")),
     )
+
 
 
 @bp.route("/admin/parametres", methods=["GET", "POST"])
 def admin_settings():
-    settings = list_company_settings()
+    settings = [
+        setting
+        for setting in list_company_settings()
+        if setting.get("key") not in HIDDEN_COMPANY_SETTING_KEYS
+    ]
     if request.method == "POST":
         for setting in settings:
             update_company_setting(setting["id"], request.form.get(f"value_{setting['id']}", setting["value"]))
@@ -1687,14 +1427,6 @@ def _catalog_form_view_product(product: dict | None) -> dict:
     return view
 
 
-def _float_or_none(value):
-    if value in (None, ""):
-        return None
-    try:
-        return float(str(value).replace(" ", "").replace(",", "."))
-    except ValueError:
-        return None
-
 
 def _pumping_rule_section(rule_type: str) -> dict | None:
     for section in PUMPING_RULE_SECTIONS:
@@ -1747,31 +1479,6 @@ def _pumping_rule_payload(rule_type: str, form, current: dict | None = None) -> 
     return payload
 
 
-def _decorate_pricing_rules(rules):
-    grouped = {group: [] for group in PRICING_GROUP_ORDER}
-    grouped["Autres"] = grouped.get("Autres", [])
-    for rule in rules:
-        item = dict(rule)
-        if item.get("key") in PRICING_RULES_HIDDEN:
-            continue
-        presentation = PRICING_RULE_PRESENTATION.get(item.get("key"), {})
-        value = float(item.get("value") or 0)
-        is_ratio = item.get("unit") == "ratio"
-        item["display_title"] = presentation.get("title") or item.get("name") or item.get("key")
-        item["display_group"] = presentation.get("group") or "Autres"
-        item["display_icon"] = presentation.get("icon") or "⚙️"
-        item["plain_help"] = presentation.get("help") or "Règle utilisée dans le calcul du prix final."
-        item["display_value"] = value * 100 if is_ratio else value
-        item["display_unit"] = "%" if is_ratio else (item.get("unit") or "")
-        item["type_label"] = "Pourcentage" if is_ratio else ("Montant fixe" if item.get("value_type") == "fixed" else "Distance")
-        item["internal_value"] = value
-        grouped.setdefault(item["display_group"], []).append(item)
-    return [
-        {"name": group, "rules": grouped.get(group, [])}
-        for group in PRICING_GROUP_ORDER
-        if grouped.get(group)
-    ]
-
 
 def _decorate_catalog_product(product):
     item = dict(product)
@@ -1805,16 +1512,3 @@ def _main_catalog_characteristic(product):
     if product.get("voltage"):
         return f"{float(product['voltage']):.0f} V"
     return "Caracteristique a completer"
-
-
-def _format_parameter_history(rows):
-    formatted = []
-    for row in rows:
-        item = dict(row)
-        base = {"display_kind": item.get("display_kind"), "unit": item.get("unit")}
-        item["old_display"] = format_display_value({**base, "value": item.get("old_value")})
-        item["new_display"] = format_display_value({**base, "value": item.get("new_value")})
-        item["source_badge"] = SOURCE_TYPES.get(item.get("source_type") or "heliantha", SOURCE_TYPES["heliantha"])["badge"]
-        item["display_name"] = item.get("display_name") or item.get("name") or item.get("parameter_key")
-        formatted.append(item)
-    return formatted

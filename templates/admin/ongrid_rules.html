@@ -1,0 +1,98 @@
+{% extends "admin/base.html" %}
+{% block title %}Regles On-Grid - HELIANTHA{% endblock %}
+{% block page_title %}Regles On-Grid{% endblock %}
+
+{% block content %}
+  {% if saved %}
+    <div class="admin-success">Regles On-Grid enregistrees.</div>
+  {% endif %}
+
+  <form method="post" class="catalog-form">
+    <div class="learning-panel">
+      <h2>Reglages On-Grid</h2>
+      <p>
+        Cette page sert a modifier les prix et taux utilises dans le devis
+        "Reduire ma consommation". Les formules restent automatiques :
+        vous changez seulement les montants appliques au devis.
+      </p>
+      <div class="legend-row">
+        <span>Exemple : 14 panneaux x pose par panneau</span>
+        <span>Pris en compte immediatement</span>
+        <span>Aucune ville ni meteo utilisee</span>
+      </div>
+    </div>
+
+    <div class="status-row">
+      <div>
+        <h2>Valeurs utilisees dans les prochains devis</h2>
+        <p class="muted">Modifiez les cases puis cliquez sur Enregistrer.</p>
+      </div>
+      <button class="admin-button" type="submit">Enregistrer</button>
+    </div>
+
+    {% for group in groups %}
+      <section class="form-section">
+        <h3>{{ group.title }}</h3>
+        <p class="muted">{{ group.intro }}</p>
+        {% if group.key == "injection" %}
+          <div class="config-section-grid">
+            <article class="config-section-card">
+              <h3>Monophasé</h3>
+              {% set item = parameters.get("injection_limit_mono") %}
+              {% if item %}
+                <label>
+                  {{ item.label }}
+                  <div class="input-with-unit">
+                    <input type="number" name="value_{{ item.key }}" value="{{ item.value }}" step="0.01" min="0" required>
+                    <small>{{ item.suffix or item.unit }}</small>
+                  </div>
+                  <small>{{ item.help }}</small>
+                  <small class="muted">{{ item.formula }}</small>
+                </label>
+              {% endif %}
+            </article>
+
+            <article class="config-section-card">
+              <h3>Triphasé</h3>
+              <div class="form-grid">
+                {% for key in ["injection_limit_tri_threshold", "injection_limit_tri_low", "injection_limit_tri_high"] %}
+                  {% set item = parameters.get(key) %}
+                  {% if item %}
+                    <label>
+                      {{ item.label }}
+                      <div class="input-with-unit">
+                        <input type="number" name="value_{{ item.key }}" value="{{ item.value }}" step="0.01" min="0" required>
+                        <small>{{ item.suffix or item.unit }}</small>
+                      </div>
+                      <small>{{ item.help }}</small>
+                      <small class="muted">{{ item.formula }}</small>
+                    </label>
+                  {% endif %}
+                {% endfor %}
+              </div>
+            </article>
+          </div>
+        {% else %}
+          <div class="form-grid">
+            {% for key in group["keys"] %}
+              {% set item = parameters.get(key) %}
+              {% if item %}
+                <label>
+                  {{ item.label }}
+                  <div class="input-with-unit">
+                    <input type="number" name="value_{{ item.key }}" value="{{ item.value }}" step="0.01" min="0" required>
+                    <small>{{ item.suffix or item.unit }}</small>
+                  </div>
+                  <small>{{ item.help }}</small>
+                  {% if item.formula %}
+                    <small class="muted">{{ item.formula }}</small>
+                  {% endif %}
+                </label>
+              {% endif %}
+            {% endfor %}
+          </div>
+        {% endif %}
+      </section>
+    {% endfor %}
+  </form>
+{% endblock %}

@@ -253,31 +253,7 @@
     </div>
   </footer>
 
-      <button class="advisor-launcher" type="button" id="advisor-launcher" aria-expanded="false" aria-controls="advisor-panel" aria-label="Ouvrir le conseiller HELIANTHA">
-    Conseiller
-  </button>
-
-  <div class="advisor-panel" id="advisor-panel" hidden aria-hidden="true">
-    <div class="advisor-backdrop" data-advisor-close></div>
-    <section class="advisor-shell" role="dialog" aria-modal="true" aria-labelledby="advisor-title">
-      <header class="advisor-header">
-        <div>
-          <span class="eyebrow">Conseiller HELIANTHA</span>
-          <h2 id="advisor-title">Conseiller</h2>
-        </div>
-        <button class="close-button" type="button" data-advisor-close aria-label="Fermer le conseiller">×</button>
-      </header>
-      <div class="advisor-messages" id="advisor-messages"></div>
-      <div class="advisor-quick-actions" id="advisor-quick-actions"></div>
-      <form class="advisor-composer" id="advisor-form">
-        <label class="sr-only" for="advisor-input">Votre message</label>
-        <input id="advisor-input" type="text" placeholder="Écrivez votre question" maxlength="2000">
-        <button class="button button-primary" type="submit">Envoyer</button>
-      </form>
-    </section>
-  </div>
-
-  <div class="wizard" id="wizard" aria-hidden="true">
+      <div class="wizard" id="wizard" aria-hidden="true">
     <div class="wizard-backdrop" data-close></div>
     <section class="wizard-panel" role="dialog" aria-modal="true" aria-labelledby="wizard-title">
       <header class="wizard-header">
@@ -322,7 +298,6 @@
     window.HELIANTHA_WIZARD_PROJECTS = {{ wizard_projects|tojson }};
   </script>
   <script src="{{ url_for('static', filename='js/app.js') }}?v=20260901-1"></script>
-  <script src="{{ url_for('static', filename='js/advisor.js') }}"></script>
   <script src="{{ url_for('static', filename='js/pwa.js') }}?v=20260901-1"></script>
 </body>
 </html>

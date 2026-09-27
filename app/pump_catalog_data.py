@@ -1,9 +1,9 @@
 """Initial MARA pump catalogue transcribed from the HeliAntha source sheets.
 
 The printed model is retained only for source traceability.  ``stable_key`` is
-an internal identifier.  Prices reproduce the source ``PRIX`` column whose
-tax basis is not stated on the sheets.  Hydraulic points contain technical
-data only.
+an internal identifier.  Prices reproduce the source ``PRIX`` column as the
+internal PT catalogue amount. Hydraulic points and outlet diameters contain
+technical data only.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ _BRAND = "MARA ELECTRICPUMP"
 
 def _pump(
     stable_number: int,
+    outlet_diameter: str,
     flows: Sequence[float],
     row: tuple[str, float, float, int, float, float, Sequence[float]],
 ) -> dict[str, Any]:
@@ -31,8 +32,9 @@ def _pump(
         "power_kw": kw,
         "voltage": voltage,
         "current_amp": current,
+        "outlet_diameter": outlet_diameter,
         "sale_price_source": price,
-        "price_tax_basis": "unconfirmed",
+        "price_tax_basis": "internal_pt",
         "curve_points": [
             {"flow_m3_h": flow, "hmt_m": hmt}
             for flow, hmt in zip(flows, hmts)
@@ -43,21 +45,23 @@ def _pump(
 def _expand_tables(
     tables: Iterable[
         tuple[
+            str,
             Sequence[float],
             Sequence[tuple[str, float, float, int, float, float, Sequence[float]]],
         ]
     ],
 ) -> tuple[dict[str, Any], ...]:
     pumps: list[dict[str, Any]] = []
-    for flows, rows in tables:
+    for outlet_diameter, flows, rows in tables:
         for row in rows:
-            pumps.append(_pump(len(pumps) + 1, flows, row))
+            pumps.append(_pump(len(pumps) + 1, outlet_diameter, flows, row))
     return tuple(pumps)
 
 
 _TABLES = (
     # Photo 1 - Electropompes immergees 1"1/4 - R95-A
     (
+        '1" 1/4',
         (0, 1, 1.5, 1.8, 2, 2.5, 3, 3.5),
         (
             ("R95-A-12M", 1, 0.75, 220, 6.3, 4000, (95, 91, 89, 83, 80, 65, 56, 42)),
@@ -73,6 +77,7 @@ _TABLES = (
     ),
     # Photo 1 - R95-ST4
     (
+        '1" 1/4',
         (0, 1.5, 2.1, 2.7, 3.6, 4.2, 4.8, 6),
         (
             ("R95-ST4-14M", 1.5, 1.1, 220, 8.6, 4000, (93, 87, 83, 79, 68, 58, 47, 20)),
@@ -87,6 +92,7 @@ _TABLES = (
     ),
     # Photo 2 - Electropompes immergees 1"1/2 - R95-BF
     (
+        '1" 1/2',
         (0, 1, 2, 3, 4, 5, 6, 7),
         (
             ("R95-BF-09M", 1.5, 1.1, 220, 8.6, 3600, (71, 66, 65, 62, 59, 52, 41, 28)),
@@ -98,6 +104,7 @@ _TABLES = (
     ),
     # Photo 2 - R95-VC
     (
+        '1" 1/2',
         (0, 2, 3, 3.5, 4, 4.5, 5, 5.5),
         (
             ("R95-VC-16M", 2, 1.5, 220, 10, 4400, (115, 105, 101, 90, 85, 75, 64, 51)),
@@ -109,6 +116,7 @@ _TABLES = (
     ),
     # Photo 2 - R148
     (
+        '1" 1/2',
         (1, 2, 3, 5, 7, 9, 11, 13),
         (
             ("R148-4", 1.5, 1.1, 380, 3, 5800, (53, 51, 48, 43, 36, 27.5, 18, 7)),
@@ -117,6 +125,7 @@ _TABLES = (
     ),
     # Photo 3 - Electropompes immergees 2" - R95-ST8
     (
+        '2"',
         (0, 3, 4.2, 4.8, 5.4, 6, 7.2, 8.4),
         (
             ("R95-ST8-10M", 1.5, 1.1, 220, 8.6, 4400, (62, 53, 48, 45, 41, 38, 29, 18)),
@@ -133,6 +142,7 @@ _TABLES = (
     ),
     # Photo 3 - R95-DF
     (
+        '2"',
         (0, 2, 4, 6, 7, 8, 9, 10),
         (
             ("R95-DF-06M", 1.5, 1.1, 220, 8.6, 4000, (42, 41, 38, 34, 31, 28, 23, 18)),
@@ -149,6 +159,7 @@ _TABLES = (
     ),
     # Photo 4 - Electropompes immergees 2" - R95-MA
     (
+        '2"',
         (2, 5, 7, 8, 10, 12, 14, 16),
         (
             ("R95-MA-07M", 2, 1.5, 220, 10, 4600, (45, 35, 31, 29, 26, 23, 20, 16)),
@@ -163,6 +174,7 @@ _TABLES = (
     ),
     # Photo 4 - R95-DG
     (
+        '2"',
         (0, 6, 9, 12, 14, 16, 18, 20),
         (
             ("R95-DG-18T", 7.5, 5.5, 380, 14, 11200, (98, 89, 81, 78, 71, 63, 55, 46)),
@@ -172,6 +184,7 @@ _TABLES = (
     ),
     # Photo 5 - Electropompes immergees 2"1/2 - R150-B
     (
+        '2" 1/2',
         (0, 6, 10, 12, 14, 16, 18),
         (
             ("R150-B-02", 2, 1.5, 380, 4.4, 5200, (33, 31, 27, 25, 21, 16, 9)),
@@ -189,6 +202,7 @@ _TABLES = (
     ),
     # Photo 5 - R136-LL and R150-D
     (
+        '2" 1/2',
         (0, 12, 14, 16, 18, 20, 22, 25),
         (
             ("R136-LL-4/3", 4, 3, 380, 8.3, 8200, (46, 39, 37, 34, 31, 28, 25, 19)),
@@ -205,6 +219,7 @@ _TABLES = (
     ),
     # Photo 6 - Electropompes immergees 3" - R150-E
     (
+        '3"',
         (0, 10, 15, 20, 26, 32, 35, 38),
         (
             ("R150-E-03", 5.5, 4, 380, 10.3, 11000, (44, 42, 41, 40, 36, 31, 27, 21)),
@@ -235,6 +250,7 @@ PUMP_DISTINCT_POWER_HP = tuple(
     sorted({pump["power_hp"] for pump in PUMP_CATALOG_DATA})
 )
 PUMP_DISTINCT_POWER_HP_COUNT = len(PUMP_DISTINCT_POWER_HP)
+PUMP_OUTLET_DIAMETERS = ('1" 1/4', '1" 1/2', '2"', '2" 1/2', '3"')
 
 
 __all__ = (
@@ -243,4 +259,5 @@ __all__ = (
     "PUMP_CURVE_POINT_COUNT",
     "PUMP_DISTINCT_POWER_HP",
     "PUMP_DISTINCT_POWER_HP_COUNT",
+    "PUMP_OUTLET_DIAMETERS",
 )

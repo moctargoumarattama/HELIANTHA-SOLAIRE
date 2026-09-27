@@ -19,6 +19,7 @@
     pumps: [
       { key: "power_hp", label: "Puissance", kind: "number", unit: "CV", required: true },
       { key: "power_kw", label: "Puissance", kind: "number", unit: "kW" },
+      { key: "outlet_diameter", label: "Sortie de refoulement", kind: "choice", choices: ['1" 1/4', '1" 1/2', '2"', '2" 1/2', '3"'] },
       { key: "phases", label: "Phase", kind: "choice", choices: ["monophase", "triphase"] },
       { key: "voltage_v", label: "Tension", kind: "number", unit: "V" },
       { key: "current_a", label: "Courant", kind: "number", unit: "A" },
@@ -164,9 +165,9 @@
     requiredMarkers.forEach((marker) => {
       marker.hidden = isPump;
     });
-    if (priceLabel) priceLabel.textContent = isPump ? "Prix actuel *" : "Prix HT *";
+    if (priceLabel) priceLabel.textContent = isPump ? "Prix interne PT *" : "Prix HT *";
     if (priceNote) priceNote.hidden = !isPump;
-    if (vatLabel) vatLabel.textContent = isPump ? "TVA (si confirmée)" : "TVA *";
+    if (vatLabel) vatLabel.textContent = isPump ? "TVA pompe dans Regles Pompage" : "TVA *";
     if (vatInput) {
       vatInput.required = !isPump;
       if (isPump && vatInput.dataset.vatExplicit !== "1") {

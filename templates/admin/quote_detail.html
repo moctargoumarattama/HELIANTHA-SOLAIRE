@@ -91,8 +91,9 @@
         <tr>
           <th>Élément</th>
           <th>Quantité</th>
-          <th>Prix unitaire</th>
-          <th>Total</th>
+          <th>PU HT</th>
+          <th>TVA</th>
+          <th>Total TTC</th>
         </tr>
       </thead>
       <tbody>
@@ -100,11 +101,12 @@
         <tr>
           <td>{{ item.display_designation or item.description or item.role or "-" }}</td>
           <td>{{ item.quantity }}</td>
-          <td>{{ "{:,.2f}".format(item.unit_price or 0).replace(",", " ") }} {{ item.currency or "DH" }}</td>
-          <td>{{ "{:,.2f}".format(item.total_price or 0).replace(",", " ") }} {{ item.currency or "DH" }}</td>
+          <td>{{ "{:,.2f}".format(item.display_unit_price_ht or item.unit_price or 0).replace(",", " ") }} {{ item.currency or "DH" }}</td>
+          <td>{{ item.display_vat_rate }}<br>{{ "{:,.2f}".format(item.display_vat_amount or 0).replace(",", " ") }} {{ item.currency or "DH" }}</td>
+          <td>{{ "{:,.2f}".format(item.display_total_ttc or 0).replace(",", " ") }} {{ item.currency or "DH" }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="4">Aucun élément enregistré.</td></tr>
+        <tr><td colspan="5">Aucun élément enregistré.</td></tr>
         {% endfor %}
       </tbody>
     </table>
