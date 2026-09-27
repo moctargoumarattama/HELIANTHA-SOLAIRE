@@ -9,6 +9,69 @@
   z-index: 80;
 }
 
+.ha-chat.is-dragging,
+.ha-chat.is-dragging * {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.ha-chat-nudge {
+  background:
+    radial-gradient(circle at top left, rgba(246, 190, 26, 0.2), transparent 42%),
+    linear-gradient(135deg, #102638, #174a68);
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  border-radius: 8px;
+  bottom: 62px;
+  box-shadow: 0 16px 38px rgba(16, 38, 56, 0.18);
+  color: #fff;
+  display: none;
+  gap: 2px;
+  max-width: 245px;
+  padding: 10px 12px;
+  pointer-events: none;
+  position: absolute;
+  right: 0;
+  transform-origin: right bottom;
+  transition: opacity 180ms ease, transform 180ms ease;
+  width: max-content;
+  animation: haChatNudgeIn 260ms ease both;
+}
+
+.ha-chat:not(.nudge-hidden):not(.is-open):not(.is-dragging):not(.has-moved) .ha-chat-nudge {
+  display: grid;
+}
+
+.ha-chat-nudge::after {
+  border: 8px solid transparent;
+  border-top-color: #174a68;
+  bottom: -15px;
+  content: "";
+  position: absolute;
+  right: 21px;
+}
+
+.ha-chat-nudge strong {
+  font-size: 0.84rem;
+  font-weight: 900;
+}
+
+.ha-chat-nudge span {
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 0.78rem;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.ha-chat.is-open .ha-chat-nudge,
+.ha-chat.is-dragging .ha-chat-nudge,
+.ha-chat.has-moved .ha-chat-nudge,
+.ha-chat.nudge-hidden .ha-chat-nudge {
+  display: none;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(6px) scale(0.96);
+}
+
 .ha-chat-launcher {
   align-items: center;
   background:
@@ -23,6 +86,25 @@
   gap: 10px;
   min-height: 50px;
   padding: 8px 16px 8px 8px;
+  touch-action: none;
+}
+
+.ha-chat-launcher::after {
+  align-items: center;
+  background: var(--ha-gold);
+  border: 2px solid #fff;
+  border-radius: 999px;
+  box-shadow: 0 8px 16px rgba(16, 38, 56, 0.18);
+  color: var(--ha-navy);
+  content: "Chat";
+  display: inline-flex;
+  font-size: 0.68rem;
+  font-weight: 950;
+  line-height: 1;
+  padding: 5px 7px;
+  position: absolute;
+  right: -5px;
+  top: -8px;
 }
 
 .ha-chat-icon {
@@ -399,6 +481,13 @@
     right: 12px;
   }
 
+  .ha-chat-nudge {
+    bottom: 58px;
+    max-width: min(230px, calc(100vw - 88px));
+    padding: 9px 11px;
+    right: -2px;
+  }
+
   .ha-chat-panel {
     border-radius: 8px 8px 0 0;
     bottom: -12px;
@@ -436,5 +525,16 @@
   50% {
     opacity: 1;
     transform: translateY(-2px);
+  }
+}
+
+@keyframes haChatNudgeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }

@@ -1,4 +1,9 @@
-<div class="ha-chat" id="ha-chat" data-endpoint="{{ url_for('main.assistant_chat') }}" data-logo="{{ url_for('main.brand_image') }}">
+<div class="ha-chat nudge-hidden" id="ha-chat" data-endpoint="{{ url_for('main.assistant_chat') }}" data-logo="{{ url_for('main.brand_image') }}">
+  <div class="ha-chat-nudge" id="ha-chat-nudge">
+    <strong>Bonjour, je suis l'assistant IA de HeliAntha</strong>
+    <span>Posez-moi votre question ici.</span>
+  </div>
+
   <button class="ha-chat-launcher" type="button" id="ha-chat-launcher" aria-expanded="false" aria-controls="ha-chat-panel">
     <span class="ha-chat-icon" aria-hidden="true"><img src="{{ url_for('main.brand_image') }}" alt=""></span>
     <span class="ha-chat-help">Conseiller IA</span>
@@ -24,7 +29,7 @@
 
     <form class="ha-chat-form" id="ha-chat-form">
       <input id="ha-chat-input" type="text" autocomplete="off" maxlength="1000" placeholder="Ecrivez votre message..." aria-label="Message">
-      <button type="submit" aria-label="Envoyer">➜</button>
+      <button type="submit" aria-label="Envoyer">&#10148;</button>
     </form>
   </section>
 </div>

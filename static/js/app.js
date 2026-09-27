@@ -158,6 +158,7 @@ const nextButton = document.querySelector("#next-button");
 const backButton = document.querySelector("#back-button");
 
 bindLanding();
+initWelcomePopup();
 initPageChrome();
 initScrollReveal();
 renderWizardShell();
@@ -234,7 +235,6 @@ function commonContactStep() {
     fields: [
       textField("name", "Nom complet", "Votre nom", ""),
       textField("phone", "Téléphone", "06 00 00 00 00", ""),
-      textField("email", "E-mail", "vous@exemple.ma", ""),
       textField("location", "Localisation précise", "Ville, commune ou adresse", ""),
       textareaField("comment", "Commentaire", "Contrainte, délai, information utile…", ""),
     ],
@@ -299,6 +299,31 @@ function bindLanding() {
 
   form.addEventListener("submit", onSubmitWizard);
   backButton.addEventListener("click", onBackStep);
+}
+
+function initWelcomePopup() {
+  const popup = document.querySelector("#welcome-popup");
+  if (!popup) return;
+  const closeButton = document.querySelector("#welcome-popup-close");
+  let closeTimer = null;
+
+  const close = () => {
+    window.clearTimeout(closeTimer);
+    popup.classList.add("is-hiding");
+    window.setTimeout(() => {
+      popup.hidden = true;
+      popup.classList.remove("is-open", "is-hiding");
+    }, 360);
+  };
+
+  popup.hidden = false;
+  requestAnimationFrame(() => popup.classList.add("is-open"));
+  closeTimer = window.setTimeout(close, 3000);
+
+  closeButton?.addEventListener("click", close);
+  popup.querySelectorAll(".js-start").forEach((button) => {
+    button.addEventListener("click", close);
+  });
 }
 
 function initPageChrome() {
@@ -674,7 +699,6 @@ function buildProjectSummary(project, totals) {
 
   if (state.contact.name) summary.push(["Contact", state.contact.name]);
   if (state.contact.phone) summary.push(["Téléphone", state.contact.phone]);
-  if (state.contact.email) summary.push(["E-mail", state.contact.email]);
   if (state.contact.location) summary.push(["Localisation", state.contact.location]);
   return summary;
 }
@@ -1505,7 +1529,6 @@ function buildRecapItems(payload) {
   }
   if (state.contact.name) items.push(["Contact", state.contact.name]);
   if (state.contact.phone) items.push(["Téléphone", state.contact.phone]);
-  if (state.contact.email) items.push(["E-mail", state.contact.email]);
   if (state.contact.location) items.push(["Localisation", state.contact.location]);
   if (state.contact.comment) items.push(["Commentaire", state.contact.comment]);
   return items;

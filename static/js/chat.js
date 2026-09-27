@@ -14,11 +14,16 @@
   const messages = [];
   let pending = false;
   let progressTimer = null;
+  let dragState = null;
+  let suppressClick = false;
+  let nudgeTimer = null;
 
-  const welcome = "Bonjour, je suis le conseiller HeliAntha. Je peux vous aider a choisir entre pompage solaire, reduction de facture, site isole ou recharge electrique.";
+  const welcome = "Bonjour, je suis l'assistant IA de HeliAntha. Je peux vous orienter simplement vers le bon projet : pompage solaire, reduction de facture, site isole ou recharge electrique.";
 
   function openChat() {
+    hideNudge();
     panel.hidden = false;
+    root.classList.add("is-open");
     launcher.setAttribute("aria-expanded", "true");
     if (!messages.length) addMessage("assistant", welcome, false);
     window.setTimeout(() => input?.focus(), 60);
@@ -26,7 +31,100 @@
 
   function closeChat() {
     panel.hidden = true;
+    root.classList.remove("is-open");
     launcher.setAttribute("aria-expanded", "false");
+  }
+
+  function hideNudge() {
+    window.clearTimeout(nudgeTimer);
+    root.classList.add("nudge-hidden");
+    root.querySelector("#ha-chat-nudge")?.remove();
+  }
+
+  function startNudgeTimer(delayMs = 0) {
+    window.clearTimeout(nudgeTimer);
+    nudgeTimer = window.setTimeout(() => {
+      if (!root.querySelector("#ha-chat-nudge")) return;
+      root.classList.remove("nudge-hidden");
+      nudgeTimer = window.setTimeout(hideNudge, 3000);
+    }, delayMs);
+  }
+
+  function restoreLauncherPosition() {
+    try {
+      const saved = JSON.parse(window.sessionStorage.getItem("haChatPosition") || "null");
+      if (!saved || typeof saved.left !== "number" || typeof saved.top !== "number") return;
+      setLauncherPosition(saved.left, saved.top, false);
+      root.classList.add("has-moved");
+    } catch (_) {
+      // Ignore invalid session storage data.
+    }
+  }
+
+  function setLauncherPosition(left, top, save = true) {
+    const rect = root.getBoundingClientRect();
+    const width = rect.width || 56;
+    const height = rect.height || 56;
+    const margin = 8;
+    const maxLeft = Math.max(margin, window.innerWidth - width - margin);
+    const maxTop = Math.max(margin, window.innerHeight - height - margin);
+    const nextLeft = Math.min(Math.max(margin, left), maxLeft);
+    const nextTop = Math.min(Math.max(margin, top), maxTop);
+
+    root.style.left = `${nextLeft}px`;
+    root.style.top = `${nextTop}px`;
+    root.style.right = "auto";
+    root.style.bottom = "auto";
+
+    if (save) {
+      window.sessionStorage.setItem("haChatPosition", JSON.stringify({ left: nextLeft, top: nextTop }));
+    }
+  }
+
+  function bindLauncherDrag() {
+    if (!launcher) return;
+
+    launcher.addEventListener("pointerdown", (event) => {
+      if (!panel.hidden) return;
+      const rect = root.getBoundingClientRect();
+      dragState = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        left: rect.left,
+        top: rect.top,
+        moved: false,
+      };
+      launcher.setPointerCapture?.(event.pointerId);
+    });
+
+    launcher.addEventListener("pointermove", (event) => {
+      if (!dragState || dragState.pointerId !== event.pointerId) return;
+      const dx = event.clientX - dragState.startX;
+      const dy = event.clientY - dragState.startY;
+      if (!dragState.moved && Math.hypot(dx, dy) < 7) return;
+
+      dragState.moved = true;
+      suppressClick = true;
+      root.classList.add("is-dragging", "has-moved");
+      hideNudge();
+      setLauncherPosition(dragState.left + dx, dragState.top + dy);
+    });
+
+    const finishDrag = (event) => {
+      if (!dragState || dragState.pointerId !== event.pointerId) return;
+      launcher.releasePointerCapture?.(event.pointerId);
+      if (dragState.moved) {
+        window.setTimeout(() => {
+          suppressClick = false;
+        }, 0);
+      }
+      dragState = null;
+      root.classList.remove("is-dragging");
+    };
+
+    launcher.addEventListener("pointerup", finishDrag);
+    launcher.addEventListener("pointercancel", finishDrag);
   }
 
   function addMessage(role, content, store = true) {
@@ -161,7 +259,18 @@
     }
   }
 
+  restoreLauncherPosition();
+  bindLauncherDrag();
+  if (!root.classList.contains("has-moved")) {
+    const hasWelcomePopup = Boolean(document.querySelector("#welcome-popup"));
+    startNudgeTimer(hasWelcomePopup ? 3400 : 500);
+  }
+
   launcher?.addEventListener("click", () => {
+    if (suppressClick) {
+      suppressClick = false;
+      return;
+    }
     if (panel.hidden) openChat();
     else closeChat();
   });
@@ -178,5 +287,12 @@
 
   window.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !panel.hidden) closeChat();
+  });
+
+  window.addEventListener("resize", () => {
+    const rect = root.getBoundingClientRect();
+    if (root.style.left && root.style.top) {
+      setLauncherPosition(rect.left, rect.top);
+    }
   });
 })();
