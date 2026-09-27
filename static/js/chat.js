@@ -17,6 +17,7 @@
   let dragState = null;
   let suppressClick = false;
   let nudgeTimer = null;
+  let welcomeShown = false;
 
   const welcome = "Bonjour, je suis l'assistant IA de HeliAntha. Je peux vous orienter simplement vers le bon projet : pompage solaire, reduction de facture, site isole ou recharge electrique.";
 
@@ -27,7 +28,10 @@
     panel.hidden = false;
     root.classList.add("is-open");
     launcher.setAttribute("aria-expanded", "true");
-    if (!messages.length) addMessage("assistant", welcome, false);
+    if (!welcomeShown) {
+      addMessage("assistant", welcome, false);
+      welcomeShown = true;
+    }
     window.setTimeout(() => input?.focus(), 60);
   }
 

@@ -189,7 +189,19 @@ def notify_quote_created(quote_data: dict[str, Any]) -> None:
             f"*Telephone :* {client_phone or '-'}\n"
             f"*Ville :* {quote_data.get('city') or 'Non renseignee'}\n"
             f"*Projet :* {project_type}\n"
-            f"*Montant :* {total_ttc}\n"
-            f"*Lien Devis :* {pdf_link}"
+            f"*Montant :* {total_ttc}"
         )
-        send_whatsapp_raw(admin_phone, admin_msg, gateway_url=gateway_url)
+        filename = str(quote_data.get("pdf_filename") or "Devis_HeliAntha.pdf").strip() or "Devis_HeliAntha.pdf"
+        admin_sent_document = send_whatsapp_document(
+            admin_phone,
+            pdf_link,
+            filename,
+            admin_msg,
+            gateway_url=gateway_url,
+        )
+        if not admin_sent_document:
+            send_whatsapp_raw(
+                admin_phone,
+                f"{admin_msg}\n*Lien Devis :* {pdf_link}",
+                gateway_url=gateway_url,
+            )

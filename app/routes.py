@@ -17,6 +17,7 @@ from flask import (
     session,
     url_for,
 )
+from werkzeug.http import quote_header_value
 
 from .catalog import ProductValidationError, category_label, category_options, technical_fields_by_category
 from .calculators import CalculationEngine, ValidationError
@@ -65,6 +66,7 @@ from .public_presenters import build_public_quote_payload, company_profile, sani
 from .services.ai_service import chat_with_ollama, extract_quote_request, sanitize_messages
 from .services.pump_selector import NO_STANDARD_PUMP_MESSAGE, curve_head_for_flow, select_pump_for_duty
 from .services.pump_pricing import calculate_pump_sale_price
+from .services.pdf_service import build_quote_pdf
 from .services.whatsapp_service import (
     gateway_logout,
     get_gateway_qr,
@@ -100,9 +102,9 @@ HIDDEN_COMPANY_SETTING_KEYS = {
     "pdf_payment_terms",
     "quote_validity_days",
 }
-PWA_CACHE_NAME = "heliantha-pwa-v9"
-APP_ASSET_VERSION = "20260927-5"
-PWA_ASSET_VERSION = "20260927-5"
+PWA_CACHE_NAME = "heliantha-pwa-v10"
+APP_ASSET_VERSION = "20260927-6"
+PWA_ASSET_VERSION = "20260927-6"
 PWA_CORE_PATHS = [
     "/",
     "/assets/helin.jpeg",
@@ -273,7 +275,7 @@ def _notify_quote_created_safely(
                 "city": data.get("city") or contact.get("location") or "",
                 "project_type": _project_label_for_notification(project),
                 "total_ttc": _money_label((result.get("financial_breakdown") or {}).get("total_ttc")),
-                "pdf_url": url_for("main.public_quote_print_by_id", quote_id=quote_id),
+                "pdf_url": url_for("main.public_quote_document_by_id", quote_id=quote_id),
                 "pdf_filename": f"Devis_HeliAntha_{quote_id}.pdf",
                 "whatsapp_gateway_url": settings.get("whatsapp_gateway_url"),
                 "admin_whatsapp": settings.get("admin_whatsapp"),
@@ -282,6 +284,23 @@ def _notify_quote_created_safely(
         )
     except Exception:
         current_app.logger.exception("WhatsApp quote notification failed")
+
+
+def _quote_pdf_response(quote: dict):
+    company = company_profile(list_company_settings())
+    display_equipment_lines = _display_equipment_lines(quote.get("selected_equipment") or [])
+    financial_summary_rows = _financial_summary_rows(quote.get("financial_breakdown") or {})
+    pdf_bytes = build_quote_pdf(
+        quote=quote,
+        company=company,
+        display_equipment_lines=display_equipment_lines,
+        financial_summary_rows=financial_summary_rows,
+    )
+    filename = f"Devis_HeliAntha_{quote.get('id') or quote.get('quote_number') or 'client'}.pdf"
+    response = current_app.response_class(pdf_bytes, mimetype="application/pdf")
+    response.headers["Content-Disposition"] = f"inline; filename={quote_header_value(filename)}"
+    response.headers["Content-Length"] = str(len(pdf_bytes))
+    return response
 
 
 def _whatsapp_admin_settings() -> dict[str, str]:
@@ -585,7 +604,7 @@ def _build_quote_from_ai_payload(raw_payload: dict) -> dict | None:
         "id": quote_id,
         "total_ttc": _money_label(financial.get("total_ttc")),
         "system_summary": _quote_summary(project, result),
-        "download_url": url_for("main.public_quote_print_by_id", quote_id=quote_id),
+        "download_url": url_for("main.public_quote_document_by_id", quote_id=quote_id),
         "view_url": url_for("main.public_quote_by_id", quote_id=quote_id),
     }
 
@@ -629,7 +648,15 @@ def public_quote_print_by_id(quote_id):
     quote = get_quote(quote_id)
     if not quote:
         abort(404)
-    return redirect(url_for("main.public_quote_print", quote_number=quote["quote_number"]))
+    return redirect(url_for("main.public_quote", quote_number=quote["quote_number"]))
+
+
+@bp.get("/devis/<int:quote_id>/document.pdf")
+def public_quote_document_by_id(quote_id):
+    quote = get_quote(quote_id)
+    if not quote:
+        abort(404)
+    return _quote_pdf_response(quote)
 
 
 @bp.get("/simulation/<quote_number>")
@@ -648,18 +675,8 @@ def public_quote_print(quote_number):
     quote = get_quote_by_number(quote_number)
     if not quote:
         abort(404)
-    company = company_profile(list_company_settings())
     save_quote_client_event(quote["id"], quote["quote_number"], "print_view", "predevis")
-    display_equipment_lines = _display_equipment_lines(quote.get("selected_equipment") or [])
-    financial_summary_rows = _financial_summary_rows(quote.get("financial_breakdown") or {})
-    return render_template(
-        "admin/quote_pdf.html",
-        quote=quote,
-        project_labels=PROJECT_LABELS,
-        company=company,
-        display_equipment_lines=display_equipment_lines,
-        financial_summary_rows=financial_summary_rows,
-    )
+    return _quote_pdf_response(quote)
 
 
 @bp.post("/api/simulations/<quote_number>/select-offer")
@@ -1193,17 +1210,7 @@ def admin_quote_pdf(quote_id):
     quote = get_quote(quote_id)
     if not quote:
         abort(404)
-    company = company_profile(list_company_settings())
-    display_equipment_lines = _display_equipment_lines(quote.get("selected_equipment") or [])
-    financial_summary_rows = _financial_summary_rows(quote.get("financial_breakdown") or {})
-    return render_template(
-        "admin/quote_pdf.html",
-        quote=quote,
-        project_labels=PROJECT_LABELS,
-        company=company,
-        display_equipment_lines=display_equipment_lines,
-        financial_summary_rows=financial_summary_rows,
-    )
+    return _quote_pdf_response(quote)
 
 
 @bp.post("/admin/devis/<int:quote_id>/status")

@@ -13,8 +13,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=20260927-5">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/chat.css') }}?v=20260927-5">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=20260927-6">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/chat.css') }}?v=20260927-6">
   <link rel="manifest" href="{{ url_for('main.pwa_manifest') }}">
   <link rel="icon" href="{{ url_for('main.brand_image') }}" type="image/jpeg">
   <link rel="apple-touch-icon" href="{{ url_for('main.brand_image') }}">
@@ -84,7 +84,7 @@
         </article>
 
         <article class="compact-block compact-actions-block">
-          <a class="button button-primary compact-action" href="{{ url_for('main.public_quote_print', quote_number=quote.quote_number) }}" target="_blank" rel="noreferrer">Telecharger mon devis officiel (PDF)</a>
+          <a class="button button-primary compact-action" href="{{ url_for('main.public_quote_document_by_id', quote_id=quote.id) }}" target="_blank" rel="noreferrer">Telecharger mon devis officiel (PDF)</a>
           <button class="button button-ghost compact-action" type="button" id="visit-toggle-bottom">Demander une visite technique</button>
         </article>
       </aside>
@@ -150,9 +150,9 @@
       visit: "{{ url_for('main.create_visit_request', quote_number=quote.quote_number) }}"
     };
   </script>
-  <script src="{{ url_for('static', filename='js/public-result.js') }}?v=20260927-5"></script>
-  <script src="{{ url_for('static', filename='js/chat.js') }}?v=20260927-5"></script>
-  <script src="{{ url_for('static', filename='js/pwa.js') }}?v=20260927-5"></script>
+  <script src="{{ url_for('static', filename='js/public-result.js') }}?v=20260927-6"></script>
+  <script src="{{ url_for('static', filename='js/chat.js') }}?v=20260927-6"></script>
+  <script src="{{ url_for('static', filename='js/pwa.js') }}?v=20260927-6"></script>
   {% if print_mode %}
     <script>
       window.addEventListener("load", () => window.setTimeout(() => window.print(), 300));

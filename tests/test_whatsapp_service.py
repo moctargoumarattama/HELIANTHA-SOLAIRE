@@ -45,7 +45,7 @@ def test_send_whatsapp_document_success():
     with patch("app.services.whatsapp_service.requests.post", return_value=response) as post:
         assert send_whatsapp_document(
             "0600000000",
-            "https://devis.test/devis/12/pdf",
+            "https://devis.test/devis/12/document.pdf",
             "Devis_HeliAntha_12.pdf",
             "Voici votre devis",
             gateway_url="http://127.0.0.1:3001/send-message",
@@ -55,21 +55,21 @@ def test_send_whatsapp_document_success():
     assert post.call_args.args[0] == "http://127.0.0.1:3001/send-document"
     assert post.call_args.kwargs["json"] == {
         "phone": "0600000000",
-        "pdf_url": "https://devis.test/devis/12/pdf",
+        "pdf_url": "https://devis.test/devis/12/document.pdf",
         "filename": "Devis_HeliAntha_12.pdf",
         "caption": "Voici votre devis",
     }
     assert post.call_args.kwargs["timeout"] == 15
 
 
-def test_notify_quote_created_sends_client_and_admin_messages():
+def test_notify_quote_created_sends_client_and_admin_documents():
     quote_data = {
         "client_name": "Client Test",
         "client_phone": "0611111111",
         "city": "Rabat",
         "project_type": "Pompage Solaire",
         "total_ttc": "48 500 DH",
-        "pdf_url": "/devis/12/pdf",
+        "pdf_url": "/devis/12/document.pdf",
     }
 
     with (
@@ -80,15 +80,16 @@ def test_notify_quote_created_sends_client_and_admin_messages():
     ):
         notify_quote_created(quote_data)
 
-    send_document.assert_called_once()
-    assert send_document.call_args.args[0] == "0611111111"
-    assert send_document.call_args.args[1] == "https://devis.test/devis/12/pdf"
-    assert send_document.call_args.args[2] == "Devis_HeliAntha.pdf"
-    assert "48 500 DH" in send_document.call_args.args[3]
-    assert send.call_count == 1
-    admin_call = send.call_args_list[0]
+    assert send_document.call_count == 2
+    client_call, admin_call = send_document.call_args_list
+    assert client_call.args[0] == "0611111111"
+    assert client_call.args[1] == "https://devis.test/devis/12/document.pdf"
+    assert client_call.args[2] == "Devis_HeliAntha.pdf"
+    assert "48 500 DH" in client_call.args[3]
     assert admin_call.args[0] == "0684056613"
-    assert "Client Test" in admin_call.args[1]
+    assert admin_call.args[1] == "https://devis.test/devis/12/document.pdf"
+    assert "Client Test" in admin_call.args[3]
+    assert send.call_count == 0
 
 
 def test_notify_quote_created_uses_admin_gateway_settings():
@@ -97,7 +98,7 @@ def test_notify_quote_created_uses_admin_gateway_settings():
         "client_phone": "0611111111",
         "project_type": "On-Grid",
         "total_ttc": "35 810 DH",
-        "pdf_url": "/devis/42/pdf",
+        "pdf_url": "/devis/42/document.pdf",
         "whatsapp_gateway_url": "http://127.0.0.1:3999/send-message",
         "admin_whatsapp": "0699999999",
         "app_base_url": "https://example.test",
@@ -109,11 +110,11 @@ def test_notify_quote_created_uses_admin_gateway_settings():
     ):
         notify_quote_created(quote_data)
 
-    assert send_document.call_count == 1
-    assert send_document.call_args.kwargs["gateway_url"] == "http://127.0.0.1:3999/send-message"
-    assert send.call_count == 1
-    assert send.call_args_list[0].args[0] == "0699999999"
-    assert "https://example.test/devis/42/pdf" in send.call_args_list[0].args[1]
+    assert send_document.call_count == 2
+    assert send_document.call_args_list[0].kwargs["gateway_url"] == "http://127.0.0.1:3999/send-message"
+    assert send_document.call_args_list[1].args[0] == "0699999999"
+    assert send_document.call_args_list[1].args[1] == "https://example.test/devis/42/document.pdf"
+    assert send.call_count == 0
 
 
 def test_notify_quote_created_falls_back_to_link_when_document_fails():
@@ -122,7 +123,7 @@ def test_notify_quote_created_falls_back_to_link_when_document_fails():
         "client_phone": "0611111111",
         "project_type": "On-Grid",
         "total_ttc": "35 810 DH",
-        "pdf_url": "/devis/42/pdf",
+        "pdf_url": "/devis/42/document.pdf",
         "admin_whatsapp": "",
         "app_base_url": "https://example.test",
     }
@@ -137,7 +138,7 @@ def test_notify_quote_created_falls_back_to_link_when_document_fails():
     client_call = send.call_args_list[0]
     assert client_call.args[0] == "0611111111"
     assert "Lien de secours" in client_call.args[1]
-    assert "https://example.test/devis/42/pdf" in client_call.args[1]
+    assert "https://example.test/devis/42/document.pdf" in client_call.args[1]
 
 
 def test_get_whatsapp_base_url_strips_send_message_path():

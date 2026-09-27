@@ -503,12 +503,16 @@
   }
 
   .ha-chat-panel {
-    border-radius: 8px 8px 0 0;
-    bottom: -12px;
-    height: min(68vh, 560px);
+    border-radius: 8px;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+    height: min(68dvh, calc(100dvh - 96px - env(safe-area-inset-bottom, 0px)));
     position: fixed;
-    right: 0;
-    width: 100vw;
+    right: 8px;
+    width: calc(100vw - 16px);
+  }
+
+  .ha-chat-form {
+    padding: 12px;
   }
 
   .ha-chat-help {

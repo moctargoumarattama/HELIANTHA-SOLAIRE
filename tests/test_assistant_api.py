@@ -97,7 +97,7 @@ def test_assistant_chat_generates_ongrid_quote_from_tag(tmp_path):
     assert "<<<DEVIS_DATA" not in payload["content"]
     assert payload["quote"]["total_ttc"].endswith("DH")
     assert payload["quote"]["system_summary"].startswith("Systeme solaire")
-    assert payload["quote"]["download_url"] == f"/devis/{payload['quote']['id']}/pdf"
+    assert payload["quote"]["download_url"] == f"/devis/{payload['quote']['id']}/document.pdf"
     assert payload["quote"]["view_url"] == f"/devis/{payload['quote']['id']}"
 
     with app.app_context():
