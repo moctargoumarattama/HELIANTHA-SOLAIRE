@@ -62,6 +62,7 @@ from .pumping_rules import (
     parse_number,
 )
 from .public_presenters import build_public_quote_payload, company_profile, sanitize_calculation_result_for_public
+from .services.ai_service import chat_with_ollama, sanitize_messages
 from .services.pump_selector import NO_STANDARD_PUMP_MESSAGE, curve_head_for_flow, select_pump_for_duty
 from .services.pump_pricing import calculate_pump_sale_price
 from .wizard_projects import engine_project_for, normalize_wizard_project, wizard_projects_payload
@@ -412,6 +413,18 @@ def calculate():
     result["public_url"] = url_for("main.public_quote", quote_number=result["quote_number"])
     public_result = sanitize_calculation_result_for_public(result)
     return jsonify(public_result)
+
+
+@bp.post("/api/assistant/chat")
+def assistant_chat():
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify(error="Payload JSON requis."), 400
+    try:
+        messages = sanitize_messages(payload.get("messages"))
+    except ValueError:
+        return jsonify(error="messages doit etre une liste non vide."), 400
+    return jsonify(chat_with_ollama(messages))
 
 
 @bp.get("/simulation/<quote_number>")
