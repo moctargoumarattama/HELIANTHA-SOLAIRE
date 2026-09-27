@@ -304,6 +304,7 @@ iframe {
 a {
   color: inherit;
   text-decoration: none;
+  touch-action: manipulation;
 }
 
 button,
@@ -318,6 +319,28 @@ textarea {
 
 button {
   cursor: pointer;
+}
+
+.button,
+button,
+a,
+.project-card,
+.choice-card,
+.contact-link-card,
+.offer-tab {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.button:active,
+button:active,
+a:active,
+.project-card:active,
+.choice-card:active,
+.contact-link-card:active,
+.offer-tab:active,
+.is-pressing {
+  transform: translateY(1px) scale(0.985);
+  transition-duration: 80ms !important;
 }
 
 input,

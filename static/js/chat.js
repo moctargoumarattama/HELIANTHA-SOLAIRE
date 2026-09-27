@@ -20,6 +20,8 @@
 
   const welcome = "Bonjour, je suis l'assistant IA de HeliAntha. Je peux vous orienter simplement vers le bon projet : pompage solaire, reduction de facture, site isole ou recharge electrique.";
 
+  initInstantTapFeedback();
+
   function openChat() {
     hideNudge();
     panel.hidden = false;
@@ -27,6 +29,29 @@
     launcher.setAttribute("aria-expanded", "true");
     if (!messages.length) addMessage("assistant", welcome, false);
     window.setTimeout(() => input?.focus(), 60);
+  }
+
+  function initInstantTapFeedback() {
+    const selector = "button, a";
+    let activeElement = null;
+
+    const clear = () => {
+      if (activeElement) {
+        activeElement.classList.remove("is-pressing");
+        activeElement = null;
+      }
+    };
+
+    root.addEventListener("pointerdown", (event) => {
+      const target = event.target.closest(selector);
+      if (!target || target.disabled) return;
+      activeElement = target;
+      activeElement.classList.add("is-pressing");
+    }, { passive: true });
+
+    ["pointerup", "pointercancel", "pointerleave"].forEach((eventName) => {
+      root.addEventListener(eventName, clear, { passive: true });
+    });
   }
 
   function closeChat() {
@@ -176,16 +201,21 @@
     if (input) input.disabled = value;
     const button = form?.querySelector("button");
     if (button) button.disabled = value;
+    if (value) {
+      suggestions?.setAttribute("hidden", "");
+    } else if (messages.length <= 1) {
+      suggestions?.removeAttribute("hidden");
+    }
   }
 
   function startProgress(bubble) {
     const steps = [
-      "Connexion au conseiller local...",
+      "Connexion au conseiller...",
       "Analyse de votre demande...",
       "Recherche de la meilleure orientation...",
       "Preparation de la reponse...",
       "Presque termine, merci de patienter...",
-      "Le modele local finalise sa reponse...",
+      "Le conseiller finalise sa reponse...",
     ];
     let index = 0;
     if (!bubble) return;
@@ -231,7 +261,7 @@
     suggestions?.setAttribute("hidden", "");
 
     setPending(true);
-    const typing = addMessage("assistant typing", "Connexion au conseiller local...", false);
+    const typing = addMessage("assistant typing", "Connexion au conseiller...", false);
     startProgress(typing);
     try {
       const response = await fetchWithTimeout(endpoint, {

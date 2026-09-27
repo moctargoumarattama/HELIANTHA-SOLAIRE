@@ -11,7 +11,6 @@
   let installed = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
   const userAgent = window.navigator.userAgent || "";
   const isIos = /iphone|ipad|ipod/i.test(userAgent) || (window.navigator.platform === "MacIntel" && window.navigator.maxTouchPoints > 1);
-  const isAndroid = /android/i.test(userAgent);
 
   const readTimestamp = (key) => {
     try {
@@ -224,7 +223,7 @@
   };
 
   window.addEventListener("beforeinstallprompt", (event) => {
-    if (isIos || !isAndroid) {
+    if (isIos) {
       return;
     }
 

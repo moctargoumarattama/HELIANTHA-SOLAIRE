@@ -100,14 +100,15 @@ HIDDEN_COMPANY_SETTING_KEYS = {
     "pdf_payment_terms",
     "quote_validity_days",
 }
-PWA_CACHE_NAME = "heliantha-pwa-v6"
-APP_ASSET_VERSION = "20260927-2"
-PWA_ASSET_VERSION = "20260927-2"
+PWA_CACHE_NAME = "heliantha-pwa-v9"
+APP_ASSET_VERSION = "20260927-5"
+PWA_ASSET_VERSION = "20260927-5"
 PWA_CORE_PATHS = [
     "/",
     "/assets/helin.jpeg",
-    "/static/css/app.css",
-    "/static/css/admin.css",
+    f"/static/css/app.css?v={APP_ASSET_VERSION}",
+    f"/static/css/chat.css?v={APP_ASSET_VERSION}",
+    f"/static/css/admin.css?v={APP_ASSET_VERSION}",
     f"/static/js/app.js?v={APP_ASSET_VERSION}",
     f"/static/js/public-result.js?v={APP_ASSET_VERSION}",
     f"/static/js/pwa.js?v={PWA_ASSET_VERSION}",
@@ -273,6 +274,7 @@ def _notify_quote_created_safely(
                 "project_type": _project_label_for_notification(project),
                 "total_ttc": _money_label((result.get("financial_breakdown") or {}).get("total_ttc")),
                 "pdf_url": url_for("main.public_quote_print_by_id", quote_id=quote_id),
+                "pdf_filename": f"Devis_HeliAntha_{quote_id}.pdf",
                 "whatsapp_gateway_url": settings.get("whatsapp_gateway_url"),
                 "admin_whatsapp": settings.get("admin_whatsapp"),
                 "app_base_url": settings.get("app_base_url"),

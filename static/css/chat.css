@@ -87,6 +87,7 @@
   min-height: 50px;
   padding: 8px 16px 8px 8px;
   touch-action: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .ha-chat-launcher::after {
@@ -190,6 +191,8 @@
   border-radius: 50%;
   color: #fff;
   cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
   font-weight: 900;
   height: 34px;
   width: 34px;
@@ -348,6 +351,8 @@
   font-size: 0.78rem;
   font-weight: 800;
   padding: 8px 10px;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .chat-quote-card {
@@ -467,6 +472,15 @@
   color: var(--ha-navy);
   cursor: pointer;
   font-weight: 900;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ha-chat button:active,
+.ha-chat a:active,
+.ha-chat .is-pressing {
+  transform: translateY(1px) scale(0.985);
+  transition-duration: 80ms !important;
 }
 
 .ha-chat-form button:disabled,

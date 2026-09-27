@@ -20,6 +20,8 @@ def get_whatsapp_base_url(gateway_url: str | None = None) -> str:
     value = str(gateway_url or WHATSAPP_GATEWAY_URL or "http://127.0.0.1:3001").strip()
     if value.endswith("/send-message"):
         value = value[: -len("/send-message")]
+    if value.endswith("/send-document"):
+        value = value[: -len("/send-document")]
     return value.rstrip("/")
 
 
@@ -44,6 +46,45 @@ def send_whatsapp_raw(phone: str, message: str, gateway_url: str | None = None) 
         return False
     except Exception as exc:  # pragma: no cover - defensive logging path
         logger.error("WhatsApp gateway connection error: %s", exc)
+        return False
+
+
+def send_whatsapp_document(
+    phone: str,
+    pdf_url: str,
+    filename: str,
+    caption: str = "",
+    gateway_url: str | None = None,
+) -> bool:
+    """Send a PDF document through the local Baileys gateway."""
+
+    phone = str(phone or "").strip()
+    pdf_url = str(pdf_url or "").strip()
+    filename = str(filename or "Devis_HeliAntha.pdf").strip() or "Devis_HeliAntha.pdf"
+    caption = str(caption or "").strip()
+    if not phone or not pdf_url:
+        return False
+
+    base = get_whatsapp_base_url(gateway_url)
+    try:
+        resp = requests.post(
+            f"{base}/send-document",
+            json={
+                "phone": phone,
+                "pdf_url": pdf_url,
+                "filename": filename,
+                "caption": caption,
+            },
+            timeout=15,
+        )
+        data = resp.json()
+        if data.get("success"):
+            logger.info("WhatsApp document sent successfully to %s", phone)
+            return True
+        logger.warning("WhatsApp document send failed to %s: %s", phone, data.get("error"))
+        return False
+    except Exception as exc:  # pragma: no cover - defensive logging path
+        logger.error("WhatsApp document gateway connection error: %s", exc)
         return False
 
 
@@ -93,6 +134,16 @@ def gateway_logout(gateway_url: str | None = None) -> bool:
         return False
 
 
+def _absolute_url(base_url: str, path_or_url: str) -> str:
+    value = str(path_or_url or "").strip()
+    if value.startswith(("http://", "https://")):
+        return value
+    base = str(base_url or BASE_URL).strip().rstrip("/")
+    if value.startswith("/"):
+        return f"{base}{value}"
+    return f"{base}/{value}"
+
+
 def notify_quote_created(quote_data: dict[str, Any]) -> None:
     """Notify the client and the administrator after a quote is generated."""
 
@@ -104,20 +155,32 @@ def notify_quote_created(quote_data: dict[str, Any]) -> None:
     admin_phone = str(quote_data.get("admin_whatsapp") or ADMIN_PHONE).strip()
     base_url = str(quote_data.get("app_base_url") or BASE_URL).strip().rstrip("/")
     pdf_url = str(quote_data.get("pdf_url") or "").strip()
-    pdf_link = f"{base_url}{pdf_url}" if pdf_url.startswith("/") else f"{base_url}/{pdf_url}"
+    pdf_link = _absolute_url(base_url, pdf_url)
 
     client_msg = (
         f"Bonjour *{client_name}*,\n\n"
         f"Merci d'avoir fait confiance a *HeliAntha* pour votre projet de *{project_type}*.\n\n"
         f"Votre estimation officielle est prete :\n"
         f"Montant estimatif : *{total_ttc}*\n\n"
-        f"*Telechargez votre devis officiel (PDF) :*\n"
-        f"{pdf_link}\n\n"
         f"Un ingenieur de notre equipe reste a votre disposition pour planifier une visite technique si vous le souhaitez.\n\n"
         f"_L'equipe HeliAntha Maroc_"
     )
     if client_phone:
-        send_whatsapp_raw(client_phone, client_msg, gateway_url=gateway_url)
+        filename = str(quote_data.get("pdf_filename") or "Devis_HeliAntha.pdf").strip() or "Devis_HeliAntha.pdf"
+        sent_document = send_whatsapp_document(
+            client_phone,
+            pdf_link,
+            filename,
+            client_msg,
+            gateway_url=gateway_url,
+        )
+        if not sent_document:
+            fallback_msg = (
+                f"{client_msg}\n\n"
+                f"*Lien de secours pour telecharger votre devis officiel (PDF) :*\n"
+                f"{pdf_link}"
+            )
+            send_whatsapp_raw(client_phone, fallback_msg, gateway_url=gateway_url)
 
     if admin_phone:
         admin_msg = (

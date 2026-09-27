@@ -8,6 +8,7 @@ from app.services.whatsapp_service import (
     get_gateway_status,
     get_whatsapp_base_url,
     notify_quote_created,
+    send_whatsapp_document,
     send_whatsapp_raw,
 )
 
@@ -37,6 +38,30 @@ def test_send_whatsapp_raw_connection_error_returns_false():
         assert send_whatsapp_raw("0600000000", "Bonjour") is False
 
 
+def test_send_whatsapp_document_success():
+    response = Mock()
+    response.json.return_value = {"success": True}
+
+    with patch("app.services.whatsapp_service.requests.post", return_value=response) as post:
+        assert send_whatsapp_document(
+            "0600000000",
+            "https://devis.test/devis/12/pdf",
+            "Devis_HeliAntha_12.pdf",
+            "Voici votre devis",
+            gateway_url="http://127.0.0.1:3001/send-message",
+        ) is True
+
+    post.assert_called_once()
+    assert post.call_args.args[0] == "http://127.0.0.1:3001/send-document"
+    assert post.call_args.kwargs["json"] == {
+        "phone": "0600000000",
+        "pdf_url": "https://devis.test/devis/12/pdf",
+        "filename": "Devis_HeliAntha_12.pdf",
+        "caption": "Voici votre devis",
+    }
+    assert post.call_args.kwargs["timeout"] == 15
+
+
 def test_notify_quote_created_sends_client_and_admin_messages():
     quote_data = {
         "client_name": "Client Test",
@@ -50,14 +75,18 @@ def test_notify_quote_created_sends_client_and_admin_messages():
     with (
         patch("app.services.whatsapp_service.BASE_URL", "https://devis.test"),
         patch("app.services.whatsapp_service.ADMIN_PHONE", "0684056613"),
+        patch("app.services.whatsapp_service.send_whatsapp_document", return_value=True) as send_document,
         patch("app.services.whatsapp_service.send_whatsapp_raw", return_value=True) as send,
     ):
         notify_quote_created(quote_data)
 
-    assert send.call_count == 2
-    client_call, admin_call = send.call_args_list
-    assert client_call.args[0] == "0611111111"
-    assert "https://devis.test/devis/12/pdf" in client_call.args[1]
+    send_document.assert_called_once()
+    assert send_document.call_args.args[0] == "0611111111"
+    assert send_document.call_args.args[1] == "https://devis.test/devis/12/pdf"
+    assert send_document.call_args.args[2] == "Devis_HeliAntha.pdf"
+    assert "48 500 DH" in send_document.call_args.args[3]
+    assert send.call_count == 1
+    admin_call = send.call_args_list[0]
     assert admin_call.args[0] == "0684056613"
     assert "Client Test" in admin_call.args[1]
 
@@ -74,17 +103,46 @@ def test_notify_quote_created_uses_admin_gateway_settings():
         "app_base_url": "https://example.test",
     }
 
-    with patch("app.services.whatsapp_service.send_whatsapp_raw", return_value=True) as send:
+    with (
+        patch("app.services.whatsapp_service.send_whatsapp_document", return_value=True) as send_document,
+        patch("app.services.whatsapp_service.send_whatsapp_raw", return_value=True) as send,
+    ):
+        notify_quote_created(quote_data)
+
+    assert send_document.call_count == 1
+    assert send_document.call_args.kwargs["gateway_url"] == "http://127.0.0.1:3999/send-message"
+    assert send.call_count == 1
+    assert send.call_args_list[0].args[0] == "0699999999"
+    assert "https://example.test/devis/42/pdf" in send.call_args_list[0].args[1]
+
+
+def test_notify_quote_created_falls_back_to_link_when_document_fails():
+    quote_data = {
+        "client_name": "Client Test",
+        "client_phone": "0611111111",
+        "project_type": "On-Grid",
+        "total_ttc": "35 810 DH",
+        "pdf_url": "/devis/42/pdf",
+        "admin_whatsapp": "",
+        "app_base_url": "https://example.test",
+    }
+
+    with (
+        patch("app.services.whatsapp_service.send_whatsapp_document", return_value=False),
+        patch("app.services.whatsapp_service.send_whatsapp_raw", return_value=True) as send,
+    ):
         notify_quote_created(quote_data)
 
     assert send.call_count == 2
-    assert send.call_args_list[0].kwargs["gateway_url"] == "http://127.0.0.1:3999/send-message"
-    assert send.call_args_list[1].args[0] == "0699999999"
-    assert "https://example.test/devis/42/pdf" in send.call_args_list[0].args[1]
+    client_call = send.call_args_list[0]
+    assert client_call.args[0] == "0611111111"
+    assert "Lien de secours" in client_call.args[1]
+    assert "https://example.test/devis/42/pdf" in client_call.args[1]
 
 
 def test_get_whatsapp_base_url_strips_send_message_path():
     assert get_whatsapp_base_url("http://127.0.0.1:3001/send-message") == "http://127.0.0.1:3001"
+    assert get_whatsapp_base_url("http://127.0.0.1:3001/send-document") == "http://127.0.0.1:3001"
     assert get_whatsapp_base_url("http://127.0.0.1:3001") == "http://127.0.0.1:3001"
 
 

@@ -158,6 +158,7 @@ const nextButton = document.querySelector("#next-button");
 const backButton = document.querySelector("#back-button");
 
 bindLanding();
+initInstantTapFeedback();
 initWelcomePopup();
 initPageChrome();
 initScrollReveal();
@@ -299,6 +300,29 @@ function bindLanding() {
 
   form.addEventListener("submit", onSubmitWizard);
   backButton.addEventListener("click", onBackStep);
+}
+
+function initInstantTapFeedback() {
+  const selector = ".button, button, a, .project-card, .choice-card, .contact-link-card, .offer-tab";
+  let activeElement = null;
+
+  const clear = () => {
+    if (activeElement) {
+      activeElement.classList.remove("is-pressing");
+      activeElement = null;
+    }
+  };
+
+  document.addEventListener("pointerdown", (event) => {
+    const target = event.target.closest(selector);
+    if (!target || target.disabled || target.getAttribute("aria-disabled") === "true") return;
+    activeElement = target;
+    activeElement.classList.add("is-pressing");
+  }, { passive: true });
+
+  ["pointerup", "pointercancel", "pointerleave", "scroll"].forEach((eventName) => {
+    document.addEventListener(eventName, clear, { passive: true });
+  });
 }
 
 function initWelcomePopup() {
