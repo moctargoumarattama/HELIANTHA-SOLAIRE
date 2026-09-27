@@ -62,9 +62,10 @@ from .pumping_rules import (
     parse_number,
 )
 from .public_presenters import build_public_quote_payload, company_profile, sanitize_calculation_result_for_public
-from .services.ai_service import chat_with_ollama, sanitize_messages
+from .services.ai_service import chat_with_ollama, extract_quote_request, sanitize_messages
 from .services.pump_selector import NO_STANDARD_PUMP_MESSAGE, curve_head_for_flow, select_pump_for_duty
 from .services.pump_pricing import calculate_pump_sale_price
+from .services.whatsapp_service import notify_quote_created
 from .wizard_projects import engine_project_for, normalize_wizard_project, wizard_projects_payload
 
 
@@ -239,6 +240,42 @@ def _financial_summary_rows(financial_breakdown: dict) -> list[dict]:
     ]
 
 
+def _project_label_for_notification(project: str) -> str:
+    return {
+        "photovoltaic": "Reduction Facture (On-Grid)",
+        "pumping": "Pompage Solaire",
+    }.get(project, PROJECT_LABELS.get(project, "Projet Solaire"))
+
+
+def _notify_quote_created_safely(
+    *,
+    quote_id: int,
+    project: str,
+    contact: dict,
+    data: dict,
+    result: dict,
+) -> None:
+    if current_app.config.get("TESTING"):
+        return
+    try:
+        settings = {row.get("key"): row.get("value", "") for row in list_company_settings()}
+        notify_quote_created(
+            {
+                "client_name": contact.get("name") or "Client",
+                "client_phone": contact.get("phone") or "",
+                "city": data.get("city") or contact.get("location") or "",
+                "project_type": _project_label_for_notification(project),
+                "total_ttc": _money_label((result.get("financial_breakdown") or {}).get("total_ttc")),
+                "pdf_url": url_for("main.public_quote_print_by_id", quote_id=quote_id),
+                "whatsapp_gateway_url": settings.get("whatsapp_gateway_url"),
+                "admin_whatsapp": settings.get("admin_whatsapp"),
+                "app_base_url": settings.get("app_base_url"),
+            }
+        )
+    except Exception:
+        current_app.logger.exception("WhatsApp quote notification failed")
+
+
 
 @bp.before_app_request
 def protect_admin():
@@ -409,10 +446,127 @@ def calculate():
     result["quote_number"] = f"HSQ-{datetime.now():%Y%m%d}-{randint(1000, 9999)}"
     result["created_at"] = datetime.now().strftime("%d/%m/%Y à %H:%M")
     result["project_type"] = project
-    save_quote(result["quote_number"], engine_project, data, contact, result)
+    quote_id = save_quote(result["quote_number"], engine_project, data, contact, result)
+    _notify_quote_created_safely(
+        quote_id=quote_id,
+        project=engine_project,
+        contact=contact,
+        data=data,
+        result=result,
+    )
     result["public_url"] = url_for("main.public_quote", quote_number=result["quote_number"])
     public_result = sanitize_calculation_result_for_public(result)
     return jsonify(public_result)
+
+
+def _ai_text(data: dict, *keys: str) -> str:
+    for key in keys:
+        value = data.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return ""
+
+
+def _ai_float(data: dict, *keys: str, default: float = 0.0) -> float:
+    for key in keys:
+        value = data.get(key)
+        if value is None or value == "":
+            continue
+        try:
+            return float(str(value).strip().replace(",", "."))
+        except ValueError:
+            continue
+    return default
+
+
+def _ai_phase(value: str) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"tri", "triphase", "triphasé", "triphasee", "three_phase"}:
+        return "triphase"
+    return "monophase"
+
+
+def _money_label(value) -> str:
+    try:
+        number = float(value or 0)
+    except (TypeError, ValueError):
+        number = 0
+    return f"{number:,.0f}".replace(",", " ") + " DH"
+
+
+def _quote_summary(project: str, result: dict) -> str:
+    final = result.get("final_results") or {}
+    if project == "photovoltaic":
+        power = final.get("installed_power_kwp") or final.get("target_kwp")
+        panels = final.get("panel_count")
+        if power:
+            return f"Systeme solaire {float(power):.2f} kWc".replace(".", ",")
+        if panels:
+            return f"Systeme solaire {panels} panneaux"
+        return "Systeme solaire On-Grid"
+    pump_cv = final.get("selected_pump_cv") or final.get("pump_power_cv")
+    if pump_cv:
+        return f"Pompage solaire {float(pump_cv):g} CV"
+    return "Solution pompage solaire"
+
+
+def _build_quote_from_ai_payload(raw_payload: dict) -> dict | None:
+    mode = _ai_text(raw_payload, "mode", "project", "type").lower()
+    city = _ai_text(raw_payload, "ville", "city", "location", "localisation")
+    contact = {
+        "name": _ai_text(raw_payload, "nom", "name", "client_name", "customer_name") or "Client chat",
+        "phone": _ai_text(raw_payload, "telephone", "phone", "tel", "mobile"),
+        "email": _ai_text(raw_payload, "email", "mail"),
+        "location": city,
+    }
+
+    if mode in {"ongrid", "on_grid", "photovoltaic", "pv", "solaire"}:
+        project = "photovoltaic"
+        data = {
+            "meter_type": _ai_text(raw_payload, "meter_type", "compteur") or "numerique",
+            "phase": _ai_phase(_ai_text(raw_payload, "phase", "reseau", "network")),
+            "monthly_consumption_kwh": _ai_float(
+                raw_payload,
+                "monthly_consumption_kwh",
+                "monthly_kwh",
+                "consommation",
+                "consommation_mensuelle",
+                "kwh",
+            ),
+            "city": city,
+        }
+    elif mode in {"pumping", "pompage", "pump"}:
+        project = "pumping"
+        data = {
+            "pump_existing": False,
+            "flow_m3_h": _ai_float(raw_payload, "flow_m3_h", "debit", "débit", "debit_m3_h"),
+            "hmt_m": _ai_float(raw_payload, "hmt_m", "hmt", "profondeur", "depth", "hauteur"),
+            "city": city,
+        }
+    else:
+        return None
+
+    result = engine.calculate(project, data, context=load_calculation_context())
+    quote_number = f"HSQ-{datetime.now():%Y%m%d}-{randint(1000, 9999)}"
+    result["quote_number"] = quote_number
+    result["created_at"] = datetime.now().strftime("%d/%m/%Y a %H:%M")
+    result["project_type"] = project
+    quote_id = save_quote(quote_number, project, data, contact, result)
+    _notify_quote_created_safely(
+        quote_id=quote_id,
+        project=project,
+        contact=contact,
+        data=data,
+        result=result,
+    )
+    financial = result.get("financial_breakdown") or {}
+    return {
+        "id": quote_id,
+        "total_ttc": _money_label(financial.get("total_ttc")),
+        "system_summary": _quote_summary(project, result),
+        "download_url": url_for("main.public_quote_print_by_id", quote_id=quote_id),
+        "view_url": url_for("main.public_quote_by_id", quote_id=quote_id),
+    }
 
 
 @bp.post("/api/assistant/chat")
@@ -424,7 +578,37 @@ def assistant_chat():
         messages = sanitize_messages(payload.get("messages"))
     except ValueError:
         return jsonify(error="messages doit etre une liste non vide."), 400
-    return jsonify(chat_with_ollama(messages))
+    assistant_response = chat_with_ollama(messages)
+    clean_content, quote_payload = extract_quote_request(assistant_response.get("content", ""))
+    response_payload = {"role": "assistant", "content": clean_content or assistant_response.get("content", "")}
+    if quote_payload:
+        try:
+            quote = _build_quote_from_ai_payload(quote_payload)
+        except Exception:
+            current_app.logger.exception("Assistant quote generation failed")
+            quote = None
+        if quote:
+            response_payload["quote_ready"] = True
+            response_payload["quote"] = quote
+            if not response_payload["content"]:
+                response_payload["content"] = "Votre devis officiel est pret. Vous pouvez le telecharger ci-dessous."
+    return jsonify(response_payload)
+
+
+@bp.get("/devis/<int:quote_id>")
+def public_quote_by_id(quote_id):
+    quote = get_quote(quote_id)
+    if not quote:
+        abort(404)
+    return redirect(url_for("main.public_quote", quote_number=quote["quote_number"]))
+
+
+@bp.get("/devis/<int:quote_id>/pdf")
+def public_quote_print_by_id(quote_id):
+    quote = get_quote(quote_id)
+    if not quote:
+        abort(404)
+    return redirect(url_for("main.public_quote_print", quote_number=quote["quote_number"]))
 
 
 @bp.get("/simulation/<quote_number>")

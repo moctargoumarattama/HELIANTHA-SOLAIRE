@@ -230,7 +230,7 @@ function commonContactStep() {
     id: "contact",
     type: "fields",
     title: "Vos coordonnées",
-    description: "Un téléphone ou un e-mail suffit.",
+    description: "Votre telephone est necessaire pour recevoir le devis par WhatsApp.",
     fields: [
       textField("name", "Nom complet", "Votre nom", ""),
       textField("phone", "Téléphone", "06 00 00 00 00", ""),
@@ -1561,9 +1561,8 @@ async function onSubmitWizard(event) {
       const isFinalContactPage = !isCompactWizard() || pages.length <= 1 || pageIndex >= pages.length - 1;
       if (isFinalContactPage) {
         const phone = String(state.contact.phone || "").trim();
-        const email = String(state.contact.email || "").trim();
-        if (!phone && !email) {
-          toast("Un téléphone ou un e-mail suffit pour transmettre l’étude.");
+        if (!phone) {
+          toast("Un telephone est necessaire pour recevoir le devis par WhatsApp.");
           return;
         }
       }

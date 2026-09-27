@@ -1,14 +1,14 @@
-<div class="ha-chat" id="ha-chat" data-endpoint="{{ url_for('main.assistant_chat') }}">
+<div class="ha-chat" id="ha-chat" data-endpoint="{{ url_for('main.assistant_chat') }}" data-logo="{{ url_for('main.brand_image') }}">
   <button class="ha-chat-launcher" type="button" id="ha-chat-launcher" aria-expanded="false" aria-controls="ha-chat-panel">
-    <span class="ha-chat-icon" aria-hidden="true">?</span>
-    <span class="ha-chat-help">Besoin d'aide ?</span>
+    <span class="ha-chat-icon" aria-hidden="true"><img src="{{ url_for('main.brand_image') }}" alt=""></span>
+    <span class="ha-chat-help">Conseiller IA</span>
   </button>
 
   <section class="ha-chat-panel" id="ha-chat-panel" aria-label="Conseiller HeliAntha" hidden>
     <header class="ha-chat-header">
       <div>
         <strong>Conseiller HeliAntha</strong>
-        <small><span></span> En ligne</small>
+        <small><span></span> IA locale disponible</small>
       </div>
       <button class="ha-chat-close" type="button" id="ha-chat-close" aria-label="Fermer le conseiller">x</button>
     </header>

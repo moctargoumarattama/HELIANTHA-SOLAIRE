@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import json
+import re
 from typing import Any
 
 import requests
@@ -17,6 +19,7 @@ ASSISTANT_FALLBACK_MESSAGE = (
 MAX_MESSAGE_CHARS = 1000
 MAX_MESSAGES = 12
 ALLOWED_ROLES = {"system", "user", "assistant"}
+DEVIS_DATA_RE = re.compile(r"<<<DEVIS_DATA:\s*(\{.*?\})\s*>>>", re.DOTALL)
 
 
 def sanitize_messages(raw_messages: Any) -> list[dict[str, str]]:
@@ -44,6 +47,19 @@ def sanitize_messages(raw_messages: Any) -> list[dict[str, str]]:
 
 def fallback_response() -> dict[str, str]:
     return {"role": "assistant", "content": ASSISTANT_FALLBACK_MESSAGE}
+
+
+def extract_quote_request(content: str) -> tuple[str, dict[str, Any] | None]:
+    text = str(content or "")
+    match = DEVIS_DATA_RE.search(text)
+    if not match:
+        return text.strip(), None
+    cleaned = DEVIS_DATA_RE.sub("", text).strip()
+    try:
+        payload = json.loads(match.group(1))
+    except json.JSONDecodeError:
+        return cleaned, None
+    return cleaned, payload if isinstance(payload, dict) else None
 
 
 def chat_with_ollama(messages: list[dict[str, str]]) -> dict[str, str]:
