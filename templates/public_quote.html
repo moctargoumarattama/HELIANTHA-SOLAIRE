@@ -22,7 +22,7 @@
 <body class="page-result{% if print_mode %} page-print{% endif %}">
   <header class="site-header site-header-compact">
     <div class="shell header-bar">
-      <a class="brand" href="{{ url_for('main.index') }}" aria-label="Accueil HeliAntha">
+      <a class="brand" href="{{ url_for('main.index') }}" aria-label="Accueil HeliAntha" data-new-study-link>
         <span class="brand-mark" aria-hidden="true"><img class="brand-logo" src="{{ url_for('main.brand_image') }}" alt=""></span>
         <span class="brand-copy">
           <strong>{{ company.company_name }}</strong>
@@ -31,7 +31,7 @@
       </a>
 
       <div class="header-actions">
-        <a class="button button-ghost button-small action-short" href="{{ url_for('main.index') }}"><span class="action-full">Nouvelle etude</span><span class="action-compact">Nouveau</span></a>
+        <a class="button button-ghost button-small action-short" href="{{ url_for('main.index') }}" data-new-study-link><span class="action-full">Nouvelle etude</span><span class="action-compact">Nouveau</span></a>
         {% if not print_mode %}
           <button class="button button-primary button-small action-short" type="button" onclick="window.print()"><span class="action-full">Imprimer</span><span class="action-compact">PDF</span></button>
         {% endif %}
@@ -150,9 +150,9 @@
       visit: "{{ url_for('main.create_visit_request', quote_number=quote.quote_number) }}"
     };
   </script>
-  <script src="{{ url_for('static', filename='js/public-result.js') }}"></script>
-  <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
-  <script src="{{ url_for('static', filename='js/pwa.js') }}?v=20260901-1"></script>
+  <script src="{{ url_for('static', filename='js/public-result.js') }}?v=20260927-2"></script>
+  <script src="{{ url_for('static', filename='js/chat.js') }}?v=20260927-2"></script>
+  <script src="{{ url_for('static', filename='js/pwa.js') }}?v=20260927-2"></script>
   {% if print_mode %}
     <script>
       window.addEventListener("load", () => window.setTimeout(() => window.print(), 300));

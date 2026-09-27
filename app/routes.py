@@ -100,16 +100,16 @@ HIDDEN_COMPANY_SETTING_KEYS = {
     "pdf_payment_terms",
     "quote_validity_days",
 }
-PWA_CACHE_NAME = "heliantha-pwa-v4"
-APP_ASSET_VERSION = "20260901-1"
-PWA_ASSET_VERSION = "20260901-1"
+PWA_CACHE_NAME = "heliantha-pwa-v6"
+APP_ASSET_VERSION = "20260927-2"
+PWA_ASSET_VERSION = "20260927-2"
 PWA_CORE_PATHS = [
     "/",
     "/assets/helin.jpeg",
     "/static/css/app.css",
     "/static/css/admin.css",
     f"/static/js/app.js?v={APP_ASSET_VERSION}",
-    "/static/js/public-result.js",
+    f"/static/js/public-result.js?v={APP_ASSET_VERSION}",
     f"/static/js/pwa.js?v={PWA_ASSET_VERSION}",
 ]
 
@@ -325,6 +325,7 @@ def brand_image():
 def pwa_manifest():
     icon_url = url_for("main.brand_image")
     manifest = {
+        "id": url_for("main.index"),
         "name": "HELIANTHA",
         "short_name": "HELIANTHA",
         "description": "HeliAntha Smart Quote pour les estimations solaires et energetiques.",
@@ -336,16 +337,19 @@ def pwa_manifest():
         "background_color": "#f6f8fb",
         "theme_color": "#102638",
         "lang": "fr",
+        "categories": ["business", "productivity", "utilities"],
         "icons": [
             {
                 "src": icon_url,
                 "sizes": "192x192",
                 "type": "image/jpeg",
+                "purpose": "any",
             },
             {
                 "src": icon_url,
                 "sizes": "512x512",
                 "type": "image/jpeg",
+                "purpose": "any",
             },
         ],
     }

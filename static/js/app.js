@@ -305,7 +305,19 @@ function initWelcomePopup() {
   const popup = document.querySelector("#welcome-popup");
   if (!popup) return;
   const closeButton = document.querySelector("#welcome-popup-close");
+  const storageKey = "heliantha-welcome-popup-seen";
   let closeTimer = null;
+
+  try {
+    if (window.sessionStorage.getItem(storageKey) === "1") {
+      popup.hidden = true;
+      window.dispatchEvent(new CustomEvent("heliantha:welcome-complete"));
+      return;
+    }
+    window.sessionStorage.setItem(storageKey, "1");
+  } catch (_) {
+    // If storage is unavailable, keep the popup usable for the current page load.
+  }
 
   const close = () => {
     window.clearTimeout(closeTimer);
@@ -313,6 +325,7 @@ function initWelcomePopup() {
     window.setTimeout(() => {
       popup.hidden = true;
       popup.classList.remove("is-open", "is-hiding");
+      window.dispatchEvent(new CustomEvent("heliantha:welcome-complete"));
     }, 360);
   };
 
@@ -1748,7 +1761,7 @@ async function calculate() {
     state.result = result;
     persistState();
     sessionStorage.removeItem(STORAGE_KEY);
-    window.location.href = result.public_url || `/simulation/${result.quote_number}`;
+    window.location.replace(result.public_url || `/simulation/${result.quote_number}`);
   } catch (error) {
     nextButton.disabled = false;
     backButton.disabled = false;

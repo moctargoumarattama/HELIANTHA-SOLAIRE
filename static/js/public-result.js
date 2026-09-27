@@ -8,10 +8,22 @@ initScrollReveal();
 renderPublicQuote();
 bindDetailButtons();
 bindVisitPanel();
+bindNewStudyLinks();
 
 function renderPublicQuote() {
   renderOfferTabs();
   renderCurrentOffer(true);
+}
+
+function bindNewStudyLinks() {
+  document.querySelectorAll("[data-new-study-link]").forEach((link) => {
+    link.addEventListener("click", (event) => {
+      const url = link.getAttribute("href");
+      if (!url) return;
+      event.preventDefault();
+      window.location.replace(url);
+    });
+  });
 }
 
 function initScrollReveal() {

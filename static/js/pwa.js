@@ -1,12 +1,17 @@
 (function () {
-  const DISMISS_KEY = "heliantha-pwa-install-dismissed-at";
-  const SHOWN_KEY = "heliantha-pwa-install-shown-at";
+  const DISMISS_KEY = "heliantha-pwa-install-dismissed-at-v2";
+  const SHOWN_KEY = "heliantha-pwa-install-shown-at-v2";
+  const SESSION_SHOWN_KEY = "heliantha-pwa-install-shown-session-v2";
   const DISMISS_COOLDOWN_MS = 14 * 24 * 60 * 60 * 1000;
-  const SHOWN_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
+  const SHOWN_COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000;
   let deferredPrompt = null;
   let promptRoot = null;
   let promptCard = null;
+  let scheduledPromptTimer = null;
   let installed = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+  const userAgent = window.navigator.userAgent || "";
+  const isIos = /iphone|ipad|ipod/i.test(userAgent) || (window.navigator.platform === "MacIntel" && window.navigator.maxTouchPoints > 1);
+  const isAndroid = /android/i.test(userAgent);
 
   const readTimestamp = (key) => {
     try {
@@ -40,6 +45,22 @@
   const recentlyShown = () => {
     const stored = readTimestamp(SHOWN_KEY);
     return Boolean(stored) && Date.now() - stored < SHOWN_COOLDOWN_MS;
+  };
+
+  const shownThisSession = () => {
+    try {
+      return window.sessionStorage.getItem(SESSION_SHOWN_KEY) === "1";
+    } catch (_) {
+      return false;
+    }
+  };
+
+  const markShownThisSession = () => {
+    try {
+      window.sessionStorage.setItem(SESSION_SHOWN_KEY, "1");
+    } catch (_) {
+      // Ignore storage failures and keep the install flow usable.
+    }
   };
 
   const injectStyles = () => {
@@ -89,7 +110,7 @@
   };
 
   const showPrompt = () => {
-    if (!deferredPrompt || installed || recentlyDismissed() || recentlyShown()) {
+    if (!deferredPrompt || installed || recentlyDismissed() || recentlyShown() || shownThisSession()) {
       return;
     }
 
@@ -109,7 +130,7 @@
         '      <h2 class="pwa-install-title" id="pwa-install-title">Installer l\'application</h2>',
         "    </div>",
         "  </div>",
-        '  <p class="pwa-install-text">Ouvrez HELIANTHA plus vite depuis votre telephone ou votre ordinateur.</p>',
+        '  <p class="pwa-install-text">Installez HELIANTHA sur votre ecran d\'accueil pour ouvrir le simulateur comme une application.</p>',
         '  <div class="pwa-install-actions">',
         '    <button class="pwa-install-btn pwa-install-btn-primary" type="button" data-pwa-action="install">Installer</button>',
         '    <button class="pwa-install-btn pwa-install-btn-secondary" type="button" data-pwa-action="dismiss">Pas maintenant</button>',
@@ -150,6 +171,7 @@
     }
 
     writeTimestamp(SHOWN_KEY);
+    markShownThisSession();
     promptRoot.hidden = false;
     window.requestAnimationFrame(() => {
       if (promptRoot) {
@@ -184,10 +206,31 @@
     }
   };
 
+  const schedulePrompt = (delayMs = 900) => {
+    window.clearTimeout(scheduledPromptTimer);
+    const welcomePopup = document.querySelector("#welcome-popup");
+
+    if (welcomePopup && !welcomePopup.hidden) {
+      const showAfterWelcome = () => {
+        window.clearTimeout(scheduledPromptTimer);
+        scheduledPromptTimer = window.setTimeout(showPrompt, 700);
+      };
+      window.addEventListener("heliantha:welcome-complete", showAfterWelcome, { once: true });
+      scheduledPromptTimer = window.setTimeout(showAfterWelcome, 4600);
+      return;
+    }
+
+    scheduledPromptTimer = window.setTimeout(showPrompt, delayMs);
+  };
+
   window.addEventListener("beforeinstallprompt", (event) => {
+    if (isIos || !isAndroid) {
+      return;
+    }
+
     event.preventDefault();
     deferredPrompt = event;
-    window.setTimeout(showPrompt, 900);
+    schedulePrompt(900);
   });
 
   window.addEventListener("appinstalled", () => {
