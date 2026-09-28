@@ -72,14 +72,31 @@
   transform: translateY(6px) scale(0.96);
 }
 
+@keyframes haChatLauncherBlink {
+  0%,
+  100% {
+    box-shadow:
+      0 18px 45px rgba(21, 148, 95, 0.34),
+      0 0 0 0 rgba(21, 148, 95, 0.42);
+    transform: scale(1);
+  }
+
+  50% {
+    box-shadow:
+      0 20px 52px rgba(21, 148, 95, 0.44),
+      0 0 0 9px rgba(21, 148, 95, 0);
+    transform: scale(1.035);
+  }
+}
+
 .ha-chat-launcher {
   align-items: center;
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.12), transparent),
-    var(--ha-navy);
+    linear-gradient(135deg, rgba(255, 255, 255, 0.18), transparent),
+    #15945f;
   border: 0;
   border-radius: 999px;
-  box-shadow: 0 18px 45px rgba(16, 38, 56, 0.32);
+  box-shadow: 0 18px 45px rgba(21, 148, 95, 0.34);
   color: #fff;
   cursor: pointer;
   display: inline-flex;
@@ -88,15 +105,16 @@
   padding: 8px 16px 8px 8px;
   touch-action: none;
   -webkit-tap-highlight-color: transparent;
+  animation: haChatLauncherBlink 1.55s ease-in-out infinite;
 }
 
 .ha-chat-launcher::after {
   align-items: center;
-  background: var(--ha-gold);
+  background: #0f7f51;
   border: 2px solid #fff;
   border-radius: 999px;
-  box-shadow: 0 8px 16px rgba(16, 38, 56, 0.18);
-  color: var(--ha-navy);
+  box-shadow: 0 8px 16px rgba(21, 148, 95, 0.25);
+  color: #fff;
   content: "Chat";
   display: inline-flex;
   font-size: 0.68rem;
@@ -106,6 +124,11 @@
   position: absolute;
   right: -5px;
   top: -8px;
+}
+
+.ha-chat.is-open .ha-chat-launcher,
+.ha-chat.is-dragging .ha-chat-launcher {
+  animation: none;
 }
 
 .ha-chat-icon {

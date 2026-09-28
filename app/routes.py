@@ -251,8 +251,8 @@ def _financial_summary_rows(financial_breakdown: dict) -> list[dict]:
 
 def _project_label_for_notification(project: str) -> str:
     return {
-        "photovoltaic": "Reduction Facture (On-Grid)",
-        "pumping": "Pompage Solaire",
+        "photovoltaic": "Installation solaire raccordee reseau",
+        "pumping": "Pompage solaire",
     }.get(project, PROJECT_LABELS.get(project, "Projet Solaire"))
 
 
@@ -334,6 +334,12 @@ def index():
         project_labels=PROJECT_LABELS,
         wizard_projects=wizard_projects_payload(),
     )
+
+
+@bp.get("/politique-confidentialite")
+def privacy_policy():
+    company = company_profile(list_company_settings())
+    return render_template("privacy.html", company=company)
 
 
 @bp.get("/assets/heliantha-terrain.jpeg")

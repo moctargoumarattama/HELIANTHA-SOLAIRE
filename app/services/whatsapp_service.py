@@ -144,12 +144,24 @@ def _absolute_url(base_url: str, path_or_url: str) -> str:
     return f"{base}/{value}"
 
 
+def _project_label(value: str) -> str:
+    raw = str(value or "").strip()
+    normalized = raw.lower()
+    if "pompage" in normalized:
+        return "Pompage solaire"
+    if "on-grid" in normalized or "ongrid" in normalized or "reduction facture" in normalized:
+        return "Installation solaire raccordee reseau"
+    if "batter" in normalized or "hybride" in normalized:
+        return "Systeme solaire avec batteries"
+    return raw or "Projet solaire"
+
+
 def notify_quote_created(quote_data: dict[str, Any]) -> None:
     """Notify the client and the administrator after a quote is generated."""
 
     client_phone = str(quote_data.get("client_phone") or "").strip()
     client_name = str(quote_data.get("client_name") or "Client").strip() or "Client"
-    project_type = str(quote_data.get("project_type") or "Projet Solaire").strip() or "Projet Solaire"
+    project_type = _project_label(str(quote_data.get("project_type") or "Projet solaire"))
     total_ttc = str(quote_data.get("total_ttc") or "-").strip() or "-"
     gateway_url = str(quote_data.get("whatsapp_gateway_url") or WHATSAPP_GATEWAY_URL).strip()
     admin_phone = str(quote_data.get("admin_whatsapp") or ADMIN_PHONE).strip()
@@ -159,11 +171,11 @@ def notify_quote_created(quote_data: dict[str, Any]) -> None:
 
     client_msg = (
         f"Bonjour *{client_name}*,\n\n"
-        f"Merci d'avoir fait confiance a *HeliAntha* pour votre projet de *{project_type}*.\n\n"
-        f"Votre estimation officielle est prete :\n"
-        f"Montant estimatif : *{total_ttc}*\n\n"
-        f"Un ingenieur de notre equipe reste a votre disposition pour planifier une visite technique si vous le souhaitez.\n\n"
-        f"_L'equipe HeliAntha Maroc_"
+        f"Veuillez trouver votre devis HeliAntha en piece jointe.\n\n"
+        f"*Projet :* {project_type}\n"
+        f"*Montant :* {total_ttc}\n\n"
+        f"HeliAntha\n"
+        f"Leader de l'energie solaire au Maroc"
     )
     if client_phone:
         filename = str(quote_data.get("pdf_filename") or "Devis_HeliAntha.pdf").strip() or "Devis_HeliAntha.pdf"
@@ -184,7 +196,7 @@ def notify_quote_created(quote_data: dict[str, Any]) -> None:
 
     if admin_phone:
         admin_msg = (
-            "*NOUVEAU DEVIS GENERE SUR LE SITE !*\n\n"
+            "*DEVIS HELIANTHA*\n\n"
             f"*Client :* {client_name}\n"
             f"*Telephone :* {client_phone or '-'}\n"
             f"*Ville :* {quote_data.get('city') or 'Non renseignee'}\n"

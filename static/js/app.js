@@ -1682,6 +1682,7 @@ async function onSubmitWizard(event) {
 
 function onBackStep() {
   if (state.stepIndex <= -1) {
+    closeWizard();
     return;
   }
   syncCurrentInputs();
@@ -1705,7 +1706,8 @@ function onBackStep() {
     }
   }
   if (state.stepIndex === 0) {
-    state.stepIndex = -1;
+    closeWizard();
+    return;
   } else {
     state.stepIndex -= 1;
   }

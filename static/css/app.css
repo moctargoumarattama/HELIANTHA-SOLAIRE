@@ -1373,7 +1373,7 @@ form {
 
 .footer-grid {
   display: grid;
-  grid-template-columns: 1.4fr repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.75rem;
   padding: 1rem;
   border-radius: 24px;
@@ -1381,6 +1381,10 @@ form {
   border: 1px solid rgba(220, 230, 238, 0.68);
   box-shadow: var(--shadow-soft);
   backdrop-filter: blur(10px);
+}
+
+.page-home .footer-grid > :not(.footer-column) {
+  display: none;
 }
 
 .footer-column {
@@ -1407,6 +1411,49 @@ form {
 .contact-list a:not(.contact-link-card):focus-visible {
   color: var(--blue);
   text-decoration-color: currentColor;
+}
+
+.page-privacy {
+  background:
+    linear-gradient(180deg, rgba(239, 247, 255, 0.92), rgba(248, 251, 255, 1)),
+    var(--surface);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+.privacy-main {
+  padding: clamp(1.4rem, 4vw, 3rem) 0;
+}
+
+.privacy-card {
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(220, 230, 238, 0.82);
+  border-radius: 18px;
+  box-shadow: var(--shadow-soft);
+  max-width: 840px;
+  padding: clamp(1.25rem, 4vw, 2.25rem);
+}
+
+.privacy-card h1 {
+  font-size: clamp(1.7rem, 5vw, 2.5rem);
+  line-height: 1.05;
+  margin: 0 0 1.4rem;
+}
+
+.privacy-section {
+  border-top: 1px solid rgba(16, 38, 56, 0.1);
+  padding: 1rem 0;
+}
+
+.privacy-section h2 {
+  font-size: 1rem;
+  margin: 0 0 0.35rem;
+}
+
+.privacy-section p {
+  color: var(--text-soft);
+  line-height: 1.6;
+  margin: 0;
 }
 
 .contact-link-card {
