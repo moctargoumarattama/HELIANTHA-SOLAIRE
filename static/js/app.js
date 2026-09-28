@@ -164,6 +164,25 @@ initPageChrome();
 initScrollReveal();
 renderWizardShell();
 
+function updateWizardViewportHeight() {
+  const height = window.visualViewport?.height || window.innerHeight;
+  document.documentElement.style.setProperty("--wizard-vh", `${Math.max(360, Math.round(height))}px`);
+}
+
+function bindWizardViewportHeight() {
+  updateWizardViewportHeight();
+  window.visualViewport?.addEventListener("resize", updateWizardViewportHeight);
+  window.visualViewport?.addEventListener("scroll", updateWizardViewportHeight);
+  window.addEventListener("resize", updateWizardViewportHeight);
+}
+
+function unbindWizardViewportHeight() {
+  window.visualViewport?.removeEventListener("resize", updateWizardViewportHeight);
+  window.visualViewport?.removeEventListener("scroll", updateWizardViewportHeight);
+  window.removeEventListener("resize", updateWizardViewportHeight);
+  document.documentElement.style.removeProperty("--wizard-vh");
+}
+
 function numberField(name, label, unit, value, extra = {}) {
   return { type: "number", name, label, unit, value, step: "any", ...extra };
 }
@@ -300,6 +319,14 @@ function bindLanding() {
 
   form.addEventListener("submit", onSubmitWizard);
   backButton.addEventListener("click", onBackStep);
+  form.addEventListener("focusin", (event) => {
+    const target = event.target;
+    if (!target?.matches?.("input, textarea, select")) return;
+    window.setTimeout(() => {
+      updateWizardViewportHeight();
+      target.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+    }, 180);
+  });
 }
 
 function initInstantTapFeedback() {
@@ -587,6 +614,7 @@ function openWizard(project = "") {
   wizard.classList.add("open");
   wizard.setAttribute("aria-hidden", "false");
   document.body.style.overflow = "hidden";
+  bindWizardViewportHeight();
   renderWizardShell();
 }
 
@@ -617,6 +645,7 @@ function closeWizard() {
   wizard.classList.remove("open");
   wizard.setAttribute("aria-hidden", "true");
   document.body.style.overflow = "";
+  unbindWizardViewportHeight();
   persistState();
 }
 
