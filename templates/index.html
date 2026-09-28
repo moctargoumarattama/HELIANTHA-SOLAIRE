@@ -14,7 +14,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v=20260927-13">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/chat.css') }}?v=20260927-10">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/chat.css') }}?v=20260927-12">
   <link rel="manifest" href="{{ url_for('main.pwa_manifest') }}">
   <link rel="icon" href="{{ url_for('main.brand_image') }}" type="image/jpeg">
   <link rel="apple-touch-icon" href="{{ url_for('main.brand_image') }}">
@@ -298,7 +298,7 @@
     window.HELIANTHA_WIZARD_PROJECTS = {{ wizard_projects|tojson }};
   </script>
   <script src="{{ url_for('static', filename='js/app.js') }}?v=20260927-9"></script>
-  <script src="{{ url_for('static', filename='js/chat.js') }}?v=20260927-11"></script>
+  <script src="{{ url_for('static', filename='js/chat.js') }}?v=20260927-12"></script>
   <script src="{{ url_for('static', filename='js/pwa.js') }}?v=20260927-6"></script>
 </body>
 </html>

@@ -570,8 +570,27 @@
     width: calc(100vw - 16px);
   }
 
+  .ha-chat.keyboard-open .ha-chat-panel {
+    bottom: auto;
+    height: calc(var(--chat-vh, 100dvh) - 16px);
+    max-height: calc(var(--chat-vh, 100dvh) - 16px);
+    top: var(--chat-top, 8px);
+  }
+
+  .ha-chat.keyboard-open .ha-chat-header {
+    padding: 10px 14px;
+  }
+
   .ha-chat-log {
     scroll-padding-bottom: 6.5rem;
+  }
+
+  .ha-chat.keyboard-open .ha-chat-log {
+    padding: 12px 12px 10px;
+  }
+
+  .ha-chat.keyboard-open .ha-chat-suggestions {
+    display: none;
   }
 
   .ha-chat-form {

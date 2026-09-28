@@ -25,6 +25,10 @@
 
   initInstantTapFeedback();
 
+  function isMobileChat() {
+    return window.matchMedia("(max-width: 600px)").matches;
+  }
+
   function openChat() {
     hideNudge();
     bindChatViewportHeight();
@@ -35,7 +39,9 @@
       addMessage("assistant", welcome, false);
       welcomeShown = true;
     }
-    window.setTimeout(() => input?.focus(), 60);
+    if (!isMobileChat()) {
+      window.setTimeout(() => input?.focus(), 60);
+    }
   }
 
   function initInstantTapFeedback() {
@@ -63,14 +69,24 @@
 
   function closeChat() {
     panel.hidden = true;
-    root.classList.remove("is-open");
+    root.classList.remove("is-open", "keyboard-open");
     launcher.setAttribute("aria-expanded", "false");
     unbindChatViewportHeight();
   }
 
   function updateChatViewportHeight() {
-    const height = window.visualViewport?.height || window.innerHeight;
+    const viewport = window.visualViewport;
+    const height = viewport?.height || window.innerHeight;
+    const top = viewport?.offsetTop || 0;
     document.documentElement.style.setProperty("--chat-vh", `${Math.max(360, Math.round(height))}px`);
+    document.documentElement.style.setProperty("--chat-top", `${Math.max(8, Math.round(top + 8))}px`);
+    const keyboardOpen = isMobileChat() && document.activeElement === input;
+    root.classList.toggle("keyboard-open", keyboardOpen);
+    if (keyboardOpen && log) {
+      window.requestAnimationFrame(() => {
+        log.scrollTop = log.scrollHeight;
+      });
+    }
   }
 
   function bindChatViewportHeight() {
@@ -85,6 +101,7 @@
     window.visualViewport?.removeEventListener("scroll", updateChatViewportHeight);
     window.removeEventListener("resize", updateChatViewportHeight);
     document.documentElement.style.removeProperty("--chat-vh");
+    document.documentElement.style.removeProperty("--chat-top");
   }
 
   function hideNudge() {
@@ -420,7 +437,12 @@
       addMessage("assistant", "Notre conseiller est actuellement tres sollicite. Vous pouvez lancer votre simulation directement via notre configurateur en ligne ou nous contacter par telephone.");
     } finally {
       setPending(false);
-      input?.focus();
+      if (isMobileChat()) {
+        input?.blur();
+        root.classList.remove("keyboard-open");
+      } else {
+        input?.focus();
+      }
     }
   }
 
@@ -450,8 +472,15 @@
   input?.addEventListener("focus", () => {
     window.setTimeout(() => {
       updateChatViewportHeight();
-      input.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+      if (log) log.scrollTop = log.scrollHeight;
     }, 180);
+  });
+
+  input?.addEventListener("blur", () => {
+    window.setTimeout(() => {
+      root.classList.remove("keyboard-open");
+      updateChatViewportHeight();
+    }, 120);
   });
 
   suggestions?.querySelectorAll("button").forEach((button) => {
