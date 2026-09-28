@@ -22,7 +22,11 @@
   --radius-lg: 22px;
   --radius-md: 16px;
   --radius-sm: 12px;
-  --shell: 1180px;
+  --page-gutter: clamp(0.75rem, 2.4vw, 2.5rem);
+  --shell: 1280px;
+  --wide-shell: 1840px;
+  --grid-gap: clamp(0.75rem, 1.2vw, 1.4rem);
+  --section-space: clamp(1.8rem, 4vw, 3.6rem);
   --transition: 180ms ease;
 }
 
@@ -225,9 +229,12 @@
 }
 
 html {
+  font-size: clamp(14px, 0.36vw + 12.8px, 16px);
   scroll-behavior: smooth;
   overscroll-behavior-y: none;
   scrollbar-gutter: stable both-edges;
+  text-size-adjust: 100%;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
@@ -381,7 +388,7 @@ form {
 }
 
 .shell {
-  width: min(var(--shell), calc(100% - 2rem));
+  width: min(var(--shell), calc(100% - (var(--page-gutter) * 2)));
   margin: 0 auto;
 }
 
@@ -426,6 +433,7 @@ form {
   justify-content: space-between;
   gap: 1rem;
   min-height: 78px;
+  flex-wrap: wrap;
 }
 
 .header-nav,
@@ -433,6 +441,7 @@ form {
   display: flex;
   align-items: center;
   gap: 1rem;
+  flex-wrap: wrap;
 }
 
 .header-nav a {
@@ -696,7 +705,7 @@ form {
 
 .page-home .projects-section,
 .page-home .contact-human-section {
-  padding: 2.6rem 0;
+  padding: var(--section-space) 0;
 }
 
 .page-home .projects-section,
@@ -1147,11 +1156,11 @@ form {
 .offer-comparison,
 .warning-list {
   display: grid;
-  gap: 1rem;
+  gap: var(--grid-gap);
 }
 
 .project-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
 }
 
 .project-grid-short {
@@ -1373,7 +1382,7 @@ form {
 
 .footer-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
   gap: 0.75rem;
   padding: 1rem;
   border-radius: 24px;
@@ -1719,7 +1728,7 @@ form {
 .wizard {
   align-items: stretch;
   justify-content: center;
-  padding: 1rem;
+  padding: var(--page-gutter);
   height: 100dvh;
   max-height: 100dvh;
   overflow: hidden;
@@ -1746,9 +1755,9 @@ form {
 .visit-dialog {
   position: relative;
   z-index: 1;
-  width: min(1120px, 100%);
-  height: 100%;
-  max-height: 100%;
+  width: min(1120px, calc(100dvw - (var(--page-gutter) * 2)));
+  height: min(900px, calc(100dvh - (var(--page-gutter) * 2)));
+  max-height: calc(100dvh - (var(--page-gutter) * 2));
   margin: 0 auto;
   border-radius: 30px;
   overflow: hidden;
@@ -3884,7 +3893,11 @@ textarea:disabled {
 
 @media (min-width: 1101px) {
   .page-home .shell {
-    width: min(1480px, calc(100% - 4rem));
+    width: min(1520px, calc(100% - (var(--page-gutter) * 2)));
+  }
+
+  .page-home .projects-section > .shell {
+    width: min(var(--wide-shell), calc(100% - (var(--page-gutter) * 2)));
   }
 
   .page-home .hero-grid-single {
@@ -3901,7 +3914,12 @@ textarea:disabled {
 
   .page-home .project-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 1.2rem;
+    gap: var(--grid-gap);
+  }
+
+  .page-home .project-card {
+    min-height: clamp(190px, 14vw, 230px);
+    padding: clamp(1rem, 1.1vw, 1.35rem);
   }
 
   .page-home .contact-human-card {
@@ -3909,12 +3927,12 @@ textarea:disabled {
   }
 
   .page-home .footer-grid {
-    grid-template-columns: minmax(0, 1.3fr) repeat(3, minmax(0, 0.9fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
     align-items: start;
   }
 
   .page-result .shell {
-    width: min(1480px, calc(100% - 4rem));
+    width: min(1480px, calc(100% - (var(--page-gutter) * 2)));
   }
 
   .page-result .result-hero-grid,
@@ -3952,6 +3970,43 @@ textarea:disabled {
   .page-result .final-cta-card {
     grid-template-columns: 1fr auto;
     align-items: center;
+  }
+}
+
+@media (min-width: 1600px) {
+  :root {
+    --page-gutter: clamp(2rem, 3vw, 4rem);
+  }
+
+  .page-home .projects-section > .shell {
+    width: min(1880px, calc(100% - (var(--page-gutter) * 2)));
+  }
+
+  .page-home .project-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-height: 760px) and (min-width: 761px) {
+  :root {
+    --section-space: clamp(1.15rem, 2.4vh, 2rem);
+    --page-gutter: clamp(0.65rem, 1.6vw, 1.4rem);
+  }
+
+  .header-bar {
+    min-height: 62px;
+  }
+
+  .project-card {
+    min-height: 178px;
+  }
+
+  .wizard-header,
+  .visit-header,
+  .wizard-progress,
+  .wizard-body,
+  .wizard-footer {
+    padding-block: 0.85rem;
   }
 }
 

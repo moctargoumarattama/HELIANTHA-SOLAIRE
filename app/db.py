@@ -247,6 +247,20 @@ CREATE TABLE IF NOT EXISTS quote_client_events (
     FOREIGN KEY (quote_id) REFERENCES quote_requests(id)
 );
 
+CREATE TABLE IF NOT EXISTS whatsapp_outbox (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    phone TEXT,
+    msg_type TEXT NOT NULL,
+    pdf_url TEXT,
+    filename TEXT,
+    caption TEXT,
+    status TEXT NOT NULL DEFAULT 'PENDING',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    sent_at TEXT,
+    error_message TEXT
+);
+
 """
 
 QUOTE_COLUMNS = {
@@ -414,6 +428,10 @@ def _migrate_public_tracking(db):
     db.execute(
         """CREATE INDEX IF NOT EXISTS idx_quote_client_events_quote
         ON quote_client_events(quote_id, created_at DESC)"""
+    )
+    db.execute(
+        """CREATE INDEX IF NOT EXISTS idx_whatsapp_outbox_status
+        ON whatsapp_outbox(status, created_at, id)"""
     )
 
 
@@ -1049,6 +1067,73 @@ def save_quote_client_event(quote_id, quote_number, event_type, event_value=""):
         """INSERT INTO quote_client_events (quote_id, quote_number, event_type, event_value)
         VALUES (?, ?, ?, ?)""",
         (quote_id, quote_number, event_type, event_value),
+    )
+    db.commit()
+
+
+def enqueue_whatsapp_message(phone, msg_type="text", pdf_url="", filename="", caption=""):
+    db = get_db()
+    ensure_schema(db)
+    cursor = db.execute(
+        """INSERT INTO whatsapp_outbox
+        (phone, msg_type, pdf_url, filename, caption, status, attempts)
+        VALUES (?, ?, ?, ?, ?, 'PENDING', 0)""",
+        (
+            str(phone or "").strip(),
+            str(msg_type or "text").strip() or "text",
+            str(pdf_url or "").strip(),
+            str(filename or "").strip(),
+            str(caption or "").strip(),
+        ),
+    )
+    db.commit()
+    return int(cursor.lastrowid)
+
+
+def list_whatsapp_outbox(status=None, limit=10, newest=True):
+    db = get_db()
+    ensure_schema(db)
+    limit = max(1, min(int(limit or 10), 100))
+    order = "DESC" if newest else "ASC"
+    if status:
+        rows = db.execute(
+            f"""SELECT * FROM whatsapp_outbox
+            WHERE status = ?
+            ORDER BY created_at {order}, id {order}
+            LIMIT ?""",
+            (status, limit),
+        ).fetchall()
+    else:
+        rows = db.execute(
+            f"""SELECT * FROM whatsapp_outbox
+            ORDER BY created_at {order}, id {order}
+            LIMIT ?""",
+            (limit,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def mark_whatsapp_outbox_sent(item_id):
+    db = get_db()
+    ensure_schema(db)
+    db.execute(
+        """UPDATE whatsapp_outbox
+        SET status = 'SENT', sent_at = ?, error_message = NULL
+        WHERE id = ?""",
+        (utc_now(), item_id),
+    )
+    db.commit()
+
+
+def mark_whatsapp_outbox_failed(item_id, attempts, error_message=""):
+    db = get_db()
+    ensure_schema(db)
+    next_status = "FAILED" if int(attempts or 0) >= 5 else "PENDING"
+    db.execute(
+        """UPDATE whatsapp_outbox
+        SET status = ?, attempts = ?, error_message = ?
+        WHERE id = ?""",
+        (next_status, int(attempts or 0), str(error_message or "").strip(), item_id),
     )
     db.commit()
 

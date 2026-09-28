@@ -35,6 +35,7 @@ from .db import (
     list_products,
     list_quotes,
     list_users,
+    list_whatsapp_outbox,
     load_calculation_context,
     save_user,
     save_product,
@@ -72,6 +73,7 @@ from .services.whatsapp_service import (
     get_gateway_qr,
     get_gateway_status,
     notify_quote_created,
+    process_outbox,
     send_whatsapp_raw,
 )
 from .wizard_projects import engine_project_for, normalize_wizard_project, wizard_projects_payload
@@ -1523,7 +1525,8 @@ def admin_settings():
 @bp.get("/admin/whatsapp")
 def admin_whatsapp():
     settings = _whatsapp_admin_settings()
-    return render_template("admin/whatsapp.html", settings=settings)
+    outbox_items = list_whatsapp_outbox(limit=10)
+    return render_template("admin/whatsapp.html", settings=settings, outbox_items=outbox_items)
 
 
 @bp.get("/admin/whatsapp/status")
@@ -1553,6 +1556,12 @@ def admin_whatsapp_test():
     message = str(payload.get("message") or "Test WhatsApp HeliAntha").strip()
     success = send_whatsapp_raw(phone, message, gateway_url=settings["gateway_url"])
     return jsonify(success=success)
+
+
+@bp.post("/admin/whatsapp/retry-outbox")
+def admin_whatsapp_retry_outbox():
+    settings = _whatsapp_admin_settings()
+    return jsonify(process_outbox(gateway_url=settings["gateway_url"]))
 
 
 @bp.route("/admin/utilisateurs", methods=["GET", "POST"])

@@ -2,6 +2,7 @@ from unittest.mock import Mock, patch
 
 import requests
 
+from app import create_app
 from app.services.whatsapp_service import (
     gateway_logout,
     get_gateway_qr,
@@ -62,7 +63,8 @@ def test_send_whatsapp_document_success():
     assert post.call_args.kwargs["timeout"] == 15
 
 
-def test_notify_quote_created_sends_client_and_admin_documents():
+def test_notify_quote_created_sends_client_and_admin_documents(tmp_path):
+    app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "whatsapp-service.db")})
     quote_data = {
         "client_name": "Client Test",
         "client_phone": "0611111111",
@@ -75,10 +77,12 @@ def test_notify_quote_created_sends_client_and_admin_documents():
     with (
         patch("app.services.whatsapp_service.BASE_URL", "https://devis.test"),
         patch("app.services.whatsapp_service.ADMIN_PHONE", "0684056613"),
+        patch("app.services.whatsapp_service.get_gateway_status", return_value={"connected": True, "online": True}),
         patch("app.services.whatsapp_service.send_whatsapp_document", return_value=True) as send_document,
         patch("app.services.whatsapp_service.send_whatsapp_raw", return_value=True) as send,
     ):
-        notify_quote_created(quote_data)
+        with app.app_context():
+            notify_quote_created(quote_data)
 
     assert send_document.call_count == 2
     client_call, admin_call = send_document.call_args_list
@@ -92,7 +96,8 @@ def test_notify_quote_created_sends_client_and_admin_documents():
     assert send.call_count == 0
 
 
-def test_notify_quote_created_uses_admin_gateway_settings():
+def test_notify_quote_created_uses_admin_gateway_settings(tmp_path):
+    app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "whatsapp-service-settings.db")})
     quote_data = {
         "client_name": "Client Test",
         "client_phone": "0611111111",
@@ -105,10 +110,12 @@ def test_notify_quote_created_uses_admin_gateway_settings():
     }
 
     with (
+        patch("app.services.whatsapp_service.get_gateway_status", return_value={"connected": True, "online": True}),
         patch("app.services.whatsapp_service.send_whatsapp_document", return_value=True) as send_document,
         patch("app.services.whatsapp_service.send_whatsapp_raw", return_value=True) as send,
     ):
-        notify_quote_created(quote_data)
+        with app.app_context():
+            notify_quote_created(quote_data)
 
     assert send_document.call_count == 2
     assert send_document.call_args_list[0].kwargs["gateway_url"] == "http://127.0.0.1:3999/send-message"
@@ -117,7 +124,8 @@ def test_notify_quote_created_uses_admin_gateway_settings():
     assert send.call_count == 0
 
 
-def test_notify_quote_created_falls_back_to_link_when_document_fails():
+def test_notify_quote_created_keeps_message_pending_when_document_fails(tmp_path):
+    app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "whatsapp-service-fail.db")})
     quote_data = {
         "client_name": "Client Test",
         "client_phone": "0611111111",
@@ -129,16 +137,14 @@ def test_notify_quote_created_falls_back_to_link_when_document_fails():
     }
 
     with (
+        patch("app.services.whatsapp_service.get_gateway_status", return_value={"connected": True, "online": True}),
         patch("app.services.whatsapp_service.send_whatsapp_document", return_value=False),
         patch("app.services.whatsapp_service.send_whatsapp_raw", return_value=True) as send,
     ):
-        notify_quote_created(quote_data)
+        with app.app_context():
+            notify_quote_created(quote_data)
 
-    assert send.call_count == 2
-    client_call = send.call_args_list[0]
-    assert client_call.args[0] == "0611111111"
-    assert "Lien de secours" in client_call.args[1]
-    assert "https://example.test/devis/42/document.pdf" in client_call.args[1]
+    assert send.call_count == 0
 
 
 def test_get_whatsapp_base_url_strips_send_message_path():

@@ -79,6 +79,13 @@ def _wrap(text: Any, limit: int) -> list[str]:
     return lines or [""]
 
 
+def _ellipsize(text: Any, limit: int) -> str:
+    value = _clean(text)
+    if len(value) <= limit:
+        return value
+    return f"{value[: max(0, limit - 3)].rstrip()}..."
+
+
 @dataclass
 class _ImageAsset:
     data: bytes
@@ -262,14 +269,19 @@ def _draw_party_card(
     title: str,
     lines: list[tuple[str, bool]],
 ) -> None:
-    canvas.rect(x, y, w, 72, stroke=LINE, fill=SOFT, width=0.7)
-    canvas.text(x + 10, y + 54, title, size=8.2, bold=True, color=NAVY)
-    canvas.line(x + 10, y + 47, x + w - 10, y + 47)
-    current_y = y + 32
+    card_h = 78
+    canvas.rect(x, y, w, card_h, stroke=LINE, fill=SOFT, width=0.65)
+    canvas.text(x + 10, y + card_h - 18, title, size=8.0, bold=True, color=NAVY)
+    canvas.line(x + 10, y + card_h - 25, x + w - 10, y + card_h - 25)
+    current_y = y + card_h - 42
+    max_chars = max(24, int(w / 5.2))
+    drawn = 0
     for line, bold in lines[:4]:
-        if line:
-            canvas.text(x + 10, current_y, line, size=7.8, bold=bold, color=INK)
-            current_y -= 11
+        for wrapped in _wrap(line, max_chars)[:2]:
+            if wrapped and drawn < 5:
+                canvas.text(x + 10, current_y, wrapped, size=7.2, bold=bold, color=INK)
+                current_y -= 9.6
+                drawn += 1
 
 
 def _line_total(line: dict[str, Any], *keys: str) -> float:
@@ -287,17 +299,17 @@ def _line_value(line: dict[str, Any], *keys: str, default: Any = "") -> Any:
 
 
 def _draw_table(canvas: _Canvas, quote: Any, rows: list[dict[str, Any]]) -> float:
-    top = 575.0
-    header_h = 24.0
-    columns = [LEFT, 278.0, 318.0, 382.0, 416.0, 476.0, RIGHT]
+    top = 570.0
+    header_h = 22.0
+    columns = [LEFT, 270.0, 313.0, 374.0, 409.0, 470.0, RIGHT]
     labels = ["Designation", "TVA", "P.U. HT", "Qte", "Total HT", "Total TTC"]
 
     canvas.rect(LEFT, top, RIGHT - LEFT, header_h, stroke=NAVY, fill=NAVY, width=0.4)
-    label_x = [LEFT + 8, 284, 326, 389, 424, 485]
+    label_x = [LEFT + 7, 278, 321, 383, 417, 478]
     for idx, label in enumerate(labels):
-        canvas.text(label_x[idx], top + 8, label, size=7.6, bold=True, color=WHITE)
+        canvas.text(label_x[idx], top + 7, label, size=7.1, bold=True, color=WHITE)
 
-    row_h = 37.0
+    row_h = 30.5
     y = top - row_h
     max_rows = 8
     display_rows = rows[:max_rows]
@@ -323,8 +335,8 @@ def _draw_table(canvas: _Canvas, quote: Any, rows: list[dict[str, Any]]) -> floa
         description = _clean(
             _line_value(row, "role", "category", "details", "description", default=name)
         )
-        canvas.text(LEFT + 8, y + 24, _wrap(name, 38)[0], size=7.8, bold=True, color=INK)
-        canvas.text(LEFT + 8, y + 9, _wrap(description, 50)[0], size=6.5, color=MUTED)
+        canvas.text(LEFT + 7, y + 18.5, _wrap(name, 39)[0], size=7.1, bold=True, color=INK)
+        canvas.text(LEFT + 7, y + 7, _wrap(description, 48)[0], size=5.9, color=MUTED)
 
         vat = _line_value(row, "display_vat_rate", "vat_rate", "tva")
         vat_text = str(vat) if isinstance(vat, str) and "%" in vat else f"{_number(vat):.0f} %" if vat not in {"", None} else ""
@@ -333,37 +345,36 @@ def _draw_table(canvas: _Canvas, quote: Any, rows: list[dict[str, Any]]) -> floa
         total_ht = _line_total(row, "display_total_price_ht", "total_ht", "line_total_ht", "total_price")
         total_ttc = _line_total(row, "display_total_ttc", "total_ttc", "line_total_ttc")
 
-        canvas.text(292, y + 21, vat_text, size=7.5, color=INK)
-        canvas.text(332, y + 21, _money(unit, ""), size=7.4, color=INK)
-        canvas.text(392, y + 21, _clean(quantity), size=7.4, color=INK)
-        canvas.text(425, y + 21, _money(total_ht, ""), size=7.4, color=INK)
-        canvas.text(485, y + 21, _money(total_ttc, ""), size=7.5, bold=True, color=INK)
+        canvas.text(278, y + 17, vat_text, size=6.9, color=INK)
+        canvas.text(321, y + 17, _money(unit, ""), size=6.8, color=INK)
+        canvas.text(383, y + 17, _clean(quantity), size=6.8, color=INK)
+        canvas.text(417, y + 17, _money(total_ht, ""), size=6.8, color=INK)
+        canvas.text(478, y + 17, _money(total_ttc, ""), size=6.9, bold=True, color=INK)
         y -= row_h
 
     return y
 
 
-def _draw_totals(canvas: _Canvas, quote: Any) -> None:
+def _draw_totals(canvas: _Canvas, quote: Any, y: float = 220.0) -> None:
     x = 346.0
-    y = 245.0
     w = 201.0
-    row_h = 22.0
+    row_h = 20.5
     financial = _get(quote, "financial_breakdown", default={}) or {}
     total_ht = _get(quote, "total_ht", default=financial.get("total_ht", 0))
     total_tax = _get(quote, "total_tax", default=financial.get("vat", financial.get("total_tax", 0)))
     total_ttc = _get(quote, "total_ttc", default=financial.get("total_ttc", 0))
 
     canvas.rect(x, y + row_h * 2, w, row_h, stroke=LINE, fill=SOFT)
-    canvas.text(x + 8, y + row_h * 2 + 7, "Total HT", size=7.6, bold=True, color=INK)
-    canvas.text(x + 114, y + row_h * 2 + 7, _money(total_ht), size=7.4, color=INK)
+    canvas.text(x + 8, y + row_h * 2 + 6.5, "Total HT", size=7.1, bold=True, color=INK)
+    canvas.text(x + 112, y + row_h * 2 + 6.5, _money(total_ht), size=6.9, color=INK)
 
     canvas.rect(x, y + row_h, w, row_h, stroke=LINE, fill=WHITE)
-    canvas.text(x + 8, y + row_h + 7, "Total TVA", size=7.6, color=INK)
-    canvas.text(x + 114, y + row_h + 7, _money(total_tax), size=7.4, color=INK)
+    canvas.text(x + 8, y + row_h + 6.5, "Total TVA", size=7.1, color=INK)
+    canvas.text(x + 112, y + row_h + 6.5, _money(total_tax), size=6.9, color=INK)
 
     canvas.rect(x, y, w, row_h, stroke=NAVY, fill=NAVY)
-    canvas.text(x + 8, y + 7, "TOTAL TTC", size=8.5, bold=True, color=WHITE)
-    canvas.text(x + 104, y + 7, _money(total_ttc), size=8.4, bold=True, color=WHITE)
+    canvas.text(x + 8, y + 6.5, "TOTAL TTC", size=8.0, bold=True, color=WHITE)
+    canvas.text(x + 103, y + 6.5, _money(total_ttc), size=7.8, bold=True, color=WHITE)
 
 
 def build_quote_pdf(
@@ -405,14 +416,15 @@ def build_quote_pdf(
     _draw_party_card(
         canvas,
         x=LEFT,
-        y=630,
+        y=622,
         w=230,
         title="EMETTEUR",
         lines=[
             (company_name, True),
             (address, False),
             (f"Tel. : {phone}", False),
-            (f"Email : {email}   Web : {website}", False),
+            (f"Email : {email}", False),
+            (f"Web : {website}", False),
         ],
     )
 
@@ -422,7 +434,7 @@ def build_quote_pdf(
     _draw_party_card(
         canvas,
         x=315,
-        y=630,
+        y=622,
         w=232,
         title="ADRESSE A",
         lines=[
@@ -432,39 +444,50 @@ def build_quote_pdf(
         ],
     )
 
-    _draw_table(canvas, quote, display_equipment_lines)
+    table_bottom = _draw_table(canvas, quote, display_equipment_lines)
 
-    canvas.text(LEFT, 300, "Montants exprimes en Dirham Marocain (MAD)", size=7.3, bold=True, color=INK)
-    canvas.text(LEFT, 286, "Modalite de paiement : 100% a la commande.", size=7.0, color=INK)
-    canvas.text(LEFT, 269, "Reglement par virement bancaire :", size=7.0, bold=True, color=INK)
-    canvas.text(LEFT, 256, f"Banque : {_setting(company, 'pdf_bank_name', 'CIH Bank')}", size=6.8, color=INK)
-    canvas.text(LEFT, 244, f"RIB : {_setting(company, 'pdf_rib', 'A renseigner')}", size=6.8, color=INK)
-    canvas.text(LEFT, 232, f"IBAN : {_setting(company, 'pdf_iban', 'A renseigner')}", size=6.8, color=INK)
-    canvas.text(LEFT, 216, "Reglement par cheque :", size=7.0, bold=True, color=INK)
+    notes_top = min(table_bottom - 18, 285)
+    canvas.text(LEFT, notes_top, "Montants exprimes en Dirham Marocain (MAD)", size=7.0, bold=True, color=INK)
+    canvas.text(LEFT, notes_top - 12, "Modalite de paiement : 100% a la commande.", size=6.6, color=INK)
+    canvas.text(LEFT, notes_top - 28, "Reglement par virement bancaire :", size=6.7, bold=True, color=INK)
+    canvas.text(LEFT, notes_top - 40, f"Banque : {_setting(company, 'pdf_bank_name', 'CIH Bank')}", size=6.4, color=INK)
+    rib_lines = _wrap(f"RIB : {_setting(company, 'pdf_rib', 'A renseigner')}", 58)[:2]
+    iban_lines = _wrap(f"IBAN : {_setting(company, 'pdf_iban', 'A renseigner')}", 58)[:2]
+    current_y = notes_top - 52
+    for line in rib_lines:
+        canvas.text(LEFT, current_y, line, size=6.2, color=INK)
+        current_y -= 9
+    for line in iban_lines:
+        canvas.text(LEFT, current_y, line, size=6.2, color=INK)
+        current_y -= 9
+    canvas.text(LEFT, current_y - 2, "Reglement par cheque :", size=6.7, bold=True, color=INK)
     canvas.text(
         LEFT,
-        204,
-        f"A l'ordre de {_setting(company, 'pdf_check_payee', company_name)}, adresse au : {_setting(company, 'pdf_check_address', address)}",
-        size=6.8,
+        current_y - 14,
+        _ellipsize(
+            f"A l'ordre de {_setting(company, 'pdf_check_payee', company_name)}, adresse au : {_setting(company, 'pdf_check_address', address)}",
+            72,
+        ),
+        size=6.2,
         color=INK,
     )
 
-    _draw_totals(canvas, quote)
+    _draw_totals(canvas, quote, y=218)
 
     contact_name = _setting(company, "pdf_contact_name", "Dr. Omar EL KADMIRI")
     contact_phone = _setting(company, "pdf_contact_phone", phone)
     social_links = _setting(company, "pdf_social_links", "")
-    canvas.rect(LEFT, 138, RIGHT - LEFT, 34, stroke=LINE, fill=SOFT, width=0.65)
-    canvas.text(LEFT + 8, 159, f"VOTRE INTERLOCUTEUR CHEZ {company_name} :", size=6.9, bold=True, color=NAVY)
-    canvas.text(LEFT + 8, 148, f"{contact_name} | Tel : {contact_phone} | Email : {email}", size=6.4, color=INK)
+    canvas.rect(LEFT, 130, RIGHT - LEFT, 38, stroke=LINE, fill=SOFT, width=0.65)
+    canvas.text(LEFT + 8, 153, f"VOTRE INTERLOCUTEUR CHEZ {company_name} :", size=6.8, bold=True, color=NAVY)
+    canvas.text(LEFT + 8, 142, _ellipsize(f"{contact_name} | Tel : {contact_phone} | Email : {email}", 96), size=6.2, color=INK)
     if social_links:
-        canvas.text(LEFT + 8, 140, f"Suivez-nous : {social_links}", size=5.7, color=MUTED)
+        canvas.text(LEFT + 8, 133, _ellipsize(f"Suivez-nous : {social_links}", 112), size=5.4, color=MUTED)
 
-    canvas.rect(LEFT, 92, RIGHT - LEFT, 34, stroke=LINE, fill=None, width=0.5)
+    canvas.rect(LEFT, 84, RIGHT - LEFT, 34, stroke=LINE, fill=None, width=0.5)
     canvas.commands.append("0.50 w 0.450 0.560 0.690 RG [3 3] 0 d")
-    canvas.commands.append(f"{LEFT:.2f} 92.00 {RIGHT - LEFT:.2f} 34.00 re S")
+    canvas.commands.append(f"{LEFT:.2f} 84.00 {RIGHT - LEFT:.2f} 34.00 re S")
     canvas.commands.append("[] 0 d")
-    canvas.text(LEFT + 8, 112, 'Cachet, Date, Signature et mention "Bon pour Accord" :', size=6.2, color=MUTED)
+    canvas.text(LEFT + 8, 104, 'Cachet, Date, Signature et mention "Bon pour Accord" :', size=6.0, color=MUTED)
 
     legal = _setting(
         company,

@@ -2978,6 +2978,25 @@ body.admin-menu-open{
   color:#9d2419;
 }
 
+.outbox-status.pending{
+  background:#fff5df;
+  color:#8a5a00;
+}
+
+.outbox-status.sent{
+  background:#e7f7ef;
+  color:#17633f;
+}
+
+.outbox-status.failed{
+  background:#fff0ed;
+  color:#9d2419;
+}
+
+.whatsapp-outbox-table table{
+  min-width:760px;
+}
+
 .whatsapp-info-list{
   margin-top:18px;
 }

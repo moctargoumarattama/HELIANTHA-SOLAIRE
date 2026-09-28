@@ -185,6 +185,12 @@
   display: flex;
   justify-content: space-between;
   padding: 14px 15px;
+  cursor: grab;
+  user-select: none;
+}
+
+.ha-chat.is-dragging .ha-chat-header {
+  cursor: grabbing;
 }
 
 .ha-chat-header strong,
@@ -219,6 +225,35 @@
   font-weight: 900;
   height: 34px;
   width: 34px;
+}
+
+@media (min-width: 761px) {
+  .ha-chat-panel {
+    height: min(720px, calc(100vh - 110px));
+    width: min(560px, calc(100vw - 48px));
+  }
+
+  .ha-chat-log {
+    padding: 18px 18px;
+  }
+
+  .ha-chat-message {
+    max-width: 88%;
+  }
+
+  .ha-chat-message.assistant {
+    max-width: 90%;
+  }
+
+  .ha-chat-suggestions {
+    gap: 10px;
+    padding: 12px 14px;
+  }
+
+  .ha-chat-form {
+    grid-template-columns: 1fr 48px;
+    padding: 14px;
+  }
 }
 
 .ha-chat-log {

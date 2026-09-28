@@ -4,9 +4,18 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from typing import Any
 
 import requests
+
+from ..db import (
+    enqueue_whatsapp_message,
+    list_company_settings,
+    list_whatsapp_outbox,
+    mark_whatsapp_outbox_failed,
+    mark_whatsapp_outbox_sent,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -156,6 +165,60 @@ def _project_label(value: str) -> str:
     return raw or "Projet solaire"
 
 
+def _gateway_url_from_settings() -> str:
+    try:
+        settings = {row["key"]: row["value"] for row in list_company_settings()}
+        return str(settings.get("whatsapp_gateway_url") or WHATSAPP_GATEWAY_URL).strip()
+    except Exception:
+        return WHATSAPP_GATEWAY_URL
+
+
+def process_outbox(limit: int = 10, gateway_url: str | None = None) -> dict[str, int]:
+    """Replay pending WhatsApp messages when the gateway is connected."""
+
+    gateway = str(gateway_url or _gateway_url_from_settings() or WHATSAPP_GATEWAY_URL).strip()
+    status = get_gateway_status(gateway)
+    if status.get("connected") is not True:
+        return {"processed": 0, "sent": 0, "failed": 0, "pending": len(list_whatsapp_outbox("PENDING", limit))}
+
+    sent = 0
+    failed = 0
+    pending_items = list_whatsapp_outbox("PENDING", limit, newest=False)
+    for item in pending_items:
+        success = False
+        error_message = ""
+        try:
+            if item.get("msg_type") == "document":
+                success = send_whatsapp_document(
+                    item.get("phone", ""),
+                    item.get("pdf_url", ""),
+                    item.get("filename", "") or "Devis_HeliAntha.pdf",
+                    item.get("caption", ""),
+                    gateway_url=gateway,
+                )
+            else:
+                success = send_whatsapp_raw(
+                    item.get("phone", ""),
+                    item.get("caption", ""),
+                    gateway_url=gateway,
+                )
+            if success:
+                mark_whatsapp_outbox_sent(item["id"])
+                sent += 1
+            else:
+                error_message = "Echec envoi passerelle"
+                attempts = int(item.get("attempts") or 0) + 1
+                mark_whatsapp_outbox_failed(item["id"], attempts, error_message)
+                failed += 1
+        except Exception as exc:  # pragma: no cover - defensive safety net
+            attempts = int(item.get("attempts") or 0) + 1
+            mark_whatsapp_outbox_failed(item["id"], attempts, str(exc))
+            failed += 1
+        time.sleep(0.5)
+
+    return {"processed": len(pending_items), "sent": sent, "failed": failed, "pending": 0}
+
+
 def notify_quote_created(quote_data: dict[str, Any]) -> None:
     """Notify the client and the administrator after a quote is generated."""
 
@@ -179,20 +242,13 @@ def notify_quote_created(quote_data: dict[str, Any]) -> None:
     )
     if client_phone:
         filename = str(quote_data.get("pdf_filename") or "Devis_HeliAntha.pdf").strip() or "Devis_HeliAntha.pdf"
-        sent_document = send_whatsapp_document(
+        enqueue_whatsapp_message(
             client_phone,
+            "document",
             pdf_link,
             filename,
             client_msg,
-            gateway_url=gateway_url,
         )
-        if not sent_document:
-            fallback_msg = (
-                f"{client_msg}\n\n"
-                f"*Lien de secours pour telecharger votre devis officiel (PDF) :*\n"
-                f"{pdf_link}"
-            )
-            send_whatsapp_raw(client_phone, fallback_msg, gateway_url=gateway_url)
 
     if admin_phone:
         admin_msg = (
@@ -204,16 +260,12 @@ def notify_quote_created(quote_data: dict[str, Any]) -> None:
             f"*Montant :* {total_ttc}"
         )
         filename = str(quote_data.get("pdf_filename") or "Devis_HeliAntha.pdf").strip() or "Devis_HeliAntha.pdf"
-        admin_sent_document = send_whatsapp_document(
+        enqueue_whatsapp_message(
             admin_phone,
+            "document",
             pdf_link,
             filename,
             admin_msg,
-            gateway_url=gateway_url,
         )
-        if not admin_sent_document:
-            send_whatsapp_raw(
-                admin_phone,
-                f"{admin_msg}\n*Lien Devis :* {pdf_link}",
-                gateway_url=gateway_url,
-            )
+
+    process_outbox(gateway_url=gateway_url)

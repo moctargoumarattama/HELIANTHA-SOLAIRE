@@ -6,6 +6,7 @@
   const logoUrl = root.dataset.logo || "";
   const launcher = document.querySelector("#ha-chat-launcher");
   const panel = document.querySelector("#ha-chat-panel");
+  const panelHeader = panel?.querySelector(".ha-chat-header");
   const closeButton = document.querySelector("#ha-chat-close");
   const log = document.querySelector("#ha-chat-log");
   const form = document.querySelector("#ha-chat-form");
@@ -156,6 +157,47 @@
     launcher.addEventListener("pointercancel", finishDrag);
   }
 
+  function bindPanelDrag() {
+    if (!panelHeader) return;
+
+    panelHeader.addEventListener("pointerdown", (event) => {
+      if (event.target.closest("button, a")) return;
+      if (window.matchMedia("(max-width: 760px)").matches) return;
+      const rect = root.getBoundingClientRect();
+      dragState = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        left: rect.left,
+        top: rect.top,
+        moved: false,
+      };
+      panelHeader.setPointerCapture?.(event.pointerId);
+    });
+
+    panelHeader.addEventListener("pointermove", (event) => {
+      if (!dragState || dragState.pointerId !== event.pointerId) return;
+      const dx = event.clientX - dragState.startX;
+      const dy = event.clientY - dragState.startY;
+      if (!dragState.moved && Math.hypot(dx, dy) < 7) return;
+
+      dragState.moved = true;
+      root.classList.add("is-dragging", "has-moved");
+      hideNudge();
+      setLauncherPosition(dragState.left + dx, dragState.top + dy);
+    });
+
+    const finishPanelDrag = (event) => {
+      if (!dragState || dragState.pointerId !== event.pointerId) return;
+      panelHeader.releasePointerCapture?.(event.pointerId);
+      dragState = null;
+      root.classList.remove("is-dragging");
+    };
+
+    panelHeader.addEventListener("pointerup", finishPanelDrag);
+    panelHeader.addEventListener("pointercancel", finishPanelDrag);
+  }
+
   function addMessage(role, content, store = true) {
     if (!log || !content) return null;
     const bubble = document.createElement("div");
@@ -295,6 +337,7 @@
 
   restoreLauncherPosition();
   bindLauncherDrag();
+  bindPanelDrag();
   if (!root.classList.contains("has-moved")) {
     const hasWelcomePopup = Boolean(document.querySelector("#welcome-popup"));
     startNudgeTimer(hasWelcomePopup ? 3400 : 500);

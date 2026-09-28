@@ -23,6 +23,7 @@
     <div class="detail-actions whatsapp-actions">
       <button class="admin-button secondary" type="button" id="wa-refresh">Actualiser</button>
       <button class="ghost-button" type="button" id="wa-logout">Deconnecter / Reinitialiser</button>
+      <button class="admin-button" type="button" id="wa-retry-outbox">Rejouer la file</button>
     </div>
   </article>
 
@@ -37,6 +38,50 @@
       <p class="muted">Chargement du QR...</p>
     </div>
   </article>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <div>
+      <h2>File d'attente des messages</h2>
+      <p class="muted">Les devis restent ici tant que WhatsApp n'a pas confirme l'envoi.</p>
+    </div>
+    <span class="muted" id="wa-outbox-result"></span>
+  </div>
+  <div class="table-wrap whatsapp-outbox-table">
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Destinataire</th>
+          <th>Type</th>
+          <th>Statut</th>
+          <th>Essais</th>
+          <th>Erreur</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in outbox_items %}
+        <tr>
+          <td>{{ item.created_at }}</td>
+          <td>{{ item.phone or "-" }}</td>
+          <td>{{ "PDF" if item.msg_type == "document" else "Texte" }}</td>
+          <td>
+            <span class="status outbox-status {{ item.status|lower }}">
+              {% if item.status == "SENT" %}Envoye{% elif item.status == "FAILED" %}Echoue{% else %}En attente{% endif %}
+            </span>
+          </td>
+          <td>{{ item.attempts }}</td>
+          <td>{{ item.error_message or "-" }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="6" class="muted">Aucun message dans la file.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </section>
 
 <section class="panel">
@@ -65,6 +110,8 @@
   const hasQr = document.getElementById("wa-has-qr");
   const qrBox = document.getElementById("wa-qr-box");
   const result = document.getElementById("wa-test-result");
+  const outboxResult = document.getElementById("wa-outbox-result");
+  let autoRetried = false;
 
   const setStatus = (payload) => {
     const online = payload.online !== false;
@@ -81,6 +128,10 @@
       const response = await fetch("{{ url_for('main.admin_whatsapp_status') }}");
       const payload = await response.json();
       setStatus(payload);
+      if (payload.connected && !autoRetried) {
+        autoRetried = true;
+        retryOutbox(false);
+      }
       if (!payload.connected) loadQr();
     } catch (_) {
       setStatus({ online: false, connected: false, phone: null, has_qr: false });
@@ -110,6 +161,18 @@
     await fetch("{{ url_for('main.admin_whatsapp_logout') }}", { method: "POST" });
     window.setTimeout(loadStatus, 600);
   });
+  const retryOutbox = async (reload = true) => {
+    if (outboxResult) outboxResult.textContent = "Rejeu en cours...";
+    try {
+      const response = await fetch("{{ url_for('main.admin_whatsapp_retry_outbox') }}", { method: "POST" });
+      const payload = await response.json();
+      if (outboxResult) outboxResult.textContent = `${payload.sent || 0} envoye(s), ${payload.failed || 0} echec(s).`;
+      if (reload) window.setTimeout(() => window.location.reload(), 900);
+    } catch (_) {
+      if (outboxResult) outboxResult.textContent = "Passerelle injoignable.";
+    }
+  };
+  document.getElementById("wa-retry-outbox")?.addEventListener("click", () => retryOutbox(true));
 
   document.getElementById("wa-test-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
