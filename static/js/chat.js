@@ -3,6 +3,7 @@
   if (!root) return;
 
   const endpoint = root.dataset.endpoint || "/api/assistant/chat";
+  const streamEndpoint = endpoint.endsWith("/chat") ? `${endpoint}/stream` : "/api/assistant/chat/stream";
   const logoUrl = root.dataset.logo || "";
   const launcher = document.querySelector("#ha-chat-launcher");
   const panel = document.querySelector("#ha-chat-panel");
@@ -26,6 +27,7 @@
 
   function openChat() {
     hideNudge();
+    bindChatViewportHeight();
     panel.hidden = false;
     root.classList.add("is-open");
     launcher.setAttribute("aria-expanded", "true");
@@ -63,6 +65,26 @@
     panel.hidden = true;
     root.classList.remove("is-open");
     launcher.setAttribute("aria-expanded", "false");
+    unbindChatViewportHeight();
+  }
+
+  function updateChatViewportHeight() {
+    const height = window.visualViewport?.height || window.innerHeight;
+    document.documentElement.style.setProperty("--chat-vh", `${Math.max(360, Math.round(height))}px`);
+  }
+
+  function bindChatViewportHeight() {
+    updateChatViewportHeight();
+    window.visualViewport?.addEventListener("resize", updateChatViewportHeight);
+    window.visualViewport?.addEventListener("scroll", updateChatViewportHeight);
+    window.addEventListener("resize", updateChatViewportHeight);
+  }
+
+  function unbindChatViewportHeight() {
+    window.visualViewport?.removeEventListener("resize", updateChatViewportHeight);
+    window.visualViewport?.removeEventListener("scroll", updateChatViewportHeight);
+    window.removeEventListener("resize", updateChatViewportHeight);
+    document.documentElement.style.removeProperty("--chat-vh");
   }
 
   function hideNudge() {
@@ -199,7 +221,7 @@
   }
 
   function addMessage(role, content, store = true) {
-    if (!log || !content) return null;
+    if (!log || content === undefined || content === null) return null;
     const bubble = document.createElement("div");
     bubble.className = `ha-chat-message ${role}`;
     const cleanRole = String(role || "").split(" ")[0];
@@ -299,6 +321,75 @@
     });
   }
 
+  function applyAssistantContent(bubble, content) {
+    const target = bubble?.querySelector(".ha-chat-bubble-text");
+    if (target) target.textContent = content;
+    if (log) log.scrollTop = log.scrollHeight;
+  }
+
+  async function readAssistantStream(response, typing) {
+    if (!response.body) {
+      return response.json();
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let streamedText = "";
+    let finalPayload = null;
+    let assistantBubble = null;
+
+    const handleEvent = (eventPayload) => {
+      if (!eventPayload || typeof eventPayload !== "object") return;
+      if (eventPayload.type === "token") {
+        if (!assistantBubble) {
+          stopProgress();
+          typing?.remove();
+          assistantBubble = addMessage("assistant", "", false);
+        }
+        streamedText += String(eventPayload.content || "");
+        applyAssistantContent(assistantBubble, streamedText);
+      } else if (eventPayload.type === "final") {
+        finalPayload = eventPayload;
+      }
+    };
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        handleEvent(JSON.parse(trimmed));
+      }
+    }
+
+    const remaining = buffer.trim();
+    if (remaining) {
+      handleEvent(JSON.parse(remaining));
+    }
+
+    if (!finalPayload) {
+      finalPayload = { role: "assistant", content: streamedText || "Je suis disponible pour vous orienter." };
+    }
+
+    if (!assistantBubble) {
+      stopProgress();
+      typing?.remove();
+      assistantBubble = addMessage("assistant", finalPayload.content || "Je suis disponible pour vous orienter.", false);
+      streamedText = finalPayload.content || "";
+    } else if (finalPayload.content && !streamedText) {
+      streamedText = finalPayload.content;
+      applyAssistantContent(assistantBubble, streamedText);
+    }
+
+    messages.push({ role: "assistant", content: finalPayload.content || streamedText });
+    return finalPayload;
+  }
+
   async function sendMessage(content) {
     const text = String(content || "").trim();
     if (!text || pending) return;
@@ -310,18 +401,16 @@
     const typing = addMessage("assistant typing", "Connexion au conseiller...", false);
     startProgress(typing);
     try {
-      const response = await fetchWithTimeout(endpoint, {
+      const response = await fetchWithTimeout(streamEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages }),
       });
-      const payload = await response.json();
-      stopProgress();
-      typing?.remove();
       if (!response.ok) {
+        const payload = await response.json();
         throw new Error(payload.error || "Erreur assistant");
       }
-      addMessage("assistant", payload.content || "Je suis disponible pour vous orienter.");
+      const payload = await readAssistantStream(response, typing);
       if (payload.quote_ready && payload.quote) {
         addQuoteCard(payload.quote);
       }
@@ -356,6 +445,13 @@
   form?.addEventListener("submit", (event) => {
     event.preventDefault();
     sendMessage(input?.value);
+  });
+
+  input?.addEventListener("focus", () => {
+    window.setTimeout(() => {
+      updateChatViewportHeight();
+      input.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+    }, 180);
   });
 
   suggestions?.querySelectorAll("button").forEach((button) => {

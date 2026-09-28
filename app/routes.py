@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from flask import (
     Blueprint,
+    Response,
     abort,
     current_app,
     jsonify,
@@ -15,6 +16,7 @@ from flask import (
     request,
     send_file,
     session,
+    stream_with_context,
     url_for,
 )
 from werkzeug.http import quote_header_value
@@ -64,7 +66,13 @@ from .pumping_rules import (
     parse_number,
 )
 from .public_presenters import build_public_quote_payload, company_profile, sanitize_calculation_result_for_public
-from .services.ai_service import chat_with_ollama, extract_quote_request, sanitize_messages
+from .services.ai_service import (
+    chat_with_ollama,
+    extract_quote_request,
+    quick_assistant_response,
+    sanitize_messages,
+    stream_ollama_chat,
+)
 from .services.pump_selector import NO_STANDARD_PUMP_MESSAGE, curve_head_for_flow, select_pump_for_duty
 from .services.pump_pricing import calculate_pump_sale_price
 from .services.pdf_service import build_quote_pdf
@@ -617,18 +625,9 @@ def _build_quote_from_ai_payload(raw_payload: dict) -> dict | None:
     }
 
 
-@bp.post("/api/assistant/chat")
-def assistant_chat():
-    payload = request.get_json(silent=True)
-    if not isinstance(payload, dict):
-        return jsonify(error="Payload JSON requis."), 400
-    try:
-        messages = sanitize_messages(payload.get("messages"))
-    except ValueError:
-        return jsonify(error="messages doit etre une liste non vide."), 400
-    assistant_response = chat_with_ollama(messages)
-    clean_content, quote_payload = extract_quote_request(assistant_response.get("content", ""))
-    response_payload = {"role": "assistant", "content": clean_content or assistant_response.get("content", "")}
+def _assistant_payload_from_content(content: str) -> dict:
+    clean_content, quote_payload = extract_quote_request(content)
+    response_payload = {"role": "assistant", "content": clean_content or str(content or "").strip()}
     if quote_payload:
         try:
             quote = _build_quote_from_ai_payload(quote_payload)
@@ -640,7 +639,80 @@ def assistant_chat():
             response_payload["quote"] = quote
             if not response_payload["content"]:
                 response_payload["content"] = "Votre devis officiel est pret. Vous pouvez le telecharger ci-dessous."
-    return jsonify(response_payload)
+    return response_payload
+
+
+def _ndjson(payload: dict) -> str:
+    return json_dumps(payload, ensure_ascii=False) + "\n"
+
+
+@bp.post("/api/assistant/chat")
+def assistant_chat():
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify(error="Payload JSON requis."), 400
+    try:
+        messages = sanitize_messages(payload.get("messages"))
+    except ValueError:
+        return jsonify(error="messages doit etre une liste non vide."), 400
+    quick_response = quick_assistant_response(messages)
+    if quick_response:
+        return jsonify(quick_response)
+    assistant_response = chat_with_ollama(messages)
+    return jsonify(_assistant_payload_from_content(assistant_response.get("content", "")))
+
+
+@bp.post("/api/assistant/chat/stream")
+def assistant_chat_stream():
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify(error="Payload JSON requis."), 400
+    try:
+        messages = sanitize_messages(payload.get("messages"))
+    except ValueError:
+        return jsonify(error="messages doit etre une liste non vide."), 400
+
+    quick_response = quick_assistant_response(messages)
+    if quick_response:
+        return Response(_ndjson({"type": "final", **quick_response}), mimetype="application/x-ndjson")
+
+    @stream_with_context
+    def generate():
+        full_content = ""
+        pending_visible = ""
+        marker = "<<<DEVIS_DATA:"
+        marker_tail = len(marker) - 1
+        suppress_tag = False
+
+        for chunk in stream_ollama_chat(messages):
+            if not chunk:
+                continue
+            full_content += chunk
+            if suppress_tag:
+                continue
+
+            pending_visible += chunk
+            marker_index = pending_visible.find(marker)
+            if marker_index >= 0:
+                before_marker = pending_visible[:marker_index]
+                if before_marker:
+                    yield _ndjson({"type": "token", "content": before_marker})
+                pending_visible = ""
+                suppress_tag = True
+                continue
+
+            safe_length = max(0, len(pending_visible) - marker_tail)
+            if safe_length:
+                visible = pending_visible[:safe_length]
+                pending_visible = pending_visible[safe_length:]
+                yield _ndjson({"type": "token", "content": visible})
+
+        if pending_visible and not suppress_tag:
+            yield _ndjson({"type": "token", "content": pending_visible})
+
+        yield _ndjson({"type": "final", **_assistant_payload_from_content(full_content)})
+
+    return Response(generate(), mimetype="application/x-ndjson")
 
 
 @bp.get("/devis/<int:quote_id>")

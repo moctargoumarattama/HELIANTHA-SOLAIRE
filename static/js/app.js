@@ -614,6 +614,7 @@ function openWizard(project = "") {
   wizard.classList.add("open");
   wizard.setAttribute("aria-hidden", "false");
   document.body.style.overflow = "hidden";
+  document.body.classList.add("wizard-active");
   bindWizardViewportHeight();
   renderWizardShell();
 }
@@ -645,6 +646,7 @@ function closeWizard() {
   wizard.classList.remove("open");
   wizard.setAttribute("aria-hidden", "true");
   document.body.style.overflow = "";
+  document.body.classList.remove("wizard-active");
   unbindWizardViewportHeight();
   persistState();
 }

@@ -1,4 +1,5 @@
-from unittest.mock import Mock, patch
+import json
+from unittest.mock import MagicMock, Mock, patch
 
 import requests
 
@@ -17,7 +18,7 @@ def test_assistant_chat_valid_payload_calls_ollama(tmp_path):
     with patch("app.services.ai_service.requests.post", return_value=ollama_response) as post:
         response = client.post(
             "/api/assistant/chat",
-            json={"messages": [{"role": "user", "content": "Bonjour, je cherche une pompe"}]},
+            json={"messages": [{"role": "user", "content": "Explique la difference entre MPPT et PWM"}]},
         )
 
     assert response.status_code == 200
@@ -26,7 +27,41 @@ def test_assistant_chat_valid_payload_calls_ollama(tmp_path):
     sent_payload = post.call_args.kwargs["json"]
     assert sent_payload["model"] == "heliantha-ai"
     assert sent_payload["stream"] is False
-    assert sent_payload["messages"] == [{"role": "user", "content": "Bonjour, je cherche une pompe"}]
+    assert sent_payload["messages"] == [{"role": "user", "content": "Explique la difference entre MPPT et PWM"}]
+
+
+def test_assistant_chat_fast_path_skips_ollama(tmp_path):
+    app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "assistant-fast.db")})
+    client = app.test_client()
+
+    with patch("app.services.ai_service.requests.post") as post:
+        response = client.post(
+            "/api/assistant/chat",
+            json={"messages": [{"role": "user", "content": "Bonjour"}]},
+        )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert "conseiller HeliAntha" in payload["content"]
+    post.assert_not_called()
+
+
+def test_assistant_unknown_local_intent_goes_to_ollama(tmp_path):
+    app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "assistant-unknown.db")})
+    client = app.test_client()
+    ollama_response = Mock()
+    ollama_response.raise_for_status.return_value = None
+    ollama_response.json.return_value = {"message": {"content": "Reponse specialisee depuis Ollama."}}
+
+    with patch("app.services.ai_service.requests.post", return_value=ollama_response) as post:
+        response = client.post(
+            "/api/assistant/chat",
+            json={"messages": [{"role": "user", "content": "Quelle difference entre onduleur hybride et micro-onduleur ?"}]},
+        )
+
+    assert response.status_code == 200
+    assert response.get_json()["content"] == "Reponse specialisee depuis Ollama."
+    post.assert_called_once()
 
 
 def test_assistant_chat_returns_fallback_on_connection_error(tmp_path):
@@ -88,7 +123,7 @@ def test_assistant_chat_generates_ongrid_quote_from_tag(tmp_path):
     with patch("app.services.ai_service.requests.post", return_value=ollama_response):
         response = client.post(
             "/api/assistant/chat",
-            json={"messages": [{"role": "user", "content": "Genere mon devis"}]},
+            json={"messages": [{"role": "user", "content": "Preparation finale client"}]},
         )
 
     assert response.status_code == 200
@@ -126,7 +161,7 @@ def test_assistant_chat_generates_pumping_quote_from_tag(tmp_path):
     with patch("app.services.ai_service.requests.post", return_value=ollama_response):
         response = client.post(
             "/api/assistant/chat",
-            json={"messages": [{"role": "user", "content": "Pompage 12 m3/h 80m"}]},
+            json={"messages": [{"role": "user", "content": "Dimensionnement agricole 12 m3/h 80m"}]},
         )
 
     assert response.status_code == 200
@@ -138,3 +173,56 @@ def test_assistant_chat_generates_pumping_quote_from_tag(tmp_path):
         quote = get_quote(payload["quote"]["id"])
     assert quote["project"] == "pumping"
     assert quote["customer_name"] == "Agriculteur"
+
+
+def test_assistant_chat_streams_ollama_chunks(tmp_path):
+    app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "assistant-stream.db")})
+    client = app.test_client()
+    ollama_response = MagicMock()
+    ollama_response.__enter__.return_value = ollama_response
+    ollama_response.raise_for_status.return_value = None
+    ollama_response.iter_lines.return_value = [
+        json.dumps({"message": {"content": "Bonjour, "}}),
+        json.dumps({"message": {"content": "je vous ecoute."}}),
+    ]
+
+    with patch("app.services.ai_service.requests.post", return_value=ollama_response) as post:
+        response = client.post(
+            "/api/assistant/chat/stream",
+            json={"messages": [{"role": "user", "content": "Explique MPPT simplement"}]},
+        )
+
+    assert response.status_code == 200
+    events = [json.loads(line) for line in response.data.decode().splitlines()]
+    token_text = "".join(event.get("content", "") for event in events if event["type"] == "token")
+    assert events[-1]["type"] == "final"
+    assert token_text == "Bonjour, je vous ecoute."
+    assert events[-1]["content"] == "Bonjour, je vous ecoute."
+    assert post.call_args.kwargs["json"]["stream"] is True
+
+
+def test_assistant_stream_unknown_local_intent_goes_to_ollama(tmp_path):
+    app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "assistant-stream-unknown.db")})
+    client = app.test_client()
+    ollama_response = MagicMock()
+    ollama_response.__enter__.return_value = ollama_response
+    ollama_response.raise_for_status.return_value = None
+    ollama_response.iter_lines.return_value = [
+        json.dumps({"message": {"content": "Analyse "}}),
+        json.dumps({"message": {"content": "Ollama."}}),
+    ]
+
+    with patch("app.services.ai_service.requests.post", return_value=ollama_response) as post:
+        response = client.post(
+            "/api/assistant/chat/stream",
+            json={"messages": [{"role": "user", "content": "Comment dimensionner une protection DC ?"}]},
+        )
+
+    assert response.status_code == 200
+    token_text = "".join(
+        event.get("content", "")
+        for event in (json.loads(line) for line in response.data.decode().splitlines())
+        if event["type"] == "token"
+    )
+    assert token_text == "Analyse Ollama."
+    post.assert_called_once()

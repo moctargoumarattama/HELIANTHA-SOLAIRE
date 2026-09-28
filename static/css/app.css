@@ -1729,10 +1729,14 @@ form {
   align-items: stretch;
   justify-content: center;
   padding: var(--page-gutter);
-  height: var(--wizard-vh, 100dvh);
-  max-height: var(--wizard-vh, 100dvh);
+  min-height: 0;
   overflow: hidden;
   z-index: 1000;
+}
+
+body.wizard-active .ha-chat,
+body.wizard-active .pwa-install-modal {
+  display: none !important;
 }
 
 .wizard.open,
@@ -4135,8 +4139,7 @@ textarea:disabled {
 
   .wizard {
     padding: 0;
-    height: var(--wizard-vh, 100dvh);
-    max-height: var(--wizard-vh, 100dvh);
+    min-height: 0;
   }
 
   .hero-visual {

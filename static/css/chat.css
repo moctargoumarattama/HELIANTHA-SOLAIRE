@@ -165,7 +165,7 @@
   box-shadow: 0 26px 70px rgba(16, 38, 56, 0.25);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto auto;
-  height: min(620px, calc(100vh - 100px));
+  height: min(620px, calc(var(--chat-vh, 100dvh) - 100px));
   overflow: hidden;
   position: absolute;
   right: 0;
@@ -229,7 +229,7 @@
 
 @media (min-width: 761px) {
   .ha-chat-panel {
-    height: min(720px, calc(100vh - 110px));
+    height: min(720px, calc(var(--chat-vh, 100dvh) - 110px));
     width: min(560px, calc(100vw - 48px));
   }
 
@@ -563,14 +563,25 @@
   .ha-chat-panel {
     border-radius: 8px;
     bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
-    height: min(68dvh, calc(100dvh - 96px - env(safe-area-inset-bottom, 0px)));
+    height: min(68dvh, calc(var(--chat-vh, 100dvh) - 96px - env(safe-area-inset-bottom, 0px)));
+    max-height: calc(var(--chat-vh, 100dvh) - 18px - env(safe-area-inset-bottom, 0px));
     position: fixed;
     right: 8px;
     width: calc(100vw - 16px);
   }
 
+  .ha-chat-log {
+    scroll-padding-bottom: 6.5rem;
+  }
+
   .ha-chat-form {
     padding: 12px;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .ha-chat-form input {
+    font-size: 16px;
+    min-height: 46px;
   }
 
   .ha-chat-help {
