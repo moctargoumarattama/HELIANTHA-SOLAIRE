@@ -70,6 +70,49 @@ def number(data: dict[str, Any], key: str, default: float = 0) -> float:
     return value
 
 
+FORCED_EXISTING_PUMP_CONFIGS = {
+    2.0: {"panel_count": 6, "phase": "monophase", "voltage_v": 220, "drive_power_kw": 2.2, "drive_brand": "INVT"},
+    3.0: {"panel_count": 12, "phase": "triphase", "voltage_v": 380, "drive_power_kw": 2.2, "drive_brand": "INVT"},
+}
+
+
+def _optional_number(value: Any) -> float:
+    try:
+        return _parse_number(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _existing_pump_cv_input(data: dict[str, Any]) -> float:
+    cv = normalize_pump_cv(data.get("existing_pump_cv") or data.get("pump_power_cv") or data.get("pump_cv"))
+    if cv:
+        return cv
+    pump_kw = next(
+        (
+            kw
+            for kw in (
+                _optional_number(data.get("existing_pump_kw")),
+                _optional_number(data.get("pump_power_kw")),
+                _optional_number(data.get("pump_kw")),
+            )
+            if kw > 0
+        ),
+        0.0,
+    )
+    if abs(pump_kw - 1.5) <= 0.15 or abs(pump_kw - 1.47) <= 0.15:
+        return 2.0
+    if abs(pump_kw - 2.2) <= 0.15:
+        return 3.0
+    return 0.0
+
+
+def _forced_existing_pump_config(pump_cv: float) -> dict[str, Any] | None:
+    for target_cv, config in FORCED_EXISTING_PUMP_CONFIGS.items():
+        if abs(float(pump_cv or 0) - target_cv) <= 0.05:
+            return deepcopy(config)
+    return None
+
+
 def text(data: dict[str, Any], key: str, default: str = "") -> str:
     return str(data.get(key, default) or default).strip()
 
@@ -1594,7 +1637,7 @@ class CalculationEngine:
                 self._calc_item("PSH fixe", f"{parameters['psh_hours']:.2f} h", note="Parametre administrable On-Grid, sans ville ni meteo."),
                 self._calc_item("Puissance cible", f"{final['target_kwp']:.2f} kWc", formula="(kWh/mois / 30) / PSH"),
                 self._calc_item("Panneaux", f"{final['panel_count']} x {final['panel_power_w']} W", formula="Arrondi superieur compatible strings."),
-                self._calc_item("Onduleur SolaX", f"{final['inverter_power_kw']:.2f} kW", formula="Calibre actif >= puissance DC installee."),
+                self._calc_item(f"Onduleur {final.get('inverter_brand') or 'On-Grid'}", f"{final['inverter_power_kw']:.2f} kW", formula="Calibre actif >= puissance DC installee."),
             ]),
         ]
         return CalculationResult(
@@ -1608,7 +1651,7 @@ class CalculationEngine:
             [
                 "PSH fixe administrable, sans ville ni meteo.",
                 "Strings equilibres selon les bornes HeliAntha.",
-                "Onduleur SolaX actif immediatement superieur ou egal a la puissance DC.",
+                f"Onduleur {final.get('inverter_brand') or 'On-Grid'} actif immediatement superieur ou egal a la puissance DC.",
             ],
             {
                 key: {
@@ -1629,7 +1672,7 @@ class CalculationEngine:
                 {"label": "Panneaux", "value": f"{final['panel_count']} x {final['panel_power_w']} W"},
                 {"label": "Puissance installee", "value": f"{final['installed_power_kwp']:.2f} kWc"},
                 {"label": "Strings", "value": string_layout},
-                {"label": "Onduleur", "value": f"{final['inverter_power_kw']:.2f} kW"},
+                {"label": "Onduleur", "value": f"{final.get('inverter_brand') or 'On-Grid'} {final['inverter_power_kw']:.2f} kW"},
             ],
             self._reliability("photovoltaic", inputs, [("monthly_consumption_kwh", 35), ("phase", 20), ("meter_type", 10)]),
             self._steps([
@@ -1643,16 +1686,28 @@ class CalculationEngine:
 
     def _pumping(self, d: dict[str, Any], cfg: ContextView) -> CalculationResult:
         pump_existing = d.get("pump_existing") in (True, 1, "1", "true", "yes", "oui")
-        existing_pump_cv = normalize_pump_cv(d.get("existing_pump_cv") or d.get("pump_power_cv") or d.get("pump_cv"))
+        existing_pump_cv = _existing_pump_cv_input(d)
         pump_rule = cfg.pumping_rule("pump_configuration", pump_cv=existing_pump_cv) if existing_pump_cv else None
         if pump_existing:
             if not existing_pump_cv:
                 raise ValidationError("La puissance CV de la pompe existante est obligatoire.")
+            forced_config = _forced_existing_pump_config(existing_pump_cv)
+            if forced_config:
+                pump_rule = deepcopy(pump_rule or {})
+                pump_rule.setdefault("rule_key", f"pump-{int(existing_pump_cv)}cv")
+                pump_rule.setdefault("rule_type", "pump_configuration")
+                pump_rule.setdefault("title", f"{existing_pump_cv:g} CV")
+                pump_rule.setdefault("source_type", "heliantha")
+                pump_rule.setdefault("source_name", "HeliAntha")
+                pump_rule.setdefault("active", 1)
+                pump_rule.update(forced_config)
             if not pump_rule:
                 raise ValidationError("Cette puissance nécessite une configuration personnalisée HeliAntha.")
             panel_count = int(float(pump_rule.get("panel_count") or 0))
             panel_power_w = float(pump_rule.get("panel_power_w") or cfg.p("pv_panel_default_w", 590))
             drive_power_kw = float(pump_rule.get("drive_power_kw") or 0)
+            phase = str(pump_rule.get("phase") or "").strip().lower()
+            pump_voltage_v = int(float(pump_rule.get("voltage_v") or (220 if phase == "monophase" else 380 if phase == "triphase" else 0) or 0))
             pump_power_kw = round(existing_pump_cv * 0.7355, 2)
             panel_kwp = panel_count * panel_power_w / WATTS_PER_KILOWATT
             panel_vat_rate = next(
@@ -1682,7 +1737,8 @@ class CalculationEngine:
                 "installed_power_kwp": panel_kwp,
                 "solar_drive_kw": drive_power_kw,
                 "drive_brand": pump_rule.get("drive_brand") or "",
-                "phase": pump_rule.get("phase") or "",
+                "phase": phase,
+                "pump_voltage_v": pump_voltage_v,
                 "rule_panel_vat_rate": panel_vat_rate,
                 "rule_other_vat_rate": other_vat_rate,
                 "pump_rule_mode": "existing_pump_cv",
@@ -1779,8 +1835,10 @@ class CalculationEngine:
                 {"label": "Puissance solaire", "value": f"{panel_kwp:.2f} kWc"},
                 {"label": "Panneaux", "value": f"{panel_count} x {panel_power_w:.0f} W"},
                 {"label": "Variateur", "value": f"{drive_power_kw:.1f} kW"},
-                {"label": "Phase", "value": format_phase(pump_rule.get("phase"))},
+                {"label": "Phase", "value": format_phase(phase)},
             ]
+            if pump_voltage_v:
+                metrics.append({"label": "Tension", "value": f"{pump_voltage_v} V"})
             calculation_blocks = [
                 self._calc_block("Règle HeliAntha appliquée", [
                     self._calc_item("Pompe existante", existing_pump_cv, "CV", formula=f"Pompe renseignée = {self._format_decimal(existing_pump_cv, 1)} CV", source=resolved_sources["pump_power_cv"]),
@@ -1790,7 +1848,8 @@ class CalculationEngine:
                 ]),
                 self._calc_block("Configuration solaire", [
                     self._calc_item("Puissance solaire", panel_kwp, "kWp", formula=f"{panel_count} x {self._format_decimal(panel_power_w, 0)} / 1000 = {self._format_decimal(panel_kwp)} kWp"),
-                    self._calc_item("Phase", format_phase(pump_rule.get("phase")), formula=f"Phase retenue = {format_phase(pump_rule.get('phase'))}"),
+                    self._calc_item("Phase", format_phase(phase), formula=f"Phase retenue = {format_phase(phase)}"),
+                    self._calc_item("Tension", f"{pump_voltage_v} V" if pump_voltage_v else "A preciser", formula="Tension associee a la phase retenue"),
                     self._calc_item("Marque", str(pump_rule.get("drive_brand") or ""), formula=f"Marque retenue = {str(pump_rule.get('drive_brand') or '')}"),
                 ]),
             ]
@@ -1828,7 +1887,7 @@ class CalculationEngine:
                     ("Règle HeliAntha", pump_rule.get("title") or "Configuration", "Table de correspondance active."),
                     ("Panneaux retenus", f"{panel_count} x {panel_power_w:.0f} W", "Configuration solaire enregistrée."),
                     ("Variateur retenu", f"{drive_power_kw:.1f} kW", "Puissance de variateur associée."),
-                    ("Phase", format_phase(pump_rule.get("phase")), "Configuration électrique."),
+                    ("Phase", format_phase(phase), "Configuration électrique."),
                 ]),
                 resolved_sources,
                 "pumping",

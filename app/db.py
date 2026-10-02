@@ -627,6 +627,24 @@ def _seed_defaults(db):
         WHERE rule_key = 'coffret-mono-small' AND (min_cv IS NULL OR min_cv < 2 OR max_cv <> 3 OR title <> 'Monophasé 2 à 3 CV')"""
     )
 
+    db.execute(
+        """UPDATE pumping_solar_rules
+        SET panel_count = 6,
+            phase = 'monophase',
+            drive_power_kw = 2.2,
+            drive_brand = COALESCE(NULLIF(drive_brand, ''), 'INVT')
+        WHERE rule_key = 'pump-2cv'"""
+    )
+
+    db.execute(
+        """UPDATE pumping_solar_rules
+        SET panel_count = 12,
+            phase = 'triphase',
+            drive_power_kw = 2.2,
+            drive_brand = COALESCE(NULLIF(drive_brand, ''), 'INVT')
+        WHERE rule_key = 'pump-3cv'"""
+    )
+
     for product in CATALOG_PRODUCTS:
         inserted = db.execute(
             """INSERT OR IGNORE INTO products

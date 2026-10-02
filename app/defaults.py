@@ -250,6 +250,22 @@ CATALOG_PRODUCTS = [
         "technical_specs": {"power_kw": 2.2, "phases": "monophase"},
         "demo": False,
     },
+    {
+        "reference": "HEL-INVT-2R2-TRI",
+        "category": "drives",
+        "subcategory": "triphase",
+        "brand": "INVT",
+        "model": "2.2 kW tri",
+        "description": "Variateur de pompage triphase.",
+        "power_kw": 2.2,
+        "sale_price": 1900,
+        "stock": 20,
+        "unit": "piece",
+        "warranty": "A confirmer",
+        "vat_rate": 0.20,
+        "technical_specs": {"power_kw": 2.2, "phases": "triphase", "voltage_v": 380},
+        "demo": False,
+    },
 ]
 
 for reference, power_kw, sale_price in [
@@ -279,47 +295,49 @@ for reference, power_kw, sale_price in [
         "demo": False,
     })
 
-for phase, entries in {
-    "monophase": [
-        (3, 6000),
-        (5, 7500),
-        (6, 8500),
-        (8, 10500),
-        (10, 12500),
-        (12, 14500),
-        (15, 17500),
-    ],
-    "triphase": [
-        (6, 9500),
-        (8, 11500),
-        (10, 13500),
-        (15, 18000),
-        (20, 24000),
-        (30, 36000),
-        (50, 62000),
-        (100, 118000),
-    ],
-}.items():
-    phase_label = "mono" if phase == "monophase" else "tri"
-    for power_kw, sale_price in entries:
-        CATALOG_PRODUCTS.append({
-            "reference": f"SOLAX-{phase_label.upper()}-{str(power_kw).replace('.', 'R')}KW",
-            "category": "inverters",
-            "subcategory": phase,
-            "brand": "SolaX",
-            "model": f"{power_kw:g} kW {phase_label}",
-            "description": "Onduleur réseau SolaX On-Grid.",
-            "power_kw": power_kw,
-            "sale_price": sale_price,
-            "stock": 10,
-            "unit": "piece",
-            "warranty": "A confirmer",
-            "vat_rate": 0.20,
-            "technical_specs": {"power_kw": power_kw, "phases": phase, "type": "on_grid"},
-            "demo": False,
-            "preferred": True,
-            "priority": 20,
-        })
+for inverter_brand, brand_priority in (("Deye", 30), ("SolaX", 20)):
+    for phase, entries in {
+        "monophase": [
+            (3, 6000),
+            (5, 7500),
+            (6, 8500),
+            (8, 10500),
+            (10, 12500),
+            (12, 14500),
+            (15, 17500),
+        ],
+        "triphase": [
+            (6, 9500),
+            (8, 11500),
+            (10, 13500),
+            (15, 18000),
+            (20, 24000),
+            (30, 36000),
+            (50, 62000),
+            (100, 118000),
+        ],
+    }.items():
+        phase_label = "mono" if phase == "monophase" else "tri"
+        brand_ref = inverter_brand.upper()
+        for power_kw, sale_price in entries:
+            CATALOG_PRODUCTS.append({
+                "reference": f"{brand_ref}-{phase_label.upper()}-{str(power_kw).replace('.', 'R')}KW",
+                "category": "inverters",
+                "subcategory": phase,
+                "brand": inverter_brand,
+                "model": f"{power_kw:g} kW {phase_label}",
+                "description": f"Onduleur réseau {inverter_brand} On-Grid.",
+                "power_kw": power_kw,
+                "sale_price": sale_price,
+                "stock": 10,
+                "unit": "piece",
+                "warranty": "A confirmer",
+                "vat_rate": 0.20,
+                "technical_specs": {"power_kw": power_kw, "phases": phase, "type": "on_grid"},
+                "demo": False,
+                "preferred": True,
+                "priority": brand_priority,
+            })
 
 CATALOG_PRODUCTS.extend([
     {

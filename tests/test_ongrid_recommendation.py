@@ -113,6 +113,34 @@ def test_ongrid_strict_vat_policy(tmp_path):
         assert line(result, component)["vat_rate"] == pytest.approx(0.20)
 
 
+def test_ongrid_numerique_selects_deye_inverter(tmp_path):
+    app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "ongrid-deye.db")})
+    with app.app_context():
+        result = calculate(
+            {"meter_type": "numerique", "phase": "monophase", "monthly_consumption_kwh": 1000},
+            context=load_calculation_context(),
+        )
+
+    inverter = line(result, "inverter")
+    assert "deye" in inverter["brand"].lower()
+    assert result["final_results"]["inverter_brand"] == "Deye"
+    assert result["final_results"]["inverter_brand_fallback_used"] is False
+
+
+def test_ongrid_mecanique_selects_solax_inverter(tmp_path):
+    app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "ongrid-solax.db")})
+    with app.app_context():
+        result = calculate(
+            {"meter_type": "mecanique", "phase": "monophase", "monthly_consumption_kwh": 1000},
+            context=load_calculation_context(),
+        )
+
+    inverter = line(result, "inverter")
+    assert "solax" in inverter["brand"].lower()
+    assert result["final_results"]["inverter_brand"] == "SolaX"
+    assert result["final_results"]["inverter_brand_fallback_used"] is False
+
+
 def test_ongrid_api_and_admin_page_are_available(tmp_path):
     app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "ongrid-api.db")})
     client = app.test_client()

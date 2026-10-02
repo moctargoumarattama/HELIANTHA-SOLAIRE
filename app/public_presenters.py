@@ -198,6 +198,8 @@ def company_profile(rows: list[dict[str, Any]]) -> dict[str, str]:
     website_url = website if website.startswith(("http://", "https://")) else (f"https://{website}" if website else "")
     phone = str(profile.get("phone") or "").strip()
     whatsapp = str(profile.get("whatsapp") or "").strip()
+    phone_url = "tel:" + re.sub(r"\s+", "", phone) if phone else ""
+    whatsapp_url = "https://wa.me/" + re.sub(r"\D+", "", whatsapp) if whatsapp else ""
     legal_footer = str(profile.get("pdf_legal_footer") or "").strip()
     if "R.C." in legal_footer and ("Siege social" in legal_footer or "Tel." in legal_footer):
         legal_footer = "\n".join(
@@ -208,9 +210,9 @@ def company_profile(rows: list[dict[str, Any]]) -> dict[str, str]:
     return {
         "company_name": company_name,
         "phone": phone,
-        "phone_url": f"tel:{re.sub(r'\s+', '', phone)}" if phone else "",
+        "phone_url": phone_url,
         "whatsapp": whatsapp,
-        "whatsapp_url": f"https://wa.me/{re.sub(r'\D+', '', whatsapp)}" if whatsapp else "",
+        "whatsapp_url": whatsapp_url,
         "email": profile.get("email", ""),
         "address": profile.get("address", "Maroc"),
         "website": website,

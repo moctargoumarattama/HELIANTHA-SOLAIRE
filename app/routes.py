@@ -579,7 +579,7 @@ def _build_quote_from_ai_payload(raw_payload: dict) -> dict | None:
     if mode in {"ongrid", "on_grid", "photovoltaic", "pv", "solaire"}:
         project = "photovoltaic"
         data = {
-            "meter_type": _ai_text(raw_payload, "meter_type", "compteur") or "numerique",
+            "meter_type": _ai_text(raw_payload, "meter_type", "compteur", "type_compteur", "compteur_type") or "numerique",
             "phase": _ai_phase(_ai_text(raw_payload, "phase", "reseau", "network")),
             "monthly_consumption_kwh": _ai_float(
                 raw_payload,

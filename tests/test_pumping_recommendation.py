@@ -425,6 +425,43 @@ def test_existing_pump_mode_is_preserved():
     assert "selected_pump_id" not in result["final_results"]
 
 
+def test_existing_2cv_pump_forces_monophase_and_6_panels():
+    result = CalculationEngine().calculate(
+        "pumping",
+        {"pump_existing": True, "existing_pump_cv": 2},
+    )
+
+    final = result["final_results"]
+    panel_line = next(item for item in result["selected_equipment"] if item["component"] == "panel")
+
+    assert final["pump_existing"] is True
+    assert final["existing_pump_cv"] == pytest.approx(2)
+    assert final["phase"] == "monophase"
+    assert final["pump_voltage_v"] == 220
+    assert final["panels"] == 6
+    assert panel_line["quantity"] == 6
+
+
+def test_existing_3cv_pump_forces_triphase_380v_and_12_panels():
+    result = CalculationEngine().calculate(
+        "pumping",
+        {"pump_existing": True, "existing_pump_cv": 3},
+    )
+
+    final = result["final_results"]
+    panel_line = next(item for item in result["selected_equipment"] if item["component"] == "panel")
+    drive_line = next(item for item in result["selected_equipment"] if item["component"] == "pump_drive")
+
+    assert final["pump_existing"] is True
+    assert final["existing_pump_cv"] == pytest.approx(3)
+    assert final["phase"] == "triphase"
+    assert final["pump_voltage_v"] == 380
+    assert final["panels"] == 12
+    assert final["installed_power_kwp"] == pytest.approx(12 * final["panel_power_w"] / 1000)
+    assert panel_line["quantity"] == 12
+    assert drive_line["technical_specs"]["phases"] == "triphase"
+
+
 def test_pump_seed_counts_and_admin_price_survives_restart(tmp_path):
     database = tmp_path / "pump-seed.db"
     app = create_app({"TESTING": True, "DATABASE": str(database)})

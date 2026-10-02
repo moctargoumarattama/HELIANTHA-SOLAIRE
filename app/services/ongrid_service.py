@@ -57,9 +57,13 @@ def _meter_type(value: Any) -> str:
     normalized = str(value or "").strip().lower()
     if normalized in {"numerique", "numérique", "digital"}:
         return "numerique"
-    if normalized in {"mecanique", "mécanique"}:
+    if normalized in {"mecanique", "mécanique", "analogique", "analogue", "disque"}:
         return "mecanique"
     return "numerique"
+
+
+def _required_inverter_brand(meter_type: str) -> str:
+    return "SolaX" if meter_type == "mecanique" else "Deye"
 
 
 def choose_panel_power(phase: str, target_kw: Decimal) -> int:
@@ -128,24 +132,36 @@ def select_panel(products: list[dict[str, Any]], power_w: int) -> dict[str, Any]
     return candidates[0]
 
 
-def select_inverter(products: list[dict[str, Any]], phase: str, dc_kw: Decimal) -> dict[str, Any]:
-    candidates = [
+def select_inverter(products: list[dict[str, Any]], phase: str, dc_kw: Decimal, meter_type: str = "numerique") -> dict[str, Any]:
+    required_brand = _required_inverter_brand(meter_type)
+    base_candidates = [
         deepcopy(product)
         for product in products
         if product.get("category") == "inverters"
         and int(product.get("active", 1) or 0) == 1
-        and str(product.get("brand") or "").strip().lower() == "solax"
         and _product_phase(product) == phase
         and _product_power(product) >= dc_kw
     ]
+    candidates = [
+        product
+        for product in base_candidates
+        if required_brand.lower() in str(product.get("brand") or "").strip().lower()
+    ]
+    fallback_used = False
     if not candidates:
-        raise ValueError(f"Aucun onduleur SolaX {phase} actif ne couvre {dc_kw:.2f} kW.")
+        candidates = base_candidates
+        fallback_used = True
+    if not candidates:
+        raise ValueError(f"Aucun onduleur actif {phase} ne couvre {dc_kw:.2f} kW.")
     candidates.sort(key=lambda item: (
         _product_power(item),
         _decimal(item.get("sale_price"), Decimal("999999999")),
         str(item.get("reference") or ""),
     ))
-    return candidates[0]
+    selected = candidates[0]
+    selected["_required_brand"] = required_brand
+    selected["_brand_fallback_used"] = fallback_used
+    return selected
 
 
 def select_structure(products: list[dict[str, Any]]) -> dict[str, Any]:
@@ -267,8 +283,9 @@ def calculate_ongrid(data: dict[str, Any], context: dict[str, Any] | None) -> di
     dc_kw = (panel_count * Decimal(panel_power_w)) / Decimal("1000")
 
     panel = select_panel(products, panel_power_w)
-    inverter = select_inverter(products, phase, dc_kw)
+    inverter = select_inverter(products, phase, dc_kw, meter_type)
     structure = select_structure(products)
+    inverter_brand = str(inverter.get("brand") or "").strip()
 
     injection_limit = (
         params["injection_limit_mono"]
@@ -282,7 +299,7 @@ def calculate_ongrid(data: dict[str, Any], context: dict[str, Any] | None) -> di
 
     lines = [
         _catalog_line("panel", panel, panel_count, "Panneaux photovoltaïques", params["vat_pv_rate"], "principal_equipment"),
-        _catalog_line("inverter", inverter, Decimal("1"), "Onduleur réseau SolaX", params["vat_standard_rate"], "principal_equipment"),
+        _catalog_line("inverter", inverter, Decimal("1"), f"Onduleur réseau {inverter_brand or 'On-Grid'}", params["vat_standard_rate"], "principal_equipment"),
         _catalog_line("structure", structure, panel_count, "Structure photovoltaïque", params["vat_standard_rate"], "structure"),
         _service_line("protection_acdc", "protections", "Protection AC/DC", panel_count, params["protection_acdc_per_pv"], params["vat_standard_rate"], "protections"),
         _service_line("cabling_acdc", "cables", "Câblage AC/DC", panel_count, params["cablage_acdc_per_pv"], params["vat_standard_rate"], "cabling"),
@@ -314,6 +331,9 @@ def calculate_ongrid(data: dict[str, Any], context: dict[str, Any] | None) -> di
             "installed_power_kwp": float(dc_kw.quantize(Decimal("0.01"), rounding=ROUND_HALF_EVEN)),
             "inverter_power_kw": float(_product_power(inverter)),
             "inverter_reference": inverter.get("reference") or "",
+            "inverter_brand": inverter_brand,
+            "inverter_required_brand": inverter.get("_required_brand") or _required_inverter_brand(meter_type),
+            "inverter_brand_fallback_used": bool(inverter.get("_brand_fallback_used")),
             "panel_reference": panel.get("reference") or "",
             "injection_limiter_ht": _as_float(injection_limit),
         },

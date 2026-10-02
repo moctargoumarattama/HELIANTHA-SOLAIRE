@@ -107,7 +107,7 @@ def quick_assistant_response(messages: list[dict[str, str]]) -> dict[str, str] |
             "role": "assistant",
             "content": (
                 "Pour reduire votre facture d'electricite, indiquez votre consommation mensuelle en kWh, "
-                "votre type de branchement mono ou tri, votre ville et votre telephone. Ensuite le configurateur "
+                "votre type de compteur numerique ou mecanique, votre branchement mono ou tri, votre ville et votre telephone. Ensuite le configurateur "
                 "peut preparer une estimation solaire raccordee reseau."
             ),
         }
