@@ -143,6 +143,63 @@ def test_assistant_chat_generates_ongrid_quote_from_tag(tmp_path):
     assert quote["project"] == "photovoltaic"
 
 
+def test_assistant_devis_manager_asks_for_missing_slots_without_ollama(tmp_path):
+    app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "assistant-slots.db")})
+    client = app.test_client()
+
+    with patch("app.services.ai_service.requests.post") as post:
+        response = client.post(
+            "/api/assistant/chat",
+            json={"messages": [{"role": "user", "content": "Je veux un devis pompage solaire"}]},
+        )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert "debit" in payload["content"].lower()
+    assert "hmt" in payload["content"].lower()
+    assert "quote_ready" not in payload
+    post.assert_not_called()
+
+
+def test_assistant_devis_manager_generates_ongrid_quote_without_ollama(tmp_path):
+    app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "assistant-direct-ongrid.db")})
+    client = app.test_client()
+
+    with patch("app.services.ai_service.requests.post") as post:
+        response = client.post(
+            "/api/assistant/chat",
+            json={
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": (
+                            "Je veux un devis autoconsommation. Nom: Client Direct. "
+                            "Telephone: 0600000000. Ville: Rabat. Conso 1000 kWh par mois. Monophase."
+                        ),
+                    }
+                ]
+            },
+        )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["quote_ready"] is True
+    assert "<<<DEVIS_DATA" not in payload["content"]
+    assert payload["quote"]["ref"].startswith("HSQ-")
+    assert payload["quote"]["total_ttc"].endswith("DH")
+    assert payload["quote"]["kwc"] > 0
+    assert payload["quote"]["panels"] > 0
+    assert payload["quote"]["download_url"] == f"/devis/{payload['quote']['id']}/document.pdf"
+    post.assert_not_called()
+
+    with app.app_context():
+        quote = get_quote(payload["quote"]["id"])
+    assert quote["customer_name"] == "Client Direct"
+    assert quote["project"] == "photovoltaic"
+    assert quote["request"]["data"]["monthly_consumption_kwh"] == 1000
+    assert "facture_mad" not in json.dumps(quote["request"])
+
+
 def test_assistant_chat_generates_pumping_quote_from_tag(tmp_path):
     app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "assistant-pump-quote.db")})
     client = app.test_client()
@@ -173,6 +230,35 @@ def test_assistant_chat_generates_pumping_quote_from_tag(tmp_path):
         quote = get_quote(payload["quote"]["id"])
     assert quote["project"] == "pumping"
     assert quote["customer_name"] == "Agriculteur"
+
+
+def test_assistant_devis_manager_stream_generates_pumping_quote_without_visible_marker(tmp_path):
+    app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "assistant-direct-stream.db")})
+    client = app.test_client()
+
+    with patch("app.services.ai_service.requests.post") as post:
+        response = client.post(
+            "/api/assistant/chat/stream",
+            json={
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": (
+                            "Devis pompage solaire pour Nom: Agriculteur Direct. "
+                            "Telephone: 0611111111. Ville: Fes. Debit 12 m3/h et HMT 80 m."
+                        ),
+                    }
+                ]
+            },
+        )
+
+    assert response.status_code == 200
+    events = [json.loads(line) for line in response.data.decode().splitlines()]
+    assert events[-1]["type"] == "final"
+    assert events[-1]["quote_ready"] is True
+    assert "<<<DEVIS_DATA" not in events[-1]["content"]
+    assert events[-1]["quote"]["system_summary"].startswith("Pompage solaire")
+    post.assert_not_called()
 
 
 def test_assistant_chat_streams_ollama_chunks(tmp_path):

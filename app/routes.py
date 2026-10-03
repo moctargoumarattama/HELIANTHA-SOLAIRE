@@ -66,6 +66,7 @@ from .pumping_rules import (
     parse_number,
 )
 from .public_presenters import build_public_quote_payload, company_profile, sanitize_calculation_result_for_public
+from .services.assistant_devis import AssistantDevisManager
 from .services.ai_service import (
     chat_with_ollama,
     extract_quote_request,
@@ -89,6 +90,7 @@ from .wizard_projects import engine_project_for, normalize_wizard_project, wizar
 
 bp = Blueprint("main", __name__)
 engine = CalculationEngine()
+assistant_devis_manager = AssistantDevisManager()
 CATALOG_SORT_OPTIONS = [
     {"value": "catalog", "label": "Ordre catalogue"},
     {"value": "brand", "label": "Marque"},
@@ -583,6 +585,86 @@ def _quote_summary(project: str, result: dict) -> str:
     return "Solution pompage solaire"
 
 
+def _result_kwc(final: dict) -> float | str:
+    value = final.get("installed_power_kwp") or final.get("pv_power_kwp")
+    try:
+        return round(float(value), 2)
+    except (TypeError, ValueError):
+        return ""
+
+
+def _result_panel_count(final: dict) -> int | str:
+    value = final.get("panel_count") or final.get("panels")
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return ""
+
+
+def _result_inverter_label(project: str, final: dict) -> str:
+    if project == "pumping":
+        power = final.get("solar_drive_kw")
+        brand = str(final.get("drive_brand") or "").strip()
+        if power:
+            try:
+                power_label = f"{float(power):g} kW"
+            except (TypeError, ValueError):
+                power_label = str(power)
+            return " ".join(part for part in (brand, power_label) if part).strip()
+        return brand
+
+    power = final.get("inverter_power_kw")
+    brand = str(final.get("inverter_brand") or "").strip()
+    if power:
+        try:
+            power_label = f"{float(power):g} kW"
+        except (TypeError, ValueError):
+            power_label = str(power)
+        return " ".join(part for part in (brand, power_label) if part).strip()
+    return brand
+
+
+def _create_official_quote(project: str, data: dict, contact: dict) -> dict:
+    result = engine.calculate(project, data, context=load_calculation_context())
+    quote_number = f"HSQ-{datetime.now():%Y%m%d}-{randint(1000, 9999)}"
+    result["quote_number"] = quote_number
+    result["created_at"] = datetime.now().strftime("%d/%m/%Y a %H:%M")
+    result["project_type"] = project
+    quote_id = save_quote(quote_number, project, data, contact, result)
+    _notify_quote_created_safely(
+        quote_id=quote_id,
+        project=project,
+        contact=contact,
+        data=data,
+        result=result,
+    )
+    final = result.get("final_results") or {}
+    financial = result.get("financial_breakdown") or {}
+    return {
+        "id": quote_id,
+        "ref": quote_number,
+        "quote_number": quote_number,
+        "total_ttc": _money_label(financial.get("total_ttc")),
+        "kwc": _result_kwc(final),
+        "panels": _result_panel_count(final),
+        "inverter": _result_inverter_label(project, final),
+        "system_summary": _quote_summary(project, result),
+        "download_url": url_for("main.public_quote_document_by_id", quote_id=quote_id),
+        "pdf_url": url_for("main.public_quote_document_by_id", quote_id=quote_id),
+        "view_url": url_for("main.public_quote_by_id", quote_id=quote_id),
+    }
+
+
+def _assistant_quote_factory(project: str, data: dict, contact: dict) -> dict:
+    try:
+        return _create_official_quote(project, data, contact)
+    except ValidationError as exc:
+        return {"error": str(exc)}
+    except Exception:
+        current_app.logger.exception("Assistant deterministic quote generation failed")
+        return {"error": "le calcul officiel n'a pas pu etre termine pour ces donnees."}
+
+
 def _build_quote_from_ai_payload(raw_payload: dict) -> dict | None:
     mode = _ai_text(raw_payload, "mode", "project", "type").lower()
     city = _ai_text(raw_payload, "ville", "city", "location", "localisation")
@@ -634,26 +716,26 @@ def _build_quote_from_ai_payload(raw_payload: dict) -> dict | None:
     else:
         return None
 
-    result = engine.calculate(project, data, context=load_calculation_context())
-    quote_number = f"HSQ-{datetime.now():%Y%m%d}-{randint(1000, 9999)}"
-    result["quote_number"] = quote_number
-    result["created_at"] = datetime.now().strftime("%d/%m/%Y a %H:%M")
-    result["project_type"] = project
-    quote_id = save_quote(quote_number, project, data, contact, result)
-    _notify_quote_created_safely(
-        quote_id=quote_id,
-        project=project,
-        contact=contact,
-        data=data,
-        result=result,
-    )
-    financial = result.get("financial_breakdown") or {}
+    return _create_official_quote(project, data, contact)
+
+
+def _quote_from_ready_marker(payload: dict) -> dict | None:
+    if not isinstance(payload, dict):
+        return None
+    if not payload.get("ref") or not (payload.get("pdf_url") or payload.get("download_url")):
+        return None
     return {
-        "id": quote_id,
-        "total_ttc": _money_label(financial.get("total_ttc")),
-        "system_summary": _quote_summary(project, result),
-        "download_url": url_for("main.public_quote_document_by_id", quote_id=quote_id),
-        "view_url": url_for("main.public_quote_by_id", quote_id=quote_id),
+        "id": payload.get("id"),
+        "ref": payload.get("ref"),
+        "quote_number": payload.get("ref"),
+        "total_ttc": str(payload.get("total_ttc") or ""),
+        "kwc": payload.get("kwc", ""),
+        "panels": payload.get("panels", ""),
+        "inverter": payload.get("inverter", ""),
+        "system_summary": str(payload.get("system_summary") or "Devis HeliAntha"),
+        "download_url": str(payload.get("pdf_url") or payload.get("download_url") or ""),
+        "pdf_url": str(payload.get("pdf_url") or payload.get("download_url") or ""),
+        "view_url": str(payload.get("view_url") or ""),
     }
 
 
@@ -661,11 +743,13 @@ def _assistant_payload_from_content(content: str) -> dict:
     clean_content, quote_payload = extract_quote_request(content)
     response_payload = {"role": "assistant", "content": clean_content or str(content or "").strip()}
     if quote_payload:
-        try:
-            quote = _build_quote_from_ai_payload(quote_payload)
-        except Exception:
-            current_app.logger.exception("Assistant quote generation failed")
-            quote = None
+        quote = _quote_from_ready_marker(quote_payload)
+        if not quote:
+            try:
+                quote = _build_quote_from_ai_payload(quote_payload)
+            except Exception:
+                current_app.logger.exception("Assistant quote generation failed")
+                quote = None
         if quote:
             response_payload["quote_ready"] = True
             response_payload["quote"] = quote
@@ -687,6 +771,9 @@ def assistant_chat():
         messages = sanitize_messages(payload.get("messages"))
     except ValueError:
         return jsonify(error="messages doit etre une liste non vide."), 400
+    devis_response = assistant_devis_manager.handle(messages, quote_factory=_assistant_quote_factory)
+    if devis_response.handled:
+        return jsonify(_assistant_payload_from_content(devis_response.content))
     quick_response = quick_assistant_response(messages)
     if quick_response:
         return jsonify(quick_response)
@@ -703,6 +790,13 @@ def assistant_chat_stream():
         messages = sanitize_messages(payload.get("messages"))
     except ValueError:
         return jsonify(error="messages doit etre une liste non vide."), 400
+
+    devis_response = assistant_devis_manager.handle(messages, quote_factory=_assistant_quote_factory)
+    if devis_response.handled:
+        return Response(
+            _ndjson({"type": "final", **_assistant_payload_from_content(devis_response.content)}),
+            mimetype="application/x-ndjson",
+        )
 
     quick_response = quick_assistant_response(messages)
     if quick_response:
