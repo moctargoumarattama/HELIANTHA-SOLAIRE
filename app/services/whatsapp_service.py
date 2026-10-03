@@ -160,7 +160,7 @@ def _project_label(value: str) -> str:
         return "Pompage solaire"
     if "on-grid" in normalized or "ongrid" in normalized or "reduction facture" in normalized:
         return "Installation solaire raccordee reseau"
-    if "batter" in normalized or "hybride" in normalized:
+    if "batter" in normalized or "hybride" in normalized or "hybrid" in normalized:
         return "Systeme solaire avec batteries"
     return raw or "Projet solaire"
 

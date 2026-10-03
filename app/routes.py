@@ -191,6 +191,15 @@ def _display_equipment_lines(lines):
             power_label = clean_number(power_w, 0)
             return f"Panneaux photovoltaïques {power_label} Wc" if power_label else "Panneaux photovoltaïques"
 
+        capacity_kwh = row.get("capacity_kwh") or specs.get("capacity_kwh")
+        if component == "battery" or category == "batteries":
+            quantity = clean_number(row.get("quantity") or 1, 0) or "1"
+            capacity_label = clean_number(capacity_kwh, 0)
+            if capacity_label:
+                total_label = clean_number(float(row.get("quantity") or 1) * float(capacity_kwh or 0), 0)
+                return f"Stockage Lithium {quantity}x Batterie {capacity_label} kWh - Total {total_label} kWh"
+            return "Stockage Lithium"
+
         power_kw = row.get("power_kw") or specs.get("power_kw")
         if component in {"pump_drive", "drive"} or category == "drives" or "variateur" in role:
             brand = str(row.get("brand") or "").strip()
@@ -486,7 +495,7 @@ def health():
 def calculate():
     payload = request.get_json(silent=True) or {}
     project = normalize_wizard_project(payload.get("project_type") or payload.get("project") or "")
-    if project not in {"pumping", "photovoltaic"}:
+    if project not in {"pumping", "photovoltaic", "hybrid"}:
         return jsonify(error="Ce parcours est bientot disponible."), 410
     engine_project = engine_project_for(project)
     data = payload.get("data") or {}
@@ -560,6 +569,14 @@ def _quote_summary(project: str, result: dict) -> str:
         if panels:
             return f"Systeme solaire {panels} panneaux"
         return "Systeme solaire On-Grid"
+    if project == "hybrid":
+        storage = final.get("battery_total_capacity_kwh")
+        panels = final.get("panel_count")
+        if storage:
+            return f"Solaire hybride {float(storage):g} kWh lithium"
+        if panels:
+            return f"Solaire hybride {panels} panneaux"
+        return "Solaire hybride avec batteries"
     pump_cv = final.get("selected_pump_cv") or final.get("pump_power_cv")
     if pump_cv:
         return f"Pompage solaire {float(pump_cv):g} CV"
@@ -589,6 +606,21 @@ def _build_quote_from_ai_payload(raw_payload: dict) -> dict | None:
                 "consommation_mensuelle",
                 "kwh",
             ),
+            "city": city,
+        }
+    elif mode in {"hybrid", "hybride", "batterie", "batteries", "stockage", "solaire_batterie", "solaire_avec_batterie"}:
+        project = "hybrid"
+        data = {
+            "monthly_consumption_kwh": _ai_float(
+                raw_payload,
+                "monthly_consumption_kwh",
+                "monthly_kwh",
+                "consommation",
+                "consommation_mensuelle",
+                "kwh",
+            ),
+            "phase": "monophase",
+            "voltage_v": 220,
             "city": city,
         }
     elif mode in {"pumping", "pompage", "pump"}:

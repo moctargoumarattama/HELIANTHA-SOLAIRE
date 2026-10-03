@@ -9,7 +9,7 @@ from typing import Any
 from .defaults import PROJECT_LABELS
 
 
-MAIN_COMPONENT_ORDER = ("panels", "inverters", "pumps", "drives", "structures")
+MAIN_COMPONENT_ORDER = ("panels", "inverters", "batteries", "pumps", "drives", "structures")
 PUMP_EXISTING_PUBLIC_KEYS_TO_HIDE = {
     "water_need_m3_day",
     "flow_m3_h",
@@ -98,7 +98,9 @@ PUBLIC_TECHNICAL_SPEC_KEYS = {
     "phase",
     "phases",
     "voltage_v",
+    "nominal_voltage_v",
     "current_a",
+    "technology",
 }
 
 
@@ -332,6 +334,12 @@ def _main_components(
             summary = f"{format_decimal_fr(power_cv, 1)} CV"
             if outlet_diameter:
                 summary = f"{summary} - Refoulement {outlet_diameter}"
+        elif category == "batteries":
+            capacity = item.get("capacity_kwh") or specs.get("capacity_kwh")
+            total_capacity = _safe_float(capacity) * _safe_float(quantity, 1)
+            summary = f"{int(quantity)} × {format_decimal_fr(capacity, 0)} kWh"
+            if total_capacity:
+                summary = f"{summary} - Total {format_decimal_fr(total_capacity, 0)} kWh"
         elif power_kw:
             summary = f"{format_decimal_fr(power_kw)} kW"
         elif category == "structures":
@@ -360,6 +368,7 @@ def _diagram_data(project: str, offer: dict[str, Any], final: dict[str, Any]) ->
         "project": project,
         "panel": components.get("panels"),
         "inverter": components.get("inverters"),
+        "battery": components.get("batteries"),
         "pump": components.get("pumps"),
         "drive": components.get("drives"),
         "structure": components.get("structures"),
@@ -431,7 +440,7 @@ def _normalize_offer(project: str, offer: dict[str, Any], final: dict[str, Any],
     normalized.pop("tax_basis_confirmation_required", None)
     normalized.pop("pump_price_tax_basis", None)
     normalized.pop("price_tax_note", None)
-    if project in {"pumping", "photovoltaic"}:
+    if project in {"pumping", "photovoltaic", "hybrid"}:
         normalized["selected_equipment"] = _sanitize_public_equipment(
             offer.get("selected_equipment") or [],
             project=project,
@@ -452,7 +461,7 @@ def sanitize_calculation_result_for_public(result: dict[str, Any]) -> dict[str, 
 
     cleaned = deepcopy(result)
     project = cleaned.get("project") or cleaned.get("project_type") or ""
-    if project not in {"pumping", "photovoltaic"}:
+    if project not in {"pumping", "photovoltaic", "hybrid"}:
         return cleaned
 
     final = _sanitize_public_final_results(project, cleaned.get("final_results") or {})

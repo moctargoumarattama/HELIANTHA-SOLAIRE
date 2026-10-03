@@ -219,6 +219,7 @@ def _catalog_line(
         "technical_specs": technical_specs,
         "power_w": product.get("power_w") or technical_specs.get("power_w"),
         "power_kw": product.get("power_kw") or technical_specs.get("power_kw"),
+        "capacity_kwh": product.get("capacity_kwh") or technical_specs.get("capacity_kwh"),
         "product_snapshot": product,
     }
 

@@ -1,6 +1,6 @@
 const STORAGE_KEY = "heliantha_phase4_wizard";
 const company = window.HELIANTHA_COMPANY || {};
-const ACTIVE_PROJECTS = new Set(["pumping", "photovoltaic"]);
+const ACTIVE_PROJECTS = new Set(["pumping", "photovoltaic", "hybrid"]);
 
 const DEVICE_LIBRARY = {
   "Éclairage": [
@@ -45,6 +45,13 @@ const WIZARD_PROJECT_META = window.HELIANTHA_WIZARD_PROJECTS || {
     summary_fields: ["meter_type", "phase", "monthly_consumption_kwh"],
     supports_loads: false,
   },
+  hybrid: {
+    engine_project: "hybrid",
+    aliases: ["hybride", "battery", "batterie", "stockage"],
+    payload_fields: ["monthly_consumption_kwh"],
+    summary_fields: ["monthly_consumption_kwh"],
+    supports_loads: false,
+  },
 };
 
 const PROJECTS = {
@@ -82,6 +89,24 @@ const PROJECTS = {
         type: "fields",
         title: "Quelle est votre consommation mensuelle ?",
         description: "Saisissez la consommation en kWh indiquée sur votre facture.",
+        fields: [
+          numberField("monthly_consumption_kwh", "Consommation mensuelle", "kWh/mois", "", { required: true, min: 1 }),
+        ],
+      },
+      commonContactStep(),
+      recapStep(),
+    ],
+  },
+  hybrid: {
+    label: "Solaire avec batteries",
+    icon: "🔋",
+    description: "Dimensionnez une solution hybride 220V monophasée avec stockage lithium.",
+    steps: [
+      {
+        id: "monthly_consumption",
+        type: "fields",
+        title: "Quelle est votre consommation mensuelle ?",
+        description: "Le système hybride est dimensionné par palier de consommation, en 220V monophasé.",
         fields: [
           numberField("monthly_consumption_kwh", "Consommation mensuelle", "kWh/mois", "", { required: true, min: 1 }),
         ],

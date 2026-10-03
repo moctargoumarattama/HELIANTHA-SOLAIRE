@@ -22,6 +22,20 @@ WIZARD_PROJECTS: dict[str, dict[str, object]] = {
         ],
         "supports_loads": False,
     },
+    "hybrid": {
+        "label": "Solaire avec batteries",
+        "icon": "BAT",
+        "description": "Dimensionnez une solution hybride 220 V monophasée avec stockage lithium.",
+        "engine_project": "hybrid",
+        "aliases": ["hybride", "hybrid", "battery", "batterie", "stockage"],
+        "payload_fields": [
+            "monthly_consumption_kwh",
+        ],
+        "summary_fields": [
+            "monthly_consumption_kwh",
+        ],
+        "supports_loads": False,
+    },
     "pumping": {
         "label": "Pompage solaire",
         "icon": "P",

@@ -191,6 +191,9 @@ function compactSolutionRows(offer) {
   if (publicView.project === "pumping") {
     return compactPumpingRows(offer);
   }
+  if (publicView.project === "hybrid") {
+    return compactHybridRows(offer);
+  }
   return [{ label: "Configuration", value: "Preparation HeliAntha" }];
 }
 
@@ -232,6 +235,22 @@ function compactPumpingRows(offer) {
   }
   rows.push({ label: "Equipements inclus", value: "Protections, cablage, structure, installation et mise en service" });
   return rows;
+}
+
+function compactHybridRows(offer) {
+  const final = publicView.final_results || {};
+  const inverterLine = offerLine(offer, "inverters");
+  const batteryLine = offerLine(offer, "batteries");
+  const inverterName = [inverterLine?.brand || final.inverter_brand || "Deye", displayNumber(final.inverter_power_kw || inverterLine?.power_kw, 0, "kW"), "220V mono"]
+    .filter(Boolean)
+    .join(" ");
+  const batteryLabel = final.battery_label || `${displayNumber(final.battery_count, 0)}x Batterie Lithium ${displayNumber(final.battery_unit_capacity_kwh || batteryLine?.capacity_kwh, 0, "kWh")} - Total ${displayNumber(final.battery_total_capacity_kwh, 0, "kWh")}`;
+  return [
+    { label: "Configuration solaire", value: panelConfigurationLabel(final) },
+    { label: "Onduleur hybride", value: `Onduleur hybride ${inverterName}`.trim() },
+    { label: "Stockage Lithium", value: batteryLabel },
+    { label: "Equipements inclus", value: "Structure, protections AC/DC, cablage, installation et transport" },
+  ];
 }
 
 function panelConfigurationLabel(final) {
@@ -363,9 +382,21 @@ function buildDiagramMarkup(diagram) {
       <div class="diagram-vertical">
         ${diagramNode("☀️", "Champ PV", offerPvSummary(offer) || displayNumber(final.installed_power_kwp, 2, "kWc"))}
         <span class="diagram-connector"></span>
-        ${diagramNode("⚡", "Onduleur SolaX", offerPowerSummary(offer, "inverters") || displayNumber(final.inverter_power_kw, 2, "kW"))}
+        ${diagramNode("⚡", `Onduleur ${final.inverter_brand || "réseau"}`, offerPowerSummary(offer, "inverters") || displayNumber(final.inverter_power_kw, 2, "kW"))}
         <span class="diagram-connector"></span>
         ${diagramNode("🏢", "Consommation", strings ? `${strings} panneaux/string` : "On-Grid")}
+      </div>
+    `;
+  }
+
+  if (project === "hybrid") {
+    return `
+      <div class="diagram-vertical">
+        ${diagramNode("☀️", "Champ PV", offerPvSummary(offer) || displayNumber(final.installed_power_kwp, 2, "kWc"))}
+        <span class="diagram-connector"></span>
+        ${diagramNode("⚡", "Onduleur hybride Deye", offerPowerSummary(offer, "inverters") || displayNumber(final.inverter_power_kw, 2, "kW"))}
+        <span class="diagram-connector"></span>
+        ${diagramNode("🔋", "Stockage Lithium", final.battery_label || displayNumber(final.battery_total_capacity_kwh, 0, "kWh"))}
       </div>
     `;
   }
@@ -397,7 +428,10 @@ function energyFlowSummary(offer) {
     return "Le champ photovoltaïque alimente le variateur puis la pompe.";
   }
   if (project === "photovoltaic") {
-    return "Le champ photovoltaïque alimente l’onduleur réseau SolaX puis le tableau électrique du site.";
+    return `Le champ photovoltaïque alimente l’onduleur réseau ${final.inverter_brand || "On-Grid"} puis le tableau électrique du site.`;
+  }
+  if (project === "hybrid") {
+    return "Le champ photovoltaïque alimente l’onduleur hybride Deye, avec stockage lithium pour la continuité.";
   }
   return "";
 }
@@ -425,6 +459,15 @@ function buildTechnicalDetails(offer) {
     rows.push({ label: "Puissance installée", value: displayNumber(final.installed_power_kwp, 2, "kWc") });
     rows.push({ label: "Strings", value: Array.isArray(final.string_layout) ? final.string_layout.join(" + ") : "Validation HeliAntha" });
     rows.push({ label: "Onduleur", value: displayNumber(final.inverter_power_kw, 2, "kW") });
+  }
+
+  if (project === "hybrid") {
+    rows.push({ label: "Palier", value: `Palier ${final.hybrid_tier || ""}`.trim() });
+    rows.push({ label: "Panneaux", value: `${displayNumber(final.panel_count, 0)} × ${displayNumber(final.panel_power_w, 0, "W")}` });
+    rows.push({ label: "Puissance installée", value: displayNumber(final.installed_power_kwp, 2, "kWc") });
+    rows.push({ label: "Onduleur hybride", value: `Deye ${displayNumber(final.inverter_power_kw, 2, "kW")}` });
+    rows.push({ label: "Stockage Lithium", value: final.battery_label || displayNumber(final.battery_total_capacity_kwh, 0, "kWh") });
+    rows.push({ label: "Réseau", value: "220V monophasé" });
   }
 
   return rows.slice(0, 8);
@@ -531,6 +574,7 @@ function iconForEquipment(category) {
   return {
     panels: "☀️",
     inverters: "⚡",
+    batteries: "🔋",
     pumps: "💧",
     drives: "⚙️",
     structures: "▦",
@@ -541,6 +585,7 @@ function labelForCategory(category) {
   return {
     panels: "Panneaux",
     inverters: "Onduleur",
+    batteries: "Stockage",
     pumps: "Pompe",
     drives: "Variateur",
     structures: "Structure",

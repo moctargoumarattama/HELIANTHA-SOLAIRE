@@ -33,6 +33,7 @@ from app.pumping_rules import (
 from app.parameter_views import format_display_value
 from app.services import BOMBuilder, CompatibilityChecker, PricingEngine as ServicePricingEngine, ProductSelector
 from app.services.compatibility import as_float, normalize_text, spec_value
+from app.services.hybrid_service import calculate_hybrid
 from app.services.ongrid_service import calculate_ongrid
 from app.services.pump_pricing import calculate_pump_sale_price
 from app.services.pump_selector import NO_STANDARD_PUMP_MESSAGE, select_pump_for_duty
@@ -422,6 +423,7 @@ class CalculationEngine:
         calculators: dict[str, Callable[[dict[str, Any], ContextView], CalculationResult]] = {
             "pumping": self._pumping,
             "photovoltaic": self._photovoltaic,
+            "hybrid": self._hybrid,
         }
         if project not in calculators:
             raise ValidationError("Type de projet non reconnu.")
@@ -516,9 +518,12 @@ class CalculationEngine:
         data: dict[str, Any],
         cfg: ContextView,
     ) -> CalculationResult:
-        if project == "photovoltaic":
+        if project in {"photovoltaic", "hybrid"}:
+            is_hybrid = project == "hybrid"
+            version = "hybrid-1.0" if is_hybrid else "ongrid-1.0"
+            section_title = "Configuration hybride lithium" if is_hybrid else "Configuration On-Grid"
             bom = {
-                "version": "ongrid-1.0",
+                "version": version,
                 "lines": technical.selected_equipment,
                 "material_total": round(sum(float(line.get("total_price") or 0) for line in technical.selected_equipment), 2),
                 "currency": "DH",
@@ -531,11 +536,12 @@ class CalculationEngine:
             technical.intermediate_results["technical_configuration"] = {
                 "sections": [
                     {
-                        "title": "Configuration On-Grid",
+                        "title": section_title,
                         "items": [
                             {"label": "Panneaux", "value": f"{technical.final_results.get('panel_count')} x {technical.final_results.get('panel_power_w')} W"},
-                            {"label": "Strings", "value": " + ".join(str(item) for item in technical.final_results.get("string_layout") or [])},
+                            *([] if is_hybrid else [{"label": "Strings", "value": " + ".join(str(item) for item in technical.final_results.get("string_layout") or [])}]),
                             {"label": "Onduleur", "value": f"{technical.final_results.get('inverter_power_kw')} kW"},
+                            *([{"label": "Stockage Lithium", "value": technical.final_results.get("battery_label") or ""}] if is_hybrid else []),
                         ],
                     }
                 ]
@@ -1684,6 +1690,76 @@ class CalculationEngine:
             "photovoltaic",
         )
 
+    def _hybrid(self, d: dict[str, Any], cfg: ContextView) -> CalculationResult:
+        try:
+            result = calculate_hybrid(
+                d,
+                {
+                    "ongrid_parameters": cfg.ongrid_parameters,
+                    "products": cfg.all_products,
+                },
+            )
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from exc
+
+        final = result["final_results"]
+        parameters = result["parameters"]
+        inputs = result["inputs"]
+        blocks = [
+            self._calc_block("Dimensionnement hybride lithium 220 V", [
+                self._calc_item("Consommation mensuelle", f"{inputs['monthly_consumption_kwh']:.2f} kWh", note="Saisie client."),
+                self._calc_item("Palier", f"Palier {final['hybrid_tier']}", formula="Sélection stricte par consommation mensuelle."),
+                self._calc_item("Panneaux", f"{final['panel_count']} x {final['panel_power_w']} W", formula="Configuration HeliAntha hybride."),
+                self._calc_item("Onduleur hybride Deye", f"{final['inverter_power_kw']:.2f} kW", formula="Calibre du palier retenu."),
+                self._calc_item("Stockage Lithium", final["battery_label"], formula="Capacité batterie du palier retenu."),
+            ]),
+        ]
+        return CalculationResult(
+            "hybrid",
+            "Solaire hybride avec stockage lithium",
+            (
+                f"{final['panel_count']} panneaux de {final['panel_power_w']} W, "
+                f"{final['installed_power_kwp']:.2f} kWc installes, "
+                f"stockage {final['battery_total_capacity_kwh']:.0f} kWh."
+            ),
+            inputs,
+            [
+                "Dimensionnement par paliers HeliAntha pour réseau 220 V monophasé.",
+                "Postes annexes et TVA repris de la logique On-Grid.",
+                "Stockage lithium sélectionné depuis le catalogue actif.",
+            ],
+            {
+                key: {
+                    "key": key,
+                    "value": value,
+                    "source_type": "heliantha",
+                    "source_name": "Regles On-Grid Admin",
+                }
+                for key, value in parameters.items()
+            },
+            {"calculation_blocks": blocks},
+            [],
+            final,
+            result["selected_equipment"],
+            CALCULATOR_VERSIONS["HybridCalculator"],
+            [
+                {"label": "Palier", "value": f"Palier {final['hybrid_tier']}"},
+                {"label": "Panneaux", "value": f"{final['panel_count']} x {final['panel_power_w']} W"},
+                {"label": "Puissance installee", "value": f"{final['installed_power_kwp']:.2f} kWc"},
+                {"label": "Onduleur hybride", "value": f"Deye {final['inverter_power_kw']:.2f} kW"},
+                {"label": "Stockage Lithium", "value": final["battery_label"]},
+                {"label": "Réseau", "value": "220 V monophasé"},
+            ],
+            self._reliability("hybrid", inputs, [("monthly_consumption_kwh", 45), ("phase", 10)]),
+            self._steps([
+                ("Consommation", f"{inputs['monthly_consumption_kwh']:.2f} kWh/mois", "Base de palier hybride."),
+                ("Palier", f"Palier {final['hybrid_tier']}", "Table HeliAntha hybride lithium."),
+                ("Chiffrage", f"{len(result['selected_equipment'])} postes", "Catalogue + forfaits On-Grid administrables."),
+            ]),
+            {"ongrid_parameters": {"source_type": "heliantha", "source_name": "Base On-Grid Admin"}},
+            "hybrid",
+        )
+
     def _pumping(self, d: dict[str, Any], cfg: ContextView) -> CalculationResult:
         pump_existing = d.get("pump_existing") in (True, 1, "1", "true", "yes", "oui")
         existing_pump_cv = _existing_pump_cv_input(d)
@@ -2253,6 +2329,16 @@ class CalculationEngine:
                     "technical_difference": "Panneaux, onduleur, strings et chiffrage selon les règles administrables.",
                 }
             ]
+        if technical.project == "hybrid":
+            return [
+                {
+                    "name": "Solution Hybride Lithium",
+                    "level": "optimal",
+                    "recommended": True,
+                    "description": "Dimensionnement hybride 220 V monophasé avec stockage lithium.",
+                    "technical_difference": "Panneaux, onduleur hybride Deye, batteries lithium et chiffrage selon les règles On-Grid.",
+                }
+            ]
         essential = "Champ PV minimal autour de la pompe retenue."
         optimal = "Dimensionnement recommande avec marge de pompage."
         performance = "Champ PV renforce pour meilleurs debits en conditions difficiles."
@@ -2330,6 +2416,7 @@ class CalculationEngine:
         mapping = {
             "pumping": "PumpCalculator",
             "photovoltaic": "OnGridCalculator",
+            "hybrid": "HybridCalculator",
         }
         versions[mapping[project]] = CALCULATOR_VERSIONS[mapping[project]]
         return versions

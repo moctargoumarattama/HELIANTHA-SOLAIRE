@@ -102,6 +102,26 @@ def quick_assistant_response(messages: list[dict[str, str]]) -> dict[str, str] |
             ),
         }
 
+    hybrid_quote_intent = has_any(
+        "stockage",
+        "batterie",
+        "batteries",
+        "solaire hybride",
+        "solution hybride",
+        "devis hybride",
+        "installation hybride",
+        "avec batterie",
+        "avec batteries",
+    )
+    if hybrid_quote_intent and not has_digits:
+        return {
+            "role": "assistant",
+            "content": (
+                "Pour une solution solaire hybride avec stockage lithium, indiquez votre consommation mensuelle en kWh, "
+                "votre ville, votre nom et votre telephone. Le dimensionnement sera prepare en 220V monophase."
+            ),
+        }
+
     if has_any("facture", "consommation", "electricite", "on-grid", "ongrid", "kwh", "economie") and not has_digits:
         return {
             "role": "assistant",
