@@ -25,6 +25,117 @@ OLLAMA_OPTIONS = {
     "temperature": 0.35,
     "num_predict": 220,
 }
+DEFAULT_COMPANY_PROFILE = {
+    "company_name": "HELIANTHA",
+    "city": "",
+    "address": "Maroc",
+    "phone": "",
+    "whatsapp": "",
+    "email": "",
+}
+
+
+def _clean_company_value(value: Any) -> str:
+    return re.sub(r"\s+", " ", str(value or "")).strip()
+
+
+def _load_company_settings() -> dict[str, str]:
+    try:
+        from ..db import list_company_settings
+
+        rows = list_company_settings()
+    except Exception:
+        rows = []
+    return {
+        str(row.get("key") or "").strip().lower(): _clean_company_value(row.get("value"))
+        for row in rows
+        if str(row.get("key") or "").strip()
+    }
+
+
+def company_profile_from_settings() -> dict[str, str]:
+    settings = _load_company_settings()
+
+    def pick(*keys: str, default: str = "") -> str:
+        for key in keys:
+            value = settings.get(key)
+            if value:
+                return value
+        return default
+
+    profile = dict(DEFAULT_COMPANY_PROFILE)
+    profile.update(
+        {
+            "company_name": pick("company_name", "company", "name", "nom_entreprise", default=profile["company_name"]),
+            "city": pick("city", "company_city", "ville", "ville_entreprise"),
+            "address": pick("address", "company_address", "adresse", "adresse_entreprise", default=profile["address"]),
+            "phone": pick("phone", "telephone", "tel", "company_phone"),
+            "whatsapp": pick("whatsapp", "whatsapp_phone", "company_whatsapp"),
+            "email": pick("email", "contact_email", "company_email"),
+        }
+    )
+    return profile
+
+
+def _unique_join(parts: list[str]) -> str:
+    clean: list[str] = []
+    seen = set()
+    for part in parts:
+        normalized = _normalize_text(part)
+        if not part or normalized in seen:
+            continue
+        clean.append(part)
+        seen.add(normalized)
+    return ", ".join(clean)
+
+
+def _join_channels(items: list[str]) -> str:
+    if not items:
+        return "via les coordonnees renseignees dans l'administration"
+    if len(items) == 1:
+        return items[0]
+    if len(items) == 2:
+        return f"{items[0]} ou {items[1]}"
+    return ", ".join(items[:-1]) + f" ou {items[-1]}"
+
+
+def company_contact_channels(profile: dict[str, str] | None = None) -> str:
+    profile = profile or company_profile_from_settings()
+    channels = []
+    if profile.get("phone"):
+        channels.append(f"par telephone au {profile['phone']}")
+    if profile.get("whatsapp"):
+        channels.append(f"sur WhatsApp au {profile['whatsapp']}")
+    if profile.get("email"):
+        channels.append(f"par email a {profile['email']}")
+    return _join_channels(channels)
+
+
+def build_assistant_system_prompt(profile: dict[str, str] | None = None) -> str:
+    profile = profile or company_profile_from_settings()
+    company_name = profile.get("company_name") or DEFAULT_COMPANY_PROFILE["company_name"]
+    location = _unique_join([profile.get("city", ""), profile.get("address", "")])
+    intro = f"Tu es l'assistant de {company_name}, societe specialisee en energie solaire"
+    if location:
+        intro += f" situee a {location}"
+    intro += "."
+
+    return " ".join(
+        [
+            intro,
+            f"Contacts officiels: {company_contact_channels(profile)}.",
+            "Tu reponds en francais, clairement et avec un ton professionnel.",
+            "Tu aides sur le pompage solaire, l'autoconsommation on-grid et le solaire hybride avec batteries.",
+            "Pour un devis, collecte le type de projet, la ville du client, son nom, son telephone et les donnees techniques utiles.",
+            "Quand toutes les donnees sont disponibles, ajoute le marqueur <<<DEVIS_DATA:{...}>>> avec un JSON compact compatible avec le configurateur.",
+            "Ne donne pas de prix invente: les montants finaux viennent du calculateur officiel.",
+        ]
+    )
+
+
+def messages_with_system_prompt(messages: list[dict[str, str]]) -> list[dict[str, str]]:
+    conversation = [message for message in messages if message.get("role") != "system"]
+    return [{"role": "system", "content": build_assistant_system_prompt()}, *conversation]
 
 
 def sanitize_messages(raw_messages: Any) -> list[dict[str, str]]:
@@ -77,6 +188,8 @@ def quick_assistant_response(messages: list[dict[str, str]]) -> dict[str, str] |
     words = set(re.findall(r"[a-z0-9+]+", normalized))
     user_count = sum(1 for message in messages if message.get("role") == "user")
     has_digits = bool(re.search(r"\d", normalized))
+    company = company_profile_from_settings()
+    company_name = company.get("company_name") or DEFAULT_COMPANY_PROFILE["company_name"]
 
     def has_any(*tokens: str) -> bool:
         return any(token in normalized for token in tokens)
@@ -86,7 +199,7 @@ def quick_assistant_response(messages: list[dict[str, str]]) -> dict[str, str] |
         return {
             "role": "assistant",
             "content": (
-                "Bonjour, je suis le conseiller HeliAntha. Je peux vous orienter rapidement : "
+                f"Bonjour, je suis le conseiller {company_name}. Je peux vous orienter rapidement : "
                 "pompage solaire, reduction de facture, site isole, batteries ou recharge electrique. "
                 "Quel projet souhaitez-vous estimer ?"
             ),
@@ -146,7 +259,7 @@ def quick_assistant_response(messages: list[dict[str, str]]) -> dict[str, str] |
         return {
             "role": "assistant",
             "content": (
-                "Vous pouvez joindre HeliAntha au 05 30 13 35 83 ou sur WhatsApp au +212 661-575128. "
+                f"Vous pouvez joindre {company_name} {company_contact_channels(company)}. "
                 "Si vous voulez, indiquez votre projet et votre ville, je vous oriente avant l'appel."
             ),
         }
@@ -179,7 +292,7 @@ def extract_quote_request(content: str) -> tuple[str, dict[str, Any] | None]:
 def chat_with_ollama(messages: list[dict[str, str]]) -> dict[str, str]:
     payload = {
         "model": OLLAMA_MODEL,
-        "messages": messages,
+        "messages": messages_with_system_prompt(messages),
         "stream": False,
         "keep_alive": "10m",
         "options": OLLAMA_OPTIONS,
@@ -203,7 +316,7 @@ def chat_with_ollama(messages: list[dict[str, str]]) -> dict[str, str]:
 def stream_ollama_chat(messages: list[dict[str, str]]):
     payload = {
         "model": OLLAMA_MODEL,
-        "messages": messages,
+        "messages": messages_with_system_prompt(messages),
         "stream": True,
         "keep_alive": "10m",
         "options": OLLAMA_OPTIONS,

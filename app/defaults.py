@@ -71,6 +71,7 @@ COMPANY_SETTINGS = [
     ("admin_whatsapp", "0684056613", "contact", "WhatsApp - Telephone admin"),
     ("app_base_url", "https://devis.heliantha.ma", "contact", "URL publique des devis"),
     ("email", "contact@heliantha.ma", "contact", "E-mail"),
+    ("city", "", "contact", "Ville"),
     ("address", "Maroc", "contact", "Adresse"),
     ("website", "www.heliantha.ma", "contact", "Site internet"),
     ("location_url", "https://maps.app.goo.gl/xAfGJugGUMye8oSX7", "contact", "Localisation Google Maps"),

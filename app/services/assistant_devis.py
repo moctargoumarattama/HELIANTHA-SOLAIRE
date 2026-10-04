@@ -47,7 +47,6 @@ CITY_NAMES = {
     "agadir": "Agadir",
     "ait melloul": "Ait Melloul",
     "beni mellal": "Beni Mellal",
-    "casablanca": "Casablanca",
     "el jadida": "El Jadida",
     "errachidia": "Errachidia",
     "essaouira": "Essaouira",
@@ -71,6 +70,20 @@ CITY_NAMES = {
     "temara": "Temara",
     "tiznit": "Tiznit",
 }
+DEFAULT_COMPANY_NAME = "HELIANTHA"
+
+
+def load_company_name() -> str:
+    try:
+        from ..db import list_company_settings
+
+        settings = {
+            str(row.get("key") or "").strip().lower(): str(row.get("value") or "").strip()
+            for row in list_company_settings()
+        }
+    except Exception:
+        settings = {}
+    return settings.get("company_name") or settings.get("name") or DEFAULT_COMPANY_NAME
 
 
 @dataclass
@@ -476,12 +489,13 @@ def quote_marker_payload(quote: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def final_content_for_quote(quote: dict[str, Any]) -> str:
+def final_content_for_quote(quote: dict[str, Any], company_name: str | None = None) -> str:
+    company_name = str(company_name or load_company_name() or DEFAULT_COMPANY_NAME).strip()
     payload = json.dumps(quote_marker_payload(quote), ensure_ascii=False, separators=(",", ":"))
     ref = quote.get("ref") or quote.get("quote_number") or "votre devis"
     total = quote.get("total_ttc") or ""
-    summary = quote.get("system_summary") or "solution HeliAntha"
-    text = f"Parfait, j'ai genere le devis {ref} avec le moteur HeliAntha officiel."
+    summary = quote.get("system_summary") or f"solution {company_name}"
+    text = f"Parfait, j'ai genere le devis {ref} avec le moteur {company_name} officiel."
     if total:
         text += f" Total TTC : {total}."
     text += f" Solution : {summary}. Le PDF est pret ci-dessous."
