@@ -85,7 +85,7 @@ from .services.whatsapp_service import (
     process_outbox,
     send_whatsapp_raw,
 )
-from .wizard_projects import engine_project_for, normalize_wizard_project, wizard_projects_payload
+from .wizard_projects import engine_project_for, normalize_wizard_project
 
 
 bp = Blueprint("main", __name__)
@@ -114,20 +114,6 @@ HIDDEN_COMPANY_SETTING_KEYS = {
     "pdf_payment_terms",
     "quote_validity_days",
 }
-PWA_CACHE_NAME = "heliantha-pwa-v10"
-APP_ASSET_VERSION = "20260927-6"
-PWA_ASSET_VERSION = "20260927-6"
-PWA_CORE_PATHS = [
-    "/",
-    "/assets/helin.jpeg",
-    f"/static/css/app.css?v={APP_ASSET_VERSION}",
-    f"/static/css/chat.css?v={APP_ASSET_VERSION}",
-    f"/static/css/admin.css?v={APP_ASSET_VERSION}",
-    f"/static/js/app.js?v={APP_ASSET_VERSION}",
-    f"/static/js/public-result.js?v={APP_ASSET_VERSION}",
-    f"/static/js/pwa.js?v={PWA_ASSET_VERSION}",
-]
-
 
 def _is_placeholder_equipment_line(item: dict) -> bool:
     text_blob = " ".join(
@@ -277,6 +263,14 @@ def _project_label_for_notification(project: str) -> str:
     }.get(project, PROJECT_LABELS.get(project, "Projet Solaire"))
 
 
+def _quote_pdf_filename(quote_number="", quote_id=None) -> str:
+    official_number = str(quote_number or "").strip()
+    if official_number:
+        return f"Devis_{official_number}.pdf"
+    fallback_id = str(quote_id or "client").strip()
+    return f"Devis_HeliAntha_{fallback_id}.pdf"
+
+
 def _notify_quote_created_safely(
     *,
     quote_id: int,
@@ -297,7 +291,7 @@ def _notify_quote_created_safely(
                 "project_type": _project_label_for_notification(project),
                 "total_ttc": _money_label((result.get("financial_breakdown") or {}).get("total_ttc")),
                 "pdf_url": url_for("main.public_quote_document_by_id", quote_id=quote_id),
-                "pdf_filename": f"Devis_HeliAntha_{quote_id}.pdf",
+                "pdf_filename": _quote_pdf_filename(result.get("quote_number") or result.get("reference"), quote_id),
                 "whatsapp_gateway_url": settings.get("whatsapp_gateway_url"),
                 "admin_whatsapp": settings.get("admin_whatsapp"),
                 "app_base_url": settings.get("app_base_url"),
@@ -317,11 +311,21 @@ def _quote_pdf_response(quote: dict):
         display_equipment_lines=display_equipment_lines,
         financial_summary_rows=financial_summary_rows,
     )
-    filename = f"Devis_HeliAntha_{quote.get('id') or quote.get('quote_number') or 'client'}.pdf"
+    filename = _quote_pdf_filename(quote.get("quote_number") or quote.get("reference"), quote.get("id"))
     response = current_app.response_class(pdf_bytes, mimetype="application/pdf")
     response.headers["Content-Disposition"] = f"inline; filename={quote_header_value(filename)}"
     response.headers["Content-Length"] = str(len(pdf_bytes))
     return response
+
+
+def _quote_json_response(quote: dict):
+    company = company_profile(list_company_settings())
+    payload = build_public_quote_payload(quote, company)
+    payload["quote_id"] = quote.get("id")
+    payload["pdf_url"] = url_for("main.api_quote_document_by_id", quote_id=quote["id"])
+    payload["document_url"] = payload["pdf_url"]
+    payload["api_url"] = url_for("main.api_quote_by_id", quote_id=quote["id"])
+    return jsonify(payload)
 
 
 def _whatsapp_admin_settings() -> dict[str, str]:
@@ -347,144 +351,18 @@ def protect_admin():
 
 @bp.get("/")
 def index():
-    company = company_profile(list_company_settings())
-    return render_template(
-        "index.html",
-        company=company,
-        public_projects=PUBLIC_PROJECTS,
-        project_labels=PROJECT_LABELS,
-        wizard_projects=wizard_projects_payload(),
-    )
+    return jsonify(status="online", service="HeliAntha Engine API", version="2.0")
 
 
 @bp.get("/politique-confidentialite")
 def privacy_policy():
-    company = company_profile(list_company_settings())
-    return render_template("privacy.html", company=company)
+    return jsonify(error="Les pages publiques web ont ete retirees. Utilisez l'application Flutter."), 410
 
 
 @bp.get("/assets/heliantha-terrain.jpeg")
 @bp.get("/assets/helin.jpeg")
 def brand_image():
     return send_file(Path(__file__).resolve().parent.parent / "helin.jpeg", mimetype="image/jpeg")
-
-
-@bp.get("/manifest.webmanifest")
-def pwa_manifest():
-    icon_url = url_for("main.brand_image")
-    manifest = {
-        "id": url_for("main.index"),
-        "name": "HELIANTHA",
-        "short_name": "HELIANTHA",
-        "description": "HeliAntha Smart Quote pour les estimations solaires et energetiques.",
-        "start_url": url_for("main.index"),
-        "scope": url_for("main.index"),
-        "display": "standalone",
-        "display_override": ["window-controls-overlay", "standalone"],
-        "orientation": "portrait",
-        "background_color": "#f6f8fb",
-        "theme_color": "#102638",
-        "lang": "fr",
-        "categories": ["business", "productivity", "utilities"],
-        "icons": [
-            {
-                "src": icon_url,
-                "sizes": "192x192",
-                "type": "image/jpeg",
-                "purpose": "any",
-            },
-            {
-                "src": icon_url,
-                "sizes": "512x512",
-                "type": "image/jpeg",
-                "purpose": "any",
-            },
-        ],
-    }
-    return current_app.response_class(json_dumps(manifest, ensure_ascii=False), mimetype="application/manifest+json")
-
-
-@bp.get("/service-worker.js")
-def service_worker():
-    core_assets = ",\n  ".join(f'"{path}"' for path in PWA_CORE_PATHS)
-    source = f"""
-const CACHE_NAME = "{PWA_CACHE_NAME}";
-const CORE_ASSETS = [
-  {core_assets}
-];
-
-const isSameOrigin = (request) => new URL(request.url).origin === self.location.origin;
-
-self.addEventListener("install", (event) => {{
-  event.waitUntil((async () => {{
-    const cache = await caches.open(CACHE_NAME);
-    await cache.addAll(CORE_ASSETS);
-  }})());
-  self.skipWaiting();
-}});
-
-self.addEventListener("activate", (event) => {{
-  event.waitUntil((async () => {{
-    const keys = await caches.keys();
-    await Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)));
-    await self.clients.claim();
-  }})());
-}});
-
-self.addEventListener("fetch", (event) => {{
-  const {{ request }} = event;
-
-  if (request.method !== "GET" || !isSameOrigin(request)) {{
-    return;
-  }}
-
-  const url = new URL(request.url);
-
-  if (request.mode === "navigate") {{
-    event.respondWith((async () => {{
-      try {{
-        return await fetch(request);
-      }} catch {{
-        const cache = await caches.open(CACHE_NAME);
-        return (await cache.match("/")) || Response.error();
-      }}
-    }})());
-    return;
-  }}
-
-  if (["style", "script", "image", "font"].includes(request.destination) || url.pathname.startsWith("/assets/") || url.pathname.startsWith("/static/")) {{
-    event.respondWith((async () => {{
-      const cache = await caches.open(CACHE_NAME);
-      const cached = await cache.match(request);
-
-      const updateCache = async () => {{
-        try {{
-          const response = await fetch(request);
-          if (response && response.ok) {{
-            await cache.put(request, response.clone());
-          }}
-        }} catch {{}}
-      }};
-
-      if (cached) {{
-        event.waitUntil(updateCache());
-        return cached;
-      }}
-
-      try {{
-        const response = await fetch(request);
-        if (response && response.ok) {{
-          await cache.put(request, response.clone());
-        }}
-        return response;
-      }} catch {{
-        return (await cache.match("/")) || Response.error();
-      }}
-    }})());
-  }}
-}});
-""".strip()
-    return current_app.response_class(source, mimetype="application/javascript")
 
 
 @bp.get("/health")
@@ -521,7 +399,10 @@ def calculate():
         data=data,
         result=result,
     )
-    result["public_url"] = url_for("main.public_quote", quote_number=result["quote_number"])
+    result["quote_id"] = quote_id
+    result["quote_url"] = url_for("main.api_quote_by_id", quote_id=quote_id)
+    result["pdf_url"] = url_for("main.api_quote_document_by_id", quote_id=quote_id)
+    result["public_url"] = result["quote_url"]
     public_result = sanitize_calculation_result_for_public(result)
     return jsonify(public_result)
 
@@ -649,9 +530,9 @@ def _create_official_quote(project: str, data: dict, contact: dict) -> dict:
         "panels": _result_panel_count(final),
         "inverter": _result_inverter_label(project, final),
         "system_summary": _quote_summary(project, result),
-        "download_url": url_for("main.public_quote_document_by_id", quote_id=quote_id),
-        "pdf_url": url_for("main.public_quote_document_by_id", quote_id=quote_id),
-        "view_url": url_for("main.public_quote_by_id", quote_id=quote_id),
+        "download_url": url_for("main.api_quote_document_by_id", quote_id=quote_id),
+        "pdf_url": url_for("main.api_quote_document_by_id", quote_id=quote_id),
+        "view_url": url_for("main.api_quote_by_id", quote_id=quote_id),
     }
 
 
@@ -841,12 +722,39 @@ def assistant_chat_stream():
     return Response(generate(), mimetype="application/x-ndjson")
 
 
+@bp.get("/api/quotes/<int:quote_id>")
+def api_quote_by_id(quote_id):
+    quote = get_quote(quote_id)
+    if not quote:
+        abort(404)
+    save_quote_client_event(quote["id"], quote["quote_number"], "api_view", request.args.get("from", "api"))
+    return _quote_json_response(quote)
+
+
+@bp.get("/api/quotes/by-number/<quote_number>")
+def api_quote_by_number(quote_number):
+    quote = get_quote_by_number(quote_number)
+    if not quote:
+        abort(404)
+    save_quote_client_event(quote["id"], quote["quote_number"], "api_view", request.args.get("from", "api"))
+    return _quote_json_response(quote)
+
+
+@bp.get("/api/quotes/<int:quote_id>/document.pdf")
+def api_quote_document_by_id(quote_id):
+    quote = get_quote(quote_id)
+    if not quote:
+        abort(404)
+    return _quote_pdf_response(quote)
+
+
 @bp.get("/devis/<int:quote_id>")
 def public_quote_by_id(quote_id):
     quote = get_quote(quote_id)
     if not quote:
         abort(404)
-    return redirect(url_for("main.public_quote", quote_number=quote["quote_number"]))
+    save_quote_client_event(quote["id"], quote["quote_number"], "api_view", request.args.get("from", "direct"))
+    return _quote_json_response(quote)
 
 
 @bp.get("/devis/<int:quote_id>/pdf")
@@ -854,7 +762,7 @@ def public_quote_print_by_id(quote_id):
     quote = get_quote(quote_id)
     if not quote:
         abort(404)
-    return redirect(url_for("main.public_quote", quote_number=quote["quote_number"]))
+    return _quote_pdf_response(quote)
 
 
 @bp.get("/devis/<int:quote_id>/document.pdf")
@@ -870,10 +778,8 @@ def public_quote(quote_number):
     quote = get_quote_by_number(quote_number)
     if not quote:
         abort(404)
-    company = company_profile(list_company_settings())
-    payload = build_public_quote_payload(quote, company)
-    save_quote_client_event(quote["id"], quote["quote_number"], "public_view", request.args.get("from", "direct"))
-    return render_template("public_quote.html", quote=quote, public_view=payload, company=company, print_mode=False)
+    save_quote_client_event(quote["id"], quote["quote_number"], "api_view", request.args.get("from", "direct"))
+    return _quote_json_response(quote)
 
 
 @bp.get("/simulation/<quote_number>/predevis")
@@ -881,7 +787,7 @@ def public_quote_print(quote_number):
     quote = get_quote_by_number(quote_number)
     if not quote:
         abort(404)
-    save_quote_client_event(quote["id"], quote["quote_number"], "print_view", "predevis")
+    save_quote_client_event(quote["id"], quote["quote_number"], "pdf_view", "predevis")
     return _quote_pdf_response(quote)
 
 

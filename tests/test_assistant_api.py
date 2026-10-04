@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, Mock, patch
 import requests
 
 from app import create_app
-from app.db import get_quote
+from app.db import get_quote, list_company_settings, update_company_setting
 from app.services.ai_service import ASSISTANT_FALLBACK_MESSAGE
 
 
@@ -27,7 +27,51 @@ def test_assistant_chat_valid_payload_calls_ollama(tmp_path):
     sent_payload = post.call_args.kwargs["json"]
     assert sent_payload["model"] == "heliantha-ai"
     assert sent_payload["stream"] is False
-    assert sent_payload["messages"] == [{"role": "user", "content": "Explique la difference entre MPPT et PWM"}]
+    sent_messages = sent_payload["messages"]
+    assert sent_messages[0]["role"] == "system"
+    assert "Tu es l'assistant de HELIANTHA" in sent_messages[0]["content"]
+    assert "Maroc" in sent_messages[0]["content"]
+    assert "05 30 13 35 83" in sent_messages[0]["content"]
+    assert "+212 661-575128" in sent_messages[0]["content"]
+    assert "contact@heliantha.ma" in sent_messages[0]["content"]
+    assert "Casablanca" not in sent_messages[0]["content"]
+    assert sent_messages[1:] == [{"role": "user", "content": "Explique la difference entre MPPT et PWM"}]
+
+
+def test_assistant_system_prompt_uses_admin_company_settings(tmp_path):
+    app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "assistant-company.db")})
+    client = app.test_client()
+    ollama_response = Mock()
+    ollama_response.raise_for_status.return_value = None
+    ollama_response.json.return_value = {"message": {"content": "Reponse IA."}}
+
+    values = {
+        "company_name": "Solaire Test",
+        "city": "Agadir",
+        "address": "Zone Industrielle Ait Melloul",
+        "phone": "0528000000",
+        "whatsapp": "+212600000000",
+        "email": "contact@solaire.test",
+    }
+    with app.app_context():
+        for setting in list_company_settings():
+            if setting["key"] in values:
+                update_company_setting(setting["id"], values[setting["key"]])
+
+    with patch("app.services.ai_service.requests.post", return_value=ollama_response) as post:
+        response = client.post(
+            "/api/assistant/chat",
+            json={"messages": [{"role": "user", "content": "Explique MPPT et PWM"}]},
+        )
+
+    assert response.status_code == 200
+    system_prompt = post.call_args.kwargs["json"]["messages"][0]["content"]
+    assert "Tu es l'assistant de Solaire Test" in system_prompt
+    assert "situee a Agadir, Zone Industrielle Ait Melloul" in system_prompt
+    assert "0528000000" in system_prompt
+    assert "+212600000000" in system_prompt
+    assert "contact@solaire.test" in system_prompt
+    assert "Casablanca" not in system_prompt
 
 
 def test_assistant_chat_fast_path_skips_ollama(tmp_path):
@@ -42,7 +86,7 @@ def test_assistant_chat_fast_path_skips_ollama(tmp_path):
 
     assert response.status_code == 200
     payload = response.get_json()
-    assert "conseiller HeliAntha" in payload["content"]
+    assert "conseiller heliantha" in payload["content"].lower()
     post.assert_not_called()
 
 
@@ -101,7 +145,7 @@ def test_assistant_chat_truncates_user_messages(tmp_path):
         )
 
     assert response.status_code == 200
-    sent_content = post.call_args.kwargs["json"]["messages"][0]["content"]
+    sent_content = post.call_args.kwargs["json"]["messages"][-1]["content"]
     assert len(sent_content) == 1000
 
 
@@ -132,8 +176,8 @@ def test_assistant_chat_generates_ongrid_quote_from_tag(tmp_path):
     assert "<<<DEVIS_DATA" not in payload["content"]
     assert payload["quote"]["total_ttc"].endswith("DH")
     assert payload["quote"]["system_summary"].startswith("Systeme solaire")
-    assert payload["quote"]["download_url"] == f"/devis/{payload['quote']['id']}/document.pdf"
-    assert payload["quote"]["view_url"] == f"/devis/{payload['quote']['id']}"
+    assert payload["quote"]["download_url"] == f"/api/quotes/{payload['quote']['id']}/document.pdf"
+    assert payload["quote"]["view_url"] == f"/api/quotes/{payload['quote']['id']}"
 
     with app.app_context():
         quote = get_quote(payload["quote"]["id"])
@@ -189,7 +233,7 @@ def test_assistant_devis_manager_generates_ongrid_quote_without_ollama(tmp_path)
     assert payload["quote"]["total_ttc"].endswith("DH")
     assert payload["quote"]["kwc"] > 0
     assert payload["quote"]["panels"] > 0
-    assert payload["quote"]["download_url"] == f"/devis/{payload['quote']['id']}/document.pdf"
+    assert payload["quote"]["download_url"] == f"/api/quotes/{payload['quote']['id']}/document.pdf"
     post.assert_not_called()
 
     with app.app_context():

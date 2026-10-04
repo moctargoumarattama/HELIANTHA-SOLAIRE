@@ -3,6 +3,7 @@ from unittest.mock import Mock, patch
 import requests
 
 from app import create_app
+from app import routes as routes_module
 from app.services.whatsapp_service import (
     gateway_logout,
     get_gateway_qr,
@@ -94,6 +95,46 @@ def test_notify_quote_created_sends_client_and_admin_documents(tmp_path):
     assert admin_call.args[1] == "https://devis.test/devis/12/document.pdf"
     assert "Client Test" in admin_call.args[3]
     assert send.call_count == 0
+
+
+def test_route_whatsapp_pdf_filename_uses_quote_number(tmp_path):
+    app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "whatsapp-route-filename.db")})
+
+    with app.test_request_context("/"):
+        app.config["TESTING"] = False
+        with patch("app.routes.notify_quote_created") as notify:
+            routes_module._notify_quote_created_safely(
+                quote_id=12,
+                project="photovoltaic",
+                contact={"name": "Client Test", "phone": "0611111111"},
+                data={"city": "Rabat"},
+                result={
+                    "quote_number": "HSQ-20261004-1234",
+                    "financial_breakdown": {"total_ttc": 35810},
+                },
+            )
+
+    payload = notify.call_args.args[0]
+    assert payload["pdf_filename"] == "Devis_HSQ-20261004-1234.pdf"
+    assert payload["pdf_url"] == "/devis/12/document.pdf"
+
+
+def test_route_whatsapp_pdf_filename_falls_back_to_quote_id(tmp_path):
+    app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "whatsapp-route-fallback.db")})
+
+    with app.test_request_context("/"):
+        app.config["TESTING"] = False
+        with patch("app.routes.notify_quote_created") as notify:
+            routes_module._notify_quote_created_safely(
+                quote_id=12,
+                project="photovoltaic",
+                contact={"name": "Client Test", "phone": "0611111111"},
+                data={"city": "Rabat"},
+                result={"financial_breakdown": {"total_ttc": 35810}},
+            )
+
+    payload = notify.call_args.args[0]
+    assert payload["pdf_filename"] == "Devis_HeliAntha_12.pdf"
 
 
 def test_notify_quote_created_uses_admin_gateway_settings(tmp_path):

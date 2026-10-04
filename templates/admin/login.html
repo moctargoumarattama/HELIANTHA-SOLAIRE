@@ -9,7 +9,6 @@
   <meta name="apple-mobile-web-app-title" content="HELIANTHA">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <link rel="manifest" href="{{ url_for('main.pwa_manifest') }}">
   <link rel="icon" href="{{ url_for('main.brand_image') }}" type="image/jpeg">
   <link rel="apple-touch-icon" href="{{ url_for('main.brand_image') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
@@ -32,6 +31,5 @@
     </form>
     <p class="muted">Vous pouvez aussi garder l'ancien mot de passe principal.</p>
   </main>
-  <script src="{{ url_for('static', filename='js/pwa.js') }}?v=20260927-6"></script>
 </body>
 </html>

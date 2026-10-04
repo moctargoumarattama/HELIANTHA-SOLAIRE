@@ -3,6 +3,9 @@ __pycache__/
 .pytest_cache/
 .venv/
 instance/
+_tmp_*.db
+tmp-*.db
+admin information
 *.pdf
 *.png
 client sans pompe catalogue/

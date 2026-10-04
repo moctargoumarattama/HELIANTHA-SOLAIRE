@@ -41,7 +41,7 @@ def test_build_quote_pdf_returns_real_pdf_bytes():
     assert b"<html" not in payload.lower()
 
 
-def test_public_pdf_routes_separate_mobile_view_and_document(tmp_path):
+def test_public_pdf_routes_return_pdf_without_public_html(tmp_path):
     app = create_app({"TESTING": True, "DATABASE": str(tmp_path / "pdf-routes.db")})
     client = app.test_client()
 
@@ -59,10 +59,10 @@ def test_public_pdf_routes_separate_mobile_view_and_document(tmp_path):
     with app.app_context():
         quote_id = get_quote_by_number(quote_number)["id"]
 
-    mobile_response = client.get(f"/devis/{quote_id}/pdf", follow_redirects=True)
-    assert mobile_response.status_code == 200
-    assert mobile_response.mimetype == "text/html"
-    assert b"public-result-compact" in mobile_response.data
+    legacy_pdf_response = client.get(f"/devis/{quote_id}/pdf", follow_redirects=True)
+    assert legacy_pdf_response.status_code == 200
+    assert legacy_pdf_response.mimetype == "application/pdf"
+    assert legacy_pdf_response.data.startswith(b"%PDF-1.4")
 
     document_response = client.get(f"/devis/{quote_id}/document.pdf")
     assert document_response.status_code == 200
