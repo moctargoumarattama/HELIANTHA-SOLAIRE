@@ -9,3 +9,6 @@ admin information
 *.pdf
 *.png
 client sans pompe catalogue/
+*.db-shm
+*.db-wal
+_tmp_*.db
