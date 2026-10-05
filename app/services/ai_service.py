@@ -294,7 +294,7 @@ def chat_with_ollama(messages: list[dict[str, str]]) -> dict[str, str]:
         "model": OLLAMA_MODEL,
         "messages": messages_with_system_prompt(messages),
         "stream": False,
-        "keep_alive": "10m",
+        "keep_alive": -1,
         "options": OLLAMA_OPTIONS,
     }
     try:
@@ -318,7 +318,7 @@ def stream_ollama_chat(messages: list[dict[str, str]]):
         "model": OLLAMA_MODEL,
         "messages": messages_with_system_prompt(messages),
         "stream": True,
-        "keep_alive": "10m",
+        "keep_alive": -1,
         "options": OLLAMA_OPTIONS,
     }
     try:
