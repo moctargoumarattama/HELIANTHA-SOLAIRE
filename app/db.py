@@ -1,3 +1,44 @@
+import time
+
+_CALC_CACHE = None
+_CALC_CACHE_VERSION = None
+_CALC_CACHE_TIME = 0.0
+
+def _get_redis_client():
+    try:
+        import redis
+        client = redis.Redis(host="127.0.0.1", port=6379, db=0, socket_timeout=0.2)
+        client.ping()
+        return client
+    except Exception:
+        return None
+
+def invalidate_calculation_context():
+    """Vide le cache RAM local et synchronise via Redis."""
+    global _CALC_CACHE, _CALC_CACHE_VERSION, _CALC_CACHE_TIME
+    _CALC_CACHE = None
+    _CALC_CACHE_VERSION = None
+    _CALC_CACHE_TIME = 0.0
+    r = _get_redis_client()
+    if r:
+        try:
+            r.incr("heliantha:calc_context_version")
+        except Exception:
+            pass
+
+def _get_redis_version():
+    r = _get_redis_client()
+    if r:
+        try:
+            val = r.get("heliantha:calc_context_version")
+            if val is None:
+                r.set("heliantha:calc_context_version", 1)
+                return 1
+            return int(val)
+        except Exception:
+            return None
+    return None
+
 import json
 import sqlite3
 from datetime import UTC, datetime
@@ -855,7 +896,7 @@ def utc_now():
     return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
-def load_calculation_context():
+def _load_raw_calculation_context():
     db = get_db()
     ensure_schema(db)
     params = {
@@ -891,6 +932,31 @@ def load_calculation_context():
         "technical_reference": reference,
     }
 
+
+
+def load_calculation_context():
+    global _CALC_CACHE, _CALC_CACHE_VERSION, _CALC_CACHE_TIME
+    
+    # En mode test unitaire, lecture directe pour respecter l'isolation des bases temporaires
+    try:
+        if current_app and current_app.config.get("TESTING"):
+            return _load_raw_calculation_context()
+    except Exception:
+        pass
+
+    now = time.time()
+    current_version = _get_redis_version()
+
+    if _CALC_CACHE is not None:
+        if current_version is not None and current_version == _CALC_CACHE_VERSION:
+            return _CALC_CACHE
+        elif current_version is None and (now - _CALC_CACHE_TIME) < 60:
+            return _CALC_CACHE
+
+    _CALC_CACHE = _load_raw_calculation_context()
+    _CALC_CACHE_VERSION = current_version
+    _CALC_CACHE_TIME = now
+    return _CALC_CACHE
 
 def save_quote(quote_number, project, data, contact, result):
     db = get_db()
@@ -1241,6 +1307,7 @@ def get_product(product_id):
 
 
 def save_product(product, product_id=None, submitted_fields=None):
+    invalidate_calculation_context()
     db = get_db()
     ensure_schema(db)
     existing = get_product(product_id) if product_id else None
@@ -1367,6 +1434,7 @@ def update_calculation_parameter(
     changed_by="admin",
     change_comment="",
 ):
+    invalidate_calculation_context()
     db = get_db()
     ensure_schema(db)
     row = db.execute("SELECT * FROM calculation_parameters WHERE id = ?", (param_id,)).fetchone()
@@ -1441,6 +1509,7 @@ def list_pricing_rules():
 
 
 def update_pricing_rule(rule_id, value, active=True):
+    invalidate_calculation_context()
     db = get_db()
     ensure_schema(db)
     db.execute(
@@ -1469,6 +1538,7 @@ def get_pumping_solar_rule(rule_id):
 
 
 def update_pumping_solar_rule(rule_id, data: dict[str, object], changed_by: str = "HeliAntha") -> bool:
+    invalidate_calculation_context()
     db = get_db()
     ensure_schema(db)
     row = db.execute("SELECT * FROM pumping_solar_rules WHERE id = ?", (rule_id,)).fetchone()
@@ -1570,6 +1640,7 @@ def list_ongrid_parameters():
 
 
 def update_ongrid_parameters(values: dict[str, object], changed_by: str = "HeliAntha") -> None:
+    invalidate_calculation_context()
     db = get_db()
     ensure_schema(db)
     known = {
