@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 import time
+from flask import current_app, has_app_context
 from typing import Any
 
 import requests
@@ -219,7 +221,7 @@ def process_outbox(limit: int = 10, gateway_url: str | None = None) -> dict[str,
     return {"processed": len(pending_items), "sent": sent, "failed": failed, "pending": 0}
 
 
-def notify_quote_created(quote_data: dict[str, Any]) -> None:
+def notify_quote_created(quote_data: dict[str, Any], *, async_process: bool = False) -> None:
     """Notify the client and the administrator after a quote is generated."""
 
     client_phone = str(quote_data.get("client_phone") or "").strip()
@@ -268,4 +270,17 @@ def notify_quote_created(quote_data: dict[str, Any]) -> None:
             admin_msg,
         )
 
-    process_outbox(gateway_url=gateway_url)
+    is_async = async_process or bool(quote_data.get("async"))
+    if is_async and has_app_context():
+        app = current_app._get_current_object()
+
+        def _bg_worker():
+            try:
+                with app.app_context():
+                    process_outbox(gateway_url=gateway_url)
+            except Exception as exc:
+                logger.warning("Background WhatsApp dispatch failed: %s", exc)
+
+        threading.Thread(target=_bg_worker, name="whatsapp-direct-dispatch", daemon=True).start()
+    else:
+        process_outbox(gateway_url=gateway_url)
