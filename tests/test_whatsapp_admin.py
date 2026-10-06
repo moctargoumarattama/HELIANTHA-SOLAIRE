@@ -1,3 +1,4 @@
+from unittest.mock import patch
 from app import create_app
 
 
@@ -12,14 +13,19 @@ def test_admin_whatsapp_page_and_proxy_routes(tmp_path):
     assert b"Passerelle WhatsApp" in page.data
     assert b"QR code WhatsApp" in page.data
 
-    status = client.get("/admin/whatsapp/status")
-    assert status.status_code == 200
-    assert status.get_json()["online"] is False
+    with (
+        patch("app.routes.get_gateway_status", return_value={"online": False, "connected": False}),
+        patch("app.routes.get_gateway_qr", return_value={"qr": None}),
+        patch("app.routes.send_whatsapp_raw", return_value=False),
+    ):
+        status = client.get("/admin/whatsapp/status")
+        assert status.status_code == 200
+        assert status.get_json()["online"] is False
 
-    qr = client.get("/admin/whatsapp/qr")
-    assert qr.status_code == 200
-    assert qr.get_json()["qr"] is None
+        qr = client.get("/admin/whatsapp/qr")
+        assert qr.status_code == 200
+        assert qr.get_json()["qr"] is None
 
-    test = client.post("/admin/whatsapp/test", json={"phone": "0600000000", "message": "Test"})
-    assert test.status_code == 200
-    assert test.get_json()["success"] is False
+        test = client.post("/admin/whatsapp/test", json={"phone": "0600000000", "message": "Test"})
+        assert test.status_code == 200
+        assert test.get_json()["success"] is False

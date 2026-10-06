@@ -6,6 +6,7 @@ import logging
 import os
 import threading
 import time
+from flask import current_app, has_app_context
 from typing import Any
 
 import requests
@@ -240,9 +241,7 @@ def _process_outbox(limit: int, gateway_url: str | None) -> dict[str, int]:
             "pending": len(list_whatsapp_outbox("PENDING", limit))}
 
 
-def notify_quote_created(
-    quote_data: dict[str, Any], *, dispatch_immediately: bool = True
-) -> None:
+def notify_quote_created(quote_data: dict[str, Any]) -> None:
     """Notify the client and the administrator after a quote is generated."""
 
     client_phone = str(quote_data.get("client_phone") or "").strip()
@@ -293,16 +292,4 @@ def notify_quote_created(
             replace_pending=True,
         )
 
-    if dispatch_immediately:
-        process_outbox(gateway_url=gateway_url)
-    else:
-        app = current_app._get_current_object()
-
-        def dispatch():
-            with app.app_context():
-                try:
-                    process_outbox(gateway_url=gateway_url)
-                except Exception:
-                    logger.exception("WhatsApp background dispatch failed")
-
-        threading.Thread(target=dispatch, name="whatsapp-quote-dispatch", daemon=True).start()
+    process_outbox(gateway_url=gateway_url)

@@ -300,7 +300,11 @@ def _notify_quote_created_safely(
                 "admin_whatsapp": settings.get("admin_whatsapp"),
                 "app_base_url": settings.get("app_base_url"),
             },
+<<<<<<< HEAD
             dispatch_immediately=False,
+=======
+            async_process=True,
+>>>>>>> d4bd4e802df3b603474174699364163a48278027
         )
     except Exception:
         current_app.logger.exception("WhatsApp quote notification failed")
