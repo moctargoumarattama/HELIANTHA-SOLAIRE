@@ -75,6 +75,7 @@ from .services.ai_service import (
     find_catalog_products,
     is_catalog_query,
     quick_assistant_response,
+    quick_solar_power_response,
     sanitize_messages,
     stream_ollama_chat,
 )
@@ -300,11 +301,7 @@ def _notify_quote_created_safely(
                 "admin_whatsapp": settings.get("admin_whatsapp"),
                 "app_base_url": settings.get("app_base_url"),
             },
-<<<<<<< HEAD
             dispatch_immediately=False,
-=======
-            async_process=True,
->>>>>>> d4bd4e802df3b603474174699364163a48278027
         )
     except Exception:
         current_app.logger.exception("WhatsApp quote notification failed")
@@ -677,6 +674,9 @@ def assistant_chat():
         messages = sanitize_messages(payload.get("messages"))
     except ValueError:
         return jsonify(error="messages doit etre une liste non vide."), 400
+    power_response = quick_solar_power_response(messages)
+    if power_response:
+        return jsonify(power_response)
     products = find_catalog_products(messages)
     catalog_query = is_catalog_query(messages)
     devis_response = None
@@ -704,6 +704,9 @@ def assistant_chat_stream():
     except ValueError:
         return jsonify(error="messages doit etre une liste non vide."), 400
 
+    power_response = quick_solar_power_response(messages)
+    if power_response:
+        return Response(_ndjson({"type": "final", **power_response}), mimetype="application/x-ndjson")
     products = find_catalog_products(messages)
     catalog_query = is_catalog_query(messages)
     devis_response = None

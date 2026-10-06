@@ -33,6 +33,7 @@ INFO_QUESTION_WORDS = (
     "explique",
     "comment",
     "pourquoi",
+    "combien",
     "c'est quoi",
     "definition",
 )
@@ -139,6 +140,14 @@ def first_number(patterns: tuple[str, ...], text: str) -> float | None:
     return None
 
 
+def latest_number(patterns: tuple[str, ...], texts: list[str]) -> float | None:
+    for text in reversed(texts):
+        number = first_number(patterns, normalize_text(text))
+        if number is not None:
+            return number
+    return None
+
+
 def user_messages(messages: list[dict[str, str]]) -> list[str]:
     return [
         str(message.get("content") or "").strip()
@@ -216,6 +225,10 @@ def extract_phone(text: str) -> str:
 def clean_name(value: str) -> str:
     name = re.split(r"\b(?:tel|telephone|phone|ville|localisation|adresse)\b|[0-9]", value, maxsplit=1, flags=re.IGNORECASE)[0]
     name = re.sub(r"\s+", " ", name.replace(":", " ")).strip(" ,.;:-")
+    cities = "|".join(re.escape(city) for city in CITY_NAMES)
+    city_suffix = re.search(rf"\s+(?:a|sur)\s+(?:{cities})\b", normalize_text(name))
+    if city_suffix:
+        name = name[:city_suffix.start()].strip()
     if len(name) < 2:
         return ""
     blocked = {"client", "devis", "pompage", "solaire", "bonjour", "salut"}
@@ -226,16 +239,30 @@ def clean_name(value: str) -> str:
 
 def extract_name(text: str) -> str:
     patterns = (
-        r"(?:je m'appelle|mon nom est|nom\s*:|client\s*:)\s*([^,.;\n]+)",
+        r"(?:je m['\u2019]appelle|mon nom(?:\s+est)?|mon pr[ée]nom(?:\s+est)?|nom\s*:|client\s*:)\s*([^,.;\n]+)",
         r"(?:moi c'est|moi cest)\s*([^,.;\n]+)",
     )
-    for pattern in patterns:
-        match = re.search(pattern, text, flags=re.IGNORECASE)
-        if match:
-            name = clean_name(match.group(1))
-            if name:
-                return name
+    matches = [match for pattern in patterns for match in re.finditer(pattern, text, flags=re.IGNORECASE)]
+    for match in sorted(matches, key=lambda item: item.start(), reverse=True):
+        name = clean_name(match.group(1))
+        if name:
+            return name
     return ""
+
+
+def contextual_name(text: str, assistant_prompt: str) -> str:
+    """Use the assistant's question as a hint, never as a source of customer facts."""
+    if not re.search(r"\b(?:votre|ton|le)\s+(?:nom|prenom)\b", normalize_text(assistant_prompt)):
+        return ""
+    if not re.fullmatch(r"[^\W\d_]+(?:[ '\u2019-][^\W\d_]+){0,5}", text.strip()):
+        return ""
+    normalized = normalize_text(text)
+    if extract_project(text) or extract_city(text) or normalized in {
+        "oui", "non", "ok", "merci", "bonjour", "salut", "salam", "d'accord", "solaire",
+        "comment", "pourquoi", "combien", "quel", "quelle", "explique",
+    }:
+        return ""
+    return clean_name(text)
 
 
 def extract_city(text: str) -> str:
@@ -282,20 +309,29 @@ def extract_slots(messages: list[dict[str, str]]) -> AssistantDevisSlots:
     raw_text = "\n".join(texts)
     normalized = normalize_text(raw_text)
     slots = AssistantDevisSlots()
-    slots.project = extract_project(raw_text)
+    assistant_prompt = ""
+    for message in messages:
+        if message.get("role") == "assistant":
+            assistant_prompt = str(message.get("content") or "")
+            continue
+        if message.get("role") != "user":
+            continue
+        text = str(message.get("content") or "").strip()
+        # New customer corrections override earlier values; assistant content never does.
+        slots.project = extract_project(text) or slots.project
+        slots.phone = extract_phone(text) or slots.phone
+        slots.name = extract_name(text) or contextual_name(text, assistant_prompt) or slots.name
+        slots.city = extract_city(text) or slots.city
+        slots.phase = extract_phase(text) or slots.phase
+        slots.meter_type = extract_meter_type(text) or slots.meter_type
+        assistant_prompt = ""
 
-    slots.phone = extract_phone(raw_text)
-    slots.name = extract_name(raw_text)
-    slots.city = extract_city(raw_text)
-    slots.phase = extract_phase(raw_text)
-    slots.meter_type = extract_meter_type(raw_text)
-
-    existing_cv = first_number(
+    existing_cv = latest_number(
         (
             rf"(?:pompe|puissance)[^\n,.;]{{0,30}}?{NUMBER_PATTERN}\s*(?:cv|ch|hp)\b",
             rf"\b{NUMBER_PATTERN}\s*(?:cv|ch|hp)\b",
         ),
-        normalized,
+        texts,
     )
     slots.existing_pump_cv = existing_cv
 
@@ -306,29 +342,29 @@ def extract_slots(messages: list[dict[str, str]]) -> AssistantDevisSlots:
     elif any(token in normalized for token in ("deja une pompe", "pompe existe", "pompe existante", "j'ai une pompe", "jai une pompe")):
         slots.pump_existing = True
 
-    slots.flow_m3_h = first_number(
+    slots.flow_m3_h = latest_number(
         (
             rf"\b{NUMBER_PATTERN}\s*(?:m3\s*/?\s*h|m3h)\b",
             rf"(?:debit)[^\n,.;]{{0,24}}?{NUMBER_PATTERN}",
         ),
-        normalized,
+        texts,
     )
-    slots.hmt_m = first_number(
+    slots.hmt_m = latest_number(
         (
             rf"(?:hmt|hauteur|profondeur)[^\n,.;]{{0,24}}?{NUMBER_PATTERN}\s*(?:m|metres?)?\b",
             rf"\b{NUMBER_PATTERN}\s*(?:m|metres?)\s*(?:hmt|de hmt|hauteur|profondeur)\b",
         ),
-        normalized,
+        texts,
     )
     if slots.flow_m3_h is not None or slots.hmt_m is not None:
         slots.pump_existing = slots.pump_existing if slots.pump_existing is not None else False
 
-    slots.monthly_consumption_kwh = first_number(
+    slots.monthly_consumption_kwh = latest_number(
         (
             rf"\b{NUMBER_PATTERN}\s*(?:kwh|kw h)\s*(?:/|par)?\s*(?:mois|mensuel|mensuelle)?\b",
             rf"(?:consommation|conso)[^\n,.;]{{0,30}}?{NUMBER_PATTERN}\s*(?:kwh)?\b",
         ),
-        normalized,
+        texts,
     )
     return slots
 
@@ -339,6 +375,9 @@ def should_handle_devis(messages: list[dict[str, str]], slots: AssistantDevisSlo
     quote_intent = has_quote_intent(all_text)
     collecting = previous_assistant_prompt(messages)
 
+    # A technical question can interrupt collection without discarding earlier customer facts.
+    if is_information_question(latest) and not has_quote_intent(latest):
+        return False
     if quote_intent:
         return True
     if collecting and (slots.project or slots.phone or slots.city or slots.name):
