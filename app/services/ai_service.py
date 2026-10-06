@@ -454,10 +454,13 @@ def quick_solar_power_response(messages: list[dict], products: list[dict] = None
             lines.append(f"• {nb} × {pw} Wc ({name}) = {real_kw:.2f} kWc installe{price_info}")
         lines.append("Consultez les references ci-dessous pour verifier les fiches techniques et demander un devis.")
         
-        return {
+        res = {
             "role": "assistant",
             "content": "\n".join(lines)
         }
+        if products:
+            res["suggested_products"] = products
+        return res
 
     return None
 
