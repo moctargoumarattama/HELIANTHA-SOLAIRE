@@ -877,6 +877,142 @@ def _guard_technical_content(
     return correction + ("\n" + "\n".join(markers) if markers else "")
 
 
+def expert_solar_knowledge(text: str, branch: str = "domestic") -> str | None:
+    """Accurate, professional technical solar engineering answers for Morocco."""
+    normalized = _normalize_text(text)
+
+    # 1. Inclination & Orientation
+    if any(k in normalized for k in ("orientation", "inclinaison", "azimut", "incliner", "orienter", "angle")) and any(
+        k in normalized for k in ("panneau", "panneaux", "module", "modules", "toiture", "sud")
+    ):
+        if branch == "pumping":
+            return (
+                "Au Maroc, l'orientation optimale des panneaux pour le pompage solaire est plein Sud (Azimut 0°). "
+                "L'inclinaison recommandée pour un pompage agricole principalement estival est de 15° à 20° afin de maximiser le débit aux heures les plus chaudes. "
+                "Pour une utilisation toute l'année, prévoyez une inclinaison standard de 30°."
+            )
+        return (
+            "Au Maroc, l'orientation optimale des panneaux solaires est plein Sud (Azimut 0°). "
+            "L'inclinaison idéale pour une production annuelle équilibrée (autoconsommation ou hybride) est de 28° à 32° par rapport à l'horizontale. "
+            "Veillez à éviter tout ombrage partiel (murs, cheminées, arbres) qui réduirait considérablement le rendement de la chaîne de panneaux."
+        )
+
+    # 2. MPPT vs PWM
+    if "mppt" in normalized and "pwm" in normalized:
+        return (
+            "Différence entre régulateur MPPT et PWM :\n"
+            "- MPPT (Maximum Power Point Tracking) : régulateur électronique intelligent qui optimise en temps réel le couple tension-courant du champ photovoltaïque. "
+            "Il offre un rendement supérieur à 98% et apporte 20% à 30% d'énergie supplémentaire par rapport au PWM. Il est indispensable pour les modules modernes de forte puissance (590 Wc, 725 Wc).\n"
+            "- PWM (Pulse Width Modulation) : régulateur basique qui bride la tension des panneaux à celle de la batterie, dissipant la différence. À réserver aux très petites installations 12V d'appoint."
+        )
+
+    # 3. On-grid vs Hybride
+    if any(k in normalized for k in ("on-grid", "ongrid", "on grid")) and any(
+        k in normalized for k in ("hybride", "hybrid", "batterie", "batteries", "difference")
+    ):
+        return (
+            "Différence entre installation On-Grid et Hybride :\n"
+            "- Solaire On-Grid (Raccordé réseau) : Les panneaux injectent directement l'énergie pour couvrir la consommation en journée et réduire la facture ONEE. "
+            "Sans batteries, il s'éteint automatiquement lors d'une coupure de réseau par sécurité anti-îlotage. C'est l'option la plus rapide à rentabiliser.\n"
+            "- Solaire Hybride : Associe le solaire, le réseau et un stockage batterie (Lithium LiFePO4). "
+            "En cas de panne de courant, il bascule automatiquement en mode secours (UPS en quelques millisecondes) pour maintenir vos équipements essentiels en marche."
+        )
+
+    # 4. Batteries Lithium (LiFePO4) vs Gel / Plomb
+    if any(k in normalized for k in ("lithium", "lifepo4")) and any(
+        k in normalized for k in ("gel", "plomb", "agm", "difference", "avantage", "comparatif")
+    ):
+        return (
+            "Comparatif Batteries Lithium (LiFePO4) vs Gel/Plomb :\n"
+            "- Lithium Fer Phosphate (LiFePO4) : 4 000 à 6 000 cycles (10 à 15 ans de durée de vie), décharge utile (DoD) recommandée de 80% à 90%, charge rapide en 1 à 2 h, rendement supérieur à 95% et BMS de protection intégré.\n"
+            "- Batteries Gel / Plomb : 800 à 1 200 cycles (3 à 5 ans), décharge maximale conseillée à 50% pour préserver les plaques, charge lente (6 à 8 h), encombrement et poids élevés.\n"
+            "Pour une installation résidentielle ou commerciale durable au Maroc, le Lithium LiFePO4 est l'investissement le plus économique sur l'ensemble de son cycle de vie."
+        )
+
+    # 5. Câblage & Section de câble
+    if any(k in normalized for k in ("section", "cable", "cables", "cablage", "chute de tension")) and any(
+        k in normalized for k in ("solaire", "panneau", "panneaux", "pompe", "variateur", "mm2")
+    ):
+        if branch == "pumping":
+            return (
+                "Règles de câblage pour le pompage solaire :\n"
+                "- Côté DC (Panneaux vers Variateur) : Câble solaire photovoltaïque double isolation 1x4 mm² ou 1x6 mm² résistant aux UV (norme EN 50618). Chute de tension DC < 1.5%.\n"
+                "- Côté Pompe immergée : Câble submersible plat résistant à l'eau. La section (généralement 3x4 mm² à 3x16 mm²) dépend de la puissance du moteur (CV), de la tension (triphasé 380V) et de la longueur totale (profondeur d'immersion + tête de puits au variateur). Chute de tension AC < 3%."
+            )
+        return (
+            "Règles de section de câble pour installation solaire :\n"
+            "- Liaison DC (Panneaux vers Onduleur) : Câble solaire double isolation 1x4 mm² ou 1x6 mm² certifié UV (norme EN 50618). La chute de tension ne doit pas dépasser 1 à 2%.\n"
+            "- Liaison AC (Onduleur vers Tableau TGBT) : Câble cuivre normalisé (RO2V) dimensionné selon l'ampérage nominal et la distance, avec une chute de tension maximale de 2% à 3%.\n"
+            "- Protections : Coffret DC avec parafoudre de type 2 relié à la terre et connecteurs MC4 sertis."
+        )
+
+    # 6. Variateur de pompage solaire (VFD / Vacon / INVT / Inomax)
+    if any(k in normalized for k in ("variateur", "vfd", "invt", "inomax", "vacon")) and any(
+        k in normalized for k in ("branch", "parametr", "regl", "fonctionn", "raccord")
+    ):
+        return (
+            "Principes du variateur de pompage solaire (VFD) :\n"
+            "- Raccordement : Entrée DC sur bornes PV+/PV- protégées par sectionneur DC et parafoudre. Sortie AC triphasée sur U, V, W vers le moteur de la pompe.\n"
+            "- Sécurité manque d'eau : Raccordez impérativement les sondes de niveau du forage aux bornes de détection (protection marche à sec) pour préserver la pompe.\n"
+            "- Paramétrage indispensable : Renseignez la plaque signalétique moteur (tension 380V, courant nominal In, 50 Hz) et ajustez la fréquence minimale (ex: 25-30 Hz) sous laquelle le variateur coupe la pompe pour éviter l'usure de la butée mécanique."
+        )
+
+    # 7. Nettoyage & Entretien
+    if any(k in normalized for k in ("nettoyage", "nettoyer", "entretien", "maintenance", "laver", "poussiere")) and any(
+        k in normalized for k in ("panneau", "panneaux", "installation")
+    ):
+        return (
+            "Entretien et nettoyage des panneaux solaires au Maroc :\n"
+            "- Fréquence : Un lavage régulier (toutes les 2 à 4 semaines en période sèche ou après un vent de sable) permet de récupérer 5% à 20% de production d'énergie.\n"
+            "- Moment optimal : Tôt le matin ou au coucher du soleil quand les panneaux sont froids. Ne jamais nettoyer les modules en plein soleil pour éviter le choc thermique sur le verre trempé.\n"
+            "- Matériel : Eau claire sans détergent agressif, brosse douce ou raclette souple. Évitez les nettoyeurs haute pression trop près des joints."
+        )
+
+    return None
+
+
+def offline_fallback_response(
+    messages: list[dict[str, str]], products: list[dict[str, Any]] | None = None
+) -> dict[str, str]:
+    latest = _latest_user_content(messages)
+    branch = project_branch(messages)
+
+    expert = expert_solar_knowledge(latest, branch=branch)
+    if expert:
+        return {"role": "assistant", "content": expert}
+
+    if is_catalog_query(messages) and products:
+        return {"role": "assistant", "content": _catalog_facts_response(products)}
+
+    if products:
+        return {"role": "assistant", "content": _catalog_facts_response(products)}
+
+    normalized = _normalize_text(latest)
+    if _QUOTE_RE.search(normalized) or any(w in normalized for w in ("devis", "estimation", "estimer", "chiffrage")):
+        if branch == "pumping":
+            return {
+                "role": "assistant",
+                "content": (
+                    "Pour préparer votre estimation de pompage solaire, merci de préciser :\n"
+                    "1. La puissance de votre pompe existante en CV (ou débit souhaité en m³/h et HMT en mètres),\n"
+                    "2. Votre ville au Maroc,\n"
+                    "3. Votre nom et numéro de téléphone pour recevoir le devis officiel."
+                ),
+            }
+        return {
+            "role": "assistant",
+            "content": (
+                "Pour préparer votre estimation solaire résidentielle, merci de préciser :\n"
+                "1. Votre projet : Autoconsommation On-Grid (réduire la facture) ou Hybride avec stockage batterie LiFePO4,\n"
+                "2. Votre consommation mensuelle en kWh (ou montant moyen de votre facture en DH),\n"
+                "3. Votre type de branchement (monophasé ou triphasé),\n"
+                "4. Votre ville, nom et numéro de téléphone."
+            ),
+        }
+
+    return fallback_response()
+
+
 def chat_with_ollama(
     messages: list[dict[str, str]], products: list[dict[str, Any]] | None = None
 ) -> dict[str, str]:
@@ -892,15 +1028,13 @@ def chat_with_ollama(
         response = requests.post(f"{OLLAMA_HOST}/api/chat", json=payload, timeout=45)
         response.raise_for_status()
         data = response.json()
-    except requests.RequestException:
-        return fallback_response()
-    except ValueError:
-        return fallback_response()
+    except (requests.RequestException, ValueError):
+        return offline_fallback_response(messages, products)
 
     message = data.get("message") if isinstance(data, dict) else None
     content = str((message or {}).get("content") or "").strip()
     if not content:
-        return fallback_response()
+        return offline_fallback_response(messages, products)
     return {"role": "assistant", "content": _guard_technical_content(messages, content, products)}
 
 
@@ -952,7 +1086,9 @@ def stream_ollama_chat(messages: list[dict[str, str]], products: list[dict[str, 
                         pending = pending[end:]
             if pending:
                 yield _guard_technical_content(messages, pending, products)
-    except requests.RequestException:
-        yield ASSISTANT_FALLBACK_MESSAGE
-    except ValueError:
-        yield ASSISTANT_FALLBACK_MESSAGE
+            elif not quote_started:
+                offline = offline_fallback_response(messages, products)
+                yield offline.get("content", ASSISTANT_FALLBACK_MESSAGE)
+    except (requests.RequestException, ValueError):
+        offline = offline_fallback_response(messages, products)
+        yield offline.get("content", ASSISTANT_FALLBACK_MESSAGE)
