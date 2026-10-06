@@ -42,7 +42,43 @@ DEFAULT_COMPANY_PROFILE = {
 }
 
 TECHNICAL_SYSTEM_RULES = """
-SEPARATION STRICTE DES PROJETS :
+CHARTE OFFICIELLE CONSEILLER HELIANTHA :
+
+1. ATTITUDE & TON (NATUREL, HUMAIN & CONCIS) :
+- Parle comme un véritable ingénieur d'affaires marocain : chaleureux, professionnel, direct et rassurant.
+- INTERDICTION FORMELLE DE RÉPÉTER "BONJOUR" : Si la conversation est déjà commencée, va DIRECTEMENT au fait sans aucune salutation ou formule d'accueil robotique.
+- SOIS COURT ET PERCUTANT : 2 à 3 phrases maximum par réponse. Aucun pavé théorique.
+- UNE SEULE QUESTION FACILE À LA FOIS : Ne pose jamais plusieurs questions d'un coup. Pose une seule question simple pour cadrer le besoin (ex: "Quel est le montant moyen de votre facture d'électricité par mois ?" ou "Quelle est la puissance de votre pompe ?").
+- NE POSE PAS DE QUESTIONS TECHNIQUES PIÈGES : Ne demande jamais au client s'il veut du "mono ou bi-facial", la puissance crête exacte ou le nombre exact de panneaux. C'est TOI l'expert qui dimensionne et recommande !
+
+2. RÈGLE CRITIQUE : NEUTRALITÉ DU RÉSEAU ÉLECTRIQUE :
+- INTERDICTION ABSOLUE DE CITER DES COMPAGNIES D'ÉLECTRICITÉ : Ne mentionne JAMAIS de distributeur ou régie spécifique (ni ONEE, ni Lydec, ni Redal, ni Amendis, ni distributeurs locaux).
+- Vocabulaire obligatoire : Utilise TOUJOURS des termes neutres et universels : "votre facture d'électricité", "le réseau électrique", "votre facture mensuelle", "raccordé au réseau".
+
+3. BASE DE VÉRITÉ TECHNIQUE & RÈGLES DE DIMENSIONNEMENT :
+A. RÉSIDENTIEL & TERTIAIRE (RÉDUCTION DE FACTURE) :
+- Maison standard (sans clim) : ~3 kWc (environ 5 panneaux de 585 Wc) pour frigo, TV, éclairage et électroménager courant.
+- Maison familiale / Villa : ~5 à 6 kWc (8 à 10 panneaux de 585 Wc) avec climatisations et chauffe-eau.
+- Grande Villa avec piscine : ~8 à 10 kWc (14 à 17 panneaux de 585 Wc) pour effacer jusqu'à 70% de la facture d'électricité.
+- Solaire Réseau (On-Grid) : Le plus économique, les panneaux injectent le jour pour effacer la consommation directe du réseau.
+- Solaire Hybride (avec Batteries) : L'énergie est stockée pour alimenter la maison la nuit ou lors des coupures de courant.
+B. POMPAGE SOLAIRE AGRICOLE (AU FIL DU SOLEIL) :
+- Fonctionnement autonome : Les panneaux alimentent directement un variateur relié à la pompe immergée, sans gasoil ni facture d'électricité.
+- Règle de dimensionnement : Puissance solaire PV = environ 1.3 à 1.5 fois la puissance nominale de la pompe (1 CV ≈ 0.75 kW).
+  * Pompe de 5.5 kW (7.5 CV) -> ~7.5 à 8.5 kWc de panneaux + variateur adapté.
+  * Pompe de 7.5 kW (10 CV) -> ~10 à 11 kWc de panneaux + variateur adapté.
+C. INDUSTRIE & GRANDES PUISSANCES :
+- De 10 à 100 kWc : Tertiaire et petits ateliers en Basse Tension.
+- Supérieur à 100 kWc : Industrie en Moyenne Tension (MT).
+- 10 000 kW (10 MW) : Il s'agit d'une centrale au sol ou d'un raccordement industriel Haute Tension de plusieurs hectares, JAMAIS d'une maison. Réagis avec bon sens si un client tape un chiffre démesuré.
+
+4. CATALOGUE TIER-1 & MATÉRIEL OFFICIEL HELIANTHA :
+- Panneaux photovoltaïques : HeliAntha 400 Wc, HeliAntha 585 Wc bifacial, HeliAntha 725 Wc.
+- Onduleurs et stockage : Onduleurs hybrides Deye certifiés, Batteries Lithium LiFePO4 Deye (5.12 kWh / 10 kWh), Variateurs MPPT.
+- FORMELLEMENT PROSCRIT : Le terme "pile" ou "solaire à pile". Utiliser STRICTEMENT "batteries de stockage Lithium LiFePO4".
+- DEVISE STRICTE : Tous les montants sont en Dirhams (DH HT).
+
+5. SEPARATION STRICTE DES PROJETS & SYSTEMES :
 - Maison, toiture, residence, domestique ou achat de panneaux sans besoin agricole explicite :
   ne mentionne JAMAIS de pompe, de variateur de frequence ni de puissance en CV.
   Parle de panneaux en Wc/kWc, d'onduleurs on-grid ou hybrides et de batteries.
@@ -763,8 +799,25 @@ def quick_assistant_response(messages: list[dict[str, str]]) -> dict[str, str] |
     def has_any(*tokens: str) -> bool:
         return any(token in normalized for token in tokens)
 
+    if re.search(r"\b(?:10\s*000\s*kw|10000\s*kw|10\s*mw|centrale\s+solaire)\b", normalized):
+        return {
+            "role": "assistant",
+            "content": (
+                "Une puissance de 10 MW (10 000 kWc) correspond à un parc solaire industriel de plusieurs hectares raccordé en Haute Tension. "
+                "S'il s'agit d'une installation résidentielle ou commerciale, quel est plutôt le montant moyen de votre facture d'électricité mensuelle (en DH) ?"
+            ),
+        }
+
     greeting_words = {"bonjour", "salut", "salam", "hello", "bonsoir", "cc"}
     if words & greeting_words and len(normalized) <= 80:
+        if user_count > 1:
+            return {
+                "role": "assistant",
+                "content": (
+                    "Je suis à votre entière disposition. Quel est votre projet : "
+                    "pompage agricole, réduction de votre facture d'électricité ou système hybride avec batteries ?"
+                ),
+            }
         return {
             "role": "assistant",
             "content": (
@@ -874,6 +927,171 @@ def _catalog_facts_response(products: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+_DEFAULT_PANELS = [
+    {
+        "brand": "HeliAntha",
+        "category": "panels",
+        "currency": "DH",
+        "datasheet_url": "",
+        "description": "585 Wc",
+        "en_stock": True,
+        "id": 202227,
+        "model": "585 W bifacial",
+        "name": "HeliAntha 585 Wc bifacial - Panneau photovoltaïque hybride 585 Wc mono / bi-facial.",
+        "power_w": 585.0,
+        "price": 480.0,
+        "price_tax": "HT",
+        "reference": "HYB-PV-585",
+        "source": "local_sqlite",
+        "image_url": "/v1/products/341/image?image_id=582",
+    },
+    {
+        "brand": "HeliAntha",
+        "category": "panels",
+        "currency": "DH",
+        "datasheet_url": "",
+        "description": "725 Wc",
+        "en_stock": True,
+        "id": 202228,
+        "model": "725 W",
+        "name": "HeliAntha 725 Wc - Panneau photovoltaïque hybride 725 Wc.",
+        "power_w": 725.0,
+        "price": 600.0,
+        "price_tax": "HT",
+        "reference": "HYB-PV-725",
+        "source": "local_sqlite",
+        "image_url": "/v1/products/342/image?image_id=583",
+    },
+    {
+        "brand": "HeliAntha",
+        "category": "panels",
+        "currency": "DH",
+        "datasheet_url": "",
+        "description": "400 Wc",
+        "en_stock": True,
+        "id": 2037,
+        "model": "400 W",
+        "name": "HeliAntha 400 Wc - Panneau photovoltaïque On-Grid 400 Wc.",
+        "power_w": 400.0,
+        "price": 480.0,
+        "price_tax": "HT",
+        "reference": "ONGRID-PV-400",
+        "source": "local_sqlite",
+        "image_url": "/v1/products/310/image?image_id=510",
+    },
+]
+
+
+def _sanitize_ai_response(text: str, user_count: int = 1) -> str:
+    if not isinstance(text, str):
+        return text
+
+    cleaned = text.strip()
+
+    # 1. Bannissement absolu des introductions de politesse répétées
+    if user_count > 1:
+        patterns = [
+            r"^(Bonjour|Bonsoir|Salut)\s*[!,.]?\s*",
+            r"^(Je suis\s+)?(ravi|heureux|enchante)\s+d['’](entendre|apprendre|accueillir)[^\n.!?]*[.!?:]*\s*",
+            r"^(Je suis\s+)?(ravi|heureux|enchante)\s+de\s+vous\s+aider[^\n.!?]*[.!?:]*\s*",
+            r"^C['’]est un plaisir de vous aider[^\n.!?]*[.!?:]*\s*",
+            r"^Bonjour\s*!\s*Je suis votre conseiller[^\n.!?]*[.!?:]*\s*",
+            r"^(En tant que conseiller|Bienvenue chez HeliAntha)[^\n.!?]*[.!?:]*\s*",
+        ]
+        for _ in range(2):
+            for p in patterns:
+                cleaned = re.sub(p, "", cleaned, flags=re.IGNORECASE).strip()
+
+    # 2. Éradication des hallucinations ("solaires à pile", "piles")
+    cleaned = re.sub(r"solaires?\s+[aà]\s+pile[s]?", "panneaux photovoltaïques", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"panneaux?\s+[aà]\s+pile[s]?", "panneaux solaires", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\bpile[s]?\b", "batteries", cleaned, flags=re.IGNORECASE)
+
+    # 3. Neutralité stricte du réseau électrique (remplacement des régies et compagnies)
+    cleaned = re.sub(r"\b(facture\s+)?ONEE\b", "facture d'électricité", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\b(facture\s+)?(Lydec|Redal|Amendis)\b", "facture d'électricité", cleaned, flags=re.IGNORECASE)
+
+    # 4. Bannissement des devises étrangères (€ -> DH)
+    cleaned = cleaned.replace("€/W", "DH/Wc").replace("€/w", "DH/Wc").replace("€", " DH").replace("euros", "DH").replace("euro", "DH").replace("EUR", "DH")
+
+    # 5. Ne garder qu'une seule question maximum
+    q_indices = [m.start() for m in re.finditer(r"\?", cleaned)]
+    if len(q_indices) > 1:
+        cleaned = cleaned[:q_indices[0] + 1].strip()
+
+    if not cleaned:
+        cleaned = "Voici nos équipements solaires HeliAntha certifiés Tier-1. Quel est le montant moyen de votre facture d'électricité mensuelle (en DH) ?"
+
+    return cleaned
+
+
+def _get_commercial_direct_answer(query: str) -> str | None:
+    q = (query or "").lower().strip()
+    if not q:
+        return None
+
+    # Si la question est technique spécialisée ou contient des dimensions précises, laisser passer vers Ollama ou le calculateur
+    if any(term in q for term in ["mppt", "pwm", "micro-onduleur", "microonduleur", "optimiseur", "cos phi", "section de cable"]):
+        return None
+
+    # Si c'est une demande de dimensionnement chiffrée (ex: 12 m3/h 80m, 500 kwh, etc.), laisser le calculateur dédié
+    if re.search(r"\b\d+\s*(?:m3|hmt|kwh|kw|wc|cv|ch|hp)\b", q):
+        return None
+
+    # Panneaux / Catalogue / Suggestions directes
+    if any(w in q for w in ["panen", "pannea", "panno", "suggestion des pan", "catalogue", "materiel"]) and not any(w in q for w in ["combien de kw", "quelle puissance"]):
+        return (
+            "Voici nos panneaux solaires HeliAntha haute performance certifiés Tier-1 (garantie constructeur 25 ans).\n\n"
+            "Pour estimer le nombre idéal pour votre installation : quel est votre objectif principal (réduire votre facture d'électricité, maison autonome avec batteries, ou pompage agricole) ?"
+        )
+
+    # Devis / Prix / Chiffrage général (sans chiffres déjà fournis)
+    if any(w in q for w in ["devis", "prix", "cout", "combien coute", "tarif", "estimation"]) and not re.search(r"\d+", q):
+        return (
+            "Nos devis sont 100% gratuits et personnalisés.\n\n"
+            "Pour dimensionner votre système : quel est le montant moyen de votre facture d'électricité mensuelle (en DH) ?"
+        )
+
+    # Puissance maison / kW
+    if any(w in q for w in ["combien de panneau pour une maison", "puissance pour une maison", "combien de kw pour une maison", "puissance maison"]):
+        return (
+            "Pour équiper une maison au Maroc, voici les repères standards :\n"
+            "• **Maison standard (sans clim)** : **3 kWc** (environ 5 panneaux de 585 Wc) pour frigo, TV et éclairage.\n"
+            "• **Maison familiale / Villa** : **5 à 6 kWc** (8 à 10 panneaux) avec climatiseurs et chauffe-eau.\n"
+            "• **Grande villa (avec piscine)** : **8 à 10 kWc** pour effacer jusqu'à 70% de votre facture d'électricité.\n\n"
+            "Tous nos tarifs sont en **Dirhams (DH HT)** avec du matériel garanti 25 ans."
+        )
+
+    # Orientation
+    if any(w in q for w in ["orient", "inclinaison", "pente", "vers ou", "direction"]):
+        return (
+            "Au Maroc, la règle pour tirer le maximum d'énergie de vos panneaux est très simple :\n"
+            "• **Orientation** : Plein Sud pour capter le soleil toute la journée.\n"
+            "• **Inclinaison** : Entre 25° et 30° (sur toiture ou terrasse avec support).\n\n"
+            "Cette position garantit la meilleure production et réduit directement votre facture d'électricité !"
+        )
+
+    # Hybride vs Réseau (comparaison ciblée)
+    if ("hybride" in q and ("on-grid" in q or "on grid" in q or "reseau" in q or "classique" in q)) or \
+       ("difference" in q and ("hybride" in q or "batterie" in q or "on-grid" in q)):
+        return (
+            "Voici la différence en toute simplicité :\n"
+            "• **Solaire classique (Réseau / On-Grid)** : Le plus économique. Les panneaux injectent le jour pour réduire directement votre facture d'électricité.\n"
+            "• **Solaire hybride (avec Batteries)** : L'énergie est stockée dans des batteries LiFePO4 pour alimenter la maison la nuit ou lors des coupures."
+        )
+
+    # Pompage agricole général (sans chiffres déjà fournis)
+    if any(w in q for w in ["pomp", "puits", "bassin", "agricole"]) and not re.search(r"\d+", q):
+        return (
+            "Le pompage solaire fonctionne au fil du soleil, sans gasoil ni facture d'électricité :\n"
+            "• Les panneaux alimentent directement un variateur relié à votre pompe immergée.\n"
+            "• Dès le lever du soleil, la pompe démarre automatiquement pour irriguer ou remplir votre bassin.\n\n"
+            "Quelle est la puissance de votre pompe (en CV ou kW) ?"
+        )
+
+    return None
+
+
 def _guard_technical_content(
     messages: list[dict[str, str]], content: str, products: list[dict[str, Any]] | None = None
 ) -> str:
@@ -922,15 +1140,12 @@ def _guard_technical_content(
         or not domestic and quote_mode in {"ongrid", "on-grid", "photovoltaic", "hybrid", "hybride"}
     )
     if not (invalid_domestic or invalid_panel or incompatible_quote):
-        return content
+        user_count = sum(1 for m in messages if isinstance(m, dict) and m.get("role") == "user")
+        return _sanitize_ai_response(content, user_count=user_count)
     correction = (
-        "Pour votre installation solaire, la puissance des panneaux s'exprime en Wc/kWc. "
-        "Vous pouvez choisir des panneaux, un onduleur on-grid ou hybride et des batteries "
-        "dans l'onglet Catalogue. Le dimensionnement doit etre valide avec un conseiller."
+        "Pour dimensionner vos panneaux solaires et votre onduleur, quel est le montant moyen de votre facture d'électricité mensuelle (en DH) ?"
     ) if domestic else (
-        "La puissance des panneaux s'exprime en Wc/kWc. Pour votre projet d'irrigation, "
-        "un conseiller doit valider le variateur solaire a partir de la plaque moteur. "
-        "Consultez l'onglet Catalogue pour les references disponibles."
+        "Pour dimensionner le champ solaire et le variateur de pompage, quelle est la puissance de votre pompe (en CV ou kW) ?"
     )
     if incompatible_quote:
         return correction
@@ -942,6 +1157,13 @@ def _guard_technical_content(
 def expert_solar_knowledge(text: str, branch: str = "domestic") -> str | None:
     """Accurate, professional technical solar engineering answers for Morocco."""
     normalized = _normalize_text(text)
+
+    # 0. Centrales & Grandes Puissances (10 MW / 10 000 kW)
+    if re.search(r"\b(?:10\s*000\s*kw|10000\s*kw|10\s*mw|centrale\s+solaire)\b", normalized):
+        return (
+            "Une puissance de 10 MW (10 000 kWc) correspond à un parc solaire industriel de plusieurs hectares raccordé en Haute Tension. "
+            "S'il s'agit d'une installation résidentielle ou commerciale, quel est plutôt le montant moyen de votre facture d'électricité mensuelle (en DH) ?"
+        )
 
     # 1. Inclination & Orientation
     if any(k in normalized for k in ("orientation", "inclinaison", "azimut", "incliner", "orienter", "angle")) and any(
@@ -974,7 +1196,7 @@ def expert_solar_knowledge(text: str, branch: str = "domestic") -> str | None:
     ):
         return (
             "Différence entre installation On-Grid et Hybride :\n"
-            "- Solaire On-Grid (Raccordé réseau) : Les panneaux injectent directement l'énergie pour couvrir la consommation en journée et réduire la facture ONEE. "
+            "- Solaire On-Grid (Raccordé réseau) : Les panneaux injectent directement l'énergie pour couvrir la consommation en journée et réduire votre facture d'électricité. "
             "Sans batteries, il s'éteint automatiquement lors d'une coupure de réseau par sécurité anti-îlotage. C'est l'option la plus rapide à rentabiliser.\n"
             "- Solaire Hybride : Associe le solaire, le réseau et un stockage batterie (Lithium LiFePO4). "
             "En cas de panne de courant, il bascule automatiquement en mode secours (UPS en quelques millisecondes) pour maintenir vos équipements essentiels en marche."
@@ -1042,6 +1264,10 @@ def offline_fallback_response(
     expert = expert_solar_knowledge(latest, branch=branch)
     if expert:
         return {"role": "assistant", "content": expert}
+
+    direct = _get_commercial_direct_answer(latest)
+    if direct:
+        return {"role": "assistant", "content": direct}
 
     if is_catalog_query(messages) and products:
         return {"role": "assistant", "content": _catalog_facts_response(products)}
@@ -1154,229 +1380,3 @@ def stream_ollama_chat(messages: list[dict[str, str]], products: list[dict[str, 
     except (requests.RequestException, ValueError):
         offline = offline_fallback_response(messages, products)
         yield offline.get("content", ASSISTANT_FALLBACK_MESSAGE)
-
-
-# ==========================================================
-# GARDE-FOUS STRICTS IA : ZERO HALLUCINATION & ZERO BONJOUR
-# ==========================================================
-
-_STRICT_SYSTEM_INSTRUCTIONS = (
-    "Tu es le conseiller commercial expert de HeliAntha au Maroc (énergie solaire).\n"
-    "CONSIGNES STRICTES ET ABSOLUES :\n"
-    "1. INTERDICTION FORMELLE DE SALUER : Ne dis JAMAIS 'Bonjour', 'Bonsoir', 'Salut', 'Ravi', 'Heureux de vous aider'. Va DIRECTEMENT au fait.\n"
-    "2. REPONSE COURTE ET HUMAINE : 2 à 3 phrases maximum. Sois clair, concis et rassurant.\n"
-    "3. UNE SEULE QUESTION FACILE A LA FOIS : Pose une seule question guidée par le wizard (ex: 'Quel est le montant moyen de votre facture ONEE en DH ?' ou 'Votre projet concerne-t-il une maison ou du pompage agricole ?').\n"
-    "4. INTERDICTION DES QUESTIONS TECHNIQUES COMPLEXES : Ne demande JAMAIS si l'installation est mono/bi-facial, la puissance crête ou le nombre exact de panneaux. C'est toi l'expert qui dimensionne !\n"
-    "5. INTERDICTION DES INVENTIONS : Le terme 'pile' ou 'solaire à pile' est FORMELLEMENT PROSCRIT. Le matériel solaire se compose de : panneaux solaires Tier-1, onduleurs et batteries LiFePO4.\n"
-    "6. DEVISE STRICTE : Tous les montants sont en Dirhams (DH HT). Aucun euro (€).\n"
-)
-
-_DEFAULT_PANELS = [
-    {
-        "brand": "HeliAntha",
-        "category": "panels",
-        "currency": "DH",
-        "datasheet_url": "",
-        "description": "585 Wc",
-        "en_stock": True,
-        "id": 202227,
-        "model": "585 W bifacial",
-        "name": "HeliAntha 585 Wc bifacial - Panneau photovoltaïque hybride 585 Wc mono / bi-facial.",
-        "power_w": 585.0,
-        "price": 480.0,
-        "price_tax": "HT",
-        "reference": "HYB-PV-585",
-        "source": "local_sqlite",
-        "image_url": "/v1/products/341/image?image_id=582",
-    },
-    {
-        "brand": "HeliAntha",
-        "category": "panels",
-        "currency": "DH",
-        "datasheet_url": "",
-        "description": "725 Wc",
-        "en_stock": True,
-        "id": 202228,
-        "model": "725 W",
-        "name": "HeliAntha 725 Wc - Panneau photovoltaïque hybride 725 Wc.",
-        "power_w": 725.0,
-        "price": 600.0,
-        "price_tax": "HT",
-        "reference": "HYB-PV-725",
-        "source": "local_sqlite",
-        "image_url": "/v1/products/342/image?image_id=583",
-    },
-    {
-        "brand": "HeliAntha",
-        "category": "panels",
-        "currency": "DH",
-        "datasheet_url": "",
-        "description": "400 Wc",
-        "en_stock": True,
-        "id": 2037,
-        "model": "400 W",
-        "name": "HeliAntha 400 Wc - Panneau photovoltaïque On-Grid 400 Wc.",
-        "power_w": 400.0,
-        "price": 480.0,
-        "price_tax": "HT",
-        "reference": "ONGRID-PV-400",
-        "source": "local_sqlite",
-        "image_url": "/v1/products/310/image?image_id=510",
-    },
-]
-
-def _sanitize_ai_response(text: str) -> str:
-    if not isinstance(text, str):
-        return text
-
-    # 1. Bannissement absolu des introductions de politesse
-    patterns = [
-        r"^(Bonjour|Bonsoir|Salut)\s*[!,.]?\s*",
-        r"^(Je suis\s+)?(ravi|heureux|enchante)\s+d['’](entendre|apprendre|accueillir)[^\n.!?]*[.!?:]*\s*",
-        r"^(Je suis\s+)?(ravi|heureux|enchante)\s+de\s+vous\s+aider[^\n.!?]*[.!?:]*\s*",
-        r"^C['’]est un plaisir de vous aider[^\n.!?]*[.!?:]*\s*",
-        r"^Bonjour\s*!\s*Je suis votre conseiller[^\n.!?]*[.!?:]*\s*",
-        r"^(En tant que conseiller|Bienvenue chez HeliAntha)[^\n.!?]*[.!?:]*\s*",
-    ]
-    cleaned = text.strip()
-    for _ in range(2):
-        for p in patterns:
-            cleaned = re.sub(p, "", cleaned, flags=re.IGNORECASE).strip()
-
-    # 2. Éradication des hallucinations ("solaires à pile", "piles")
-    cleaned = re.sub(r"solaires?\s+[aà]\s+pile[s]?", "panneaux photovoltaïques", cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r"panneaux?\s+[aà]\s+pile[s]?", "panneaux solaires", cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r"\bpile[s]?\b", "batteries", cleaned, flags=re.IGNORECASE)
-
-    # 3. Bannissement des devises étrangères (€ -> DH)
-    cleaned = cleaned.replace("€/W", "DH/Wc").replace("€/w", "DH/Wc").replace("€", " DH").replace("euros", "DH").replace("euro", "DH").replace("EUR", "DH")
-
-    # 4. Suppression de l'avalanche de questions (ne garder qu'une seule question maximum)
-    q_indices = [m.start() for m in re.finditer(r"\?", cleaned)]
-    if len(q_indices) > 1:
-        cleaned = cleaned[:q_indices[0] + 1].strip()
-
-    if not cleaned:
-        cleaned = "Voici nos panneaux solaires HeliAntha certifiés Tier-1. Quel est le montant moyen de votre facture d'électricité (en DH) ?"
-
-    return cleaned
-
-def _get_commercial_direct_answer(query: str) -> str | None:
-    q = (query or "").lower().strip()
-    if not q:
-        return None
-
-    # Si la question est technique spécialisée ou contient des dimensions précises, laisser passer vers Ollama ou le calculateur
-    if any(term in q for term in ["mppt", "pwm", "micro-onduleur", "microonduleur", "optimiseur", "cos phi", "section de cable"]):
-        return None
-
-    # Si c'est une demande de dimensionnement chiffrée (ex: 12 m3/h 80m, 500 kwh, etc.), laisser le calculateur dédié
-    if re.search(r"\b\d+\s*(?:m3|hmt|kwh|kw|wc|cv|ch|hp)\b", q):
-        return None
-
-    # Panneaux / Catalogue / Suggestions directes
-    if any(w in q for w in ["panen", "pannea", "panno", "suggestion des pan", "catalogue", "materiel"]) and not any(w in q for w in ["combien de kw", "quelle puissance"]):
-        return (
-            "Voici nos panneaux solaires HeliAntha haute performance certifiés Tier-1 (garantie constructeur 25 ans).\n\n"
-            "Pour estimer le nombre idéal pour votre installation : quel est votre objectif principal (réduire votre facture ONEE, maison autonome avec batteries, ou pompage agricole) ?"
-        )
-
-    # Devis / Prix / Chiffrage général (sans chiffres déjà fournis)
-    if any(w in q for w in ["devis", "prix", "cout", "combien coute", "tarif", "estimation"]) and not re.search(r"\d+", q):
-        return (
-            "Nos devis sont 100% gratuits et personnalisés.\n\n"
-            "Pour dimensionner votre système : quel est le montant moyen de votre facture d'électricité mensuelle (en DH) ?"
-        )
-
-    # Puissance maison / kW
-    if any(w in q for w in ["combien de panneau pour", "puissance pour une maison", "combien de kw pour une maison", "puissance maison"]):
-        return (
-            "Pour équiper une maison au Maroc, voici les repères standards :\n"
-            "• **Maison standard (sans clim)** : **3 kWc** (environ 5 panneaux de 590 W) pour frigo, TV et éclairage.\n"
-            "• **Maison familiale / Villa** : **5 à 6 kWc** (8 à 10 panneaux) avec climatiseurs et chauffe-eau.\n"
-            "• **Grande villa (avec piscine)** : **8 à 10 kWc** pour effacer jusqu'à 70% de votre facture ONEE.\n\n"
-            "Tous nos tarifs sont en **Dirhams (DH HT)** avec du matériel garanti 25 ans."
-        )
-
-    # Orientation
-    if any(w in q for w in ["orient", "inclinaison", "pente", "vers ou", "direction"]):
-        return (
-            "Au Maroc, la règle pour tirer le maximum d'énergie de vos panneaux est très simple :\n"
-            "• **Orientation** : Plein Sud pour capter le soleil toute la journée.\n"
-            "• **Inclinaison** : Entre 25° et 30° (sur toiture ou terrasse avec support).\n\n"
-            "Cette position garantit la meilleure production et réduit directement votre facture !"
-        )
-
-    # Hybride vs Réseau (comparaison ciblée)
-    if ("hybride" in q and ("on-grid" in q or "on grid" in q or "reseau" in q or "classique" in q)) or \
-       ("difference" in q and ("hybride" in q or "batterie" in q or "on-grid" in q)):
-        return (
-            "Voici la différence en toute simplicité :\n"
-            "• **Solaire classique (Réseau / On-Grid)** : Le plus économique. Les panneaux injectent le jour pour réduire directement votre facture.\n"
-            "• **Solaire hybride (avec Batteries)** : L'énergie est stockée dans des batteries LiFePO4 pour alimenter la maison la nuit ou lors des coupures."
-        )
-
-    # Pompage agricole général (sans chiffres déjà fournis)
-    if any(w in q for w in ["pomp", "puits", "bassin", "agricole"]) and not re.search(r"\d+", q):
-        return (
-            "Le pompage solaire fonctionne au fil du soleil, sans gasoil ni facture :\n"
-            "• Les panneaux alimentent directement un variateur relié à votre pompe immergée.\n"
-            "• Dès le lever du soleil, la pompe démarre automatiquement pour irriguer ou remplir votre bassin.\n\n"
-            "Quelle est la puissance de votre pompe (en CV ou kW) ?"
-        )
-
-    return None
-
-_orig_quick_solar = quick_solar_power_response
-
-def quick_solar_power_response(messages, *args, **kwargs):
-    _u_text = ""
-    if isinstance(messages, list):
-        for _m in reversed(messages):
-            if isinstance(_m, dict) and _m.get("role") == "user":
-                _u_text = (_m.get("content") or "").strip()
-                break
-    elif isinstance(messages, str):
-        _u_text = messages.strip()
-
-    # 1. Fast-Path immédiat (< 0.01s)
-    _comm_reply = _get_commercial_direct_answer(_u_text)
-    if _comm_reply:
-        _c_prods = []
-        try:
-            if "_find_suggested_products" in globals():
-                _c_prods = _find_suggested_products(_u_text)
-            if not _c_prods and "_extract_suggested_products" in globals():
-                _c_prods = _extract_suggested_products(_u_text)
-            if not _c_prods and "find_catalog_products" in globals():
-                _c_prods = find_catalog_products(messages)
-        except Exception:
-            pass
-
-        if not _c_prods:
-            _c_prods = [dict(p) for p in _DEFAULT_PANELS]
-
-        for p in _c_prods:
-            if isinstance(p, dict) and not p.get("image_url") and "_catalog_product_image_url" in globals():
-                p["image_url"] = _catalog_product_image_url(p)
-
-        return {
-            "role": "assistant",
-            "content": _comm_reply,
-            "suggested_products": _c_prods,
-        }
-
-    # 2. Calculateur solaire numérique
-    res = _orig_quick_solar(messages, *args, **kwargs)
-
-    # 3. Filtrage chirurgical sur la sortie
-    if isinstance(res, dict) and "content" in res and isinstance(res["content"], str):
-        res["content"] = _sanitize_ai_response(res["content"])
-        if not res.get("suggested_products"):
-            res["suggested_products"] = [dict(p) for p in _DEFAULT_PANELS]
-        else:
-            for p in res.get("suggested_products") or []:
-                if isinstance(p, dict) and not p.get("image_url") and "_catalog_product_image_url" in globals():
-                    p["image_url"] = _catalog_product_image_url(p)
-
-    return res
