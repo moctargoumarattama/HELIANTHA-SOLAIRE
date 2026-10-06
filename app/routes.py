@@ -684,8 +684,10 @@ def assistant_chat():
         devis_response = assistant_devis_manager.handle(messages, quote_factory=_assistant_quote_factory)
     if devis_response and devis_response.handled:
         return jsonify(_assistant_payload_from_content(devis_response.content))
-    quick_response = quick_assistant_response(messages) if not catalog_query else None
+    quick_response = quick_solar_power_response(messages, products=products) or (quick_assistant_response(messages) if not catalog_query else None)
     if quick_response:
+        if products and "suggested_products" not in quick_response:
+            quick_response["suggested_products"] = products
         return jsonify(quick_response)
     assistant_response = chat_with_ollama(messages, products=products)
     result = _assistant_payload_from_content(assistant_response.get("content", ""))
@@ -718,9 +720,12 @@ def assistant_chat_stream():
             mimetype="application/x-ndjson",
         )
 
-    quick_response = quick_assistant_response(messages) if not catalog_query else None
+    quick_response = quick_solar_power_response(messages, products=products) or (quick_assistant_response(messages) if not catalog_query else None)
     if quick_response:
-        return Response(_ndjson({"type": "final", **quick_response}), mimetype="application/x-ndjson")
+        stream_payload = dict(quick_response)
+        if products and "suggested_products" not in stream_payload:
+            stream_payload["suggested_products"] = products
+        return Response(_ndjson({"type": "final", **stream_payload}), mimetype="application/x-ndjson")
 
     @stream_with_context
     def generate():

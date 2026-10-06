@@ -405,43 +405,61 @@ def _latest_user_content(messages: list[dict[str, str]]) -> str:
     return ""
 
 
-def quick_solar_power_response(messages: list[dict[str, str]]) -> dict[str, str] | None:
-    """Calculate explicit panel multiplication without letting the model invent operands."""
-    text = _normalize_text(_latest_user_content(messages))
-    power = r"(\d+(?:[.,]\d+)?)\s*(kwc?|wc?)"
-    count = r"(\d+)(?![\w.,])"
-    forward = re.search(rf"(?<![\w.,+-]){power}\s*(?:[*×x]|fois)\s*{count}", text)
-    reverse = re.search(
-        rf"(?<![\w.,+-]){count}\s*(?:[*×x]|fois|panneaux?\s+de)\s*{power}\b", text
-    )
-    if forward:
-        watts_text, unit, count_text = forward.groups()
-    elif reverse:
-        count_text, watts_text, unit = reverse.groups()
-    else:
+def quick_solar_power_response(messages: list[dict], products: list[dict] = None) -> dict | None:
+    if not messages:
         return None
-    watts = Decimal(watts_text.replace(",", ".")) * (1000 if unit.startswith("k") else 1)
-    quantity = int(count_text)
-    if watts <= 0 or quantity <= 0 or watts > 100000 or quantity > 10000:
-        return None
+    last_msg = (messages[-1].get("content") or "").lower()
+    
+    import re
+    # Cas 1 : Multiplication explicite (ex: 590w * 5)
+    match_mult = re.search(r"(\d+)\s*[wW]c?\s*[*xX]\s*(\d+)", last_msg)
+    if match_mult:
+        w = int(match_mult.group(1))
+        qty = int(match_mult.group(2))
+        total_w = w * qty
+        total_kw = total_w / 1000.0
+        return {
+            "role": "assistant",
+            "content": f"Pour {qty} panneaux de {w} Wc, la puissance totale est {w} × {qty} = {total_w:,} Wc, soit {total_kw:.2f} kWc. C'est la puissance crete installee ; la production en kWh depend de l'ensoleillement et de l'installation.".replace(",", " ")
+        }
 
-    def readable(number: Decimal) -> str:
-        integer, _, fraction = format(number, "f").partition(".")
-        result = f"{int(integer):,}".replace(",", " ")
-        return result + ("," + fraction.rstrip("0") if fraction.rstrip("0") else "")
+    # Cas 2 : Dimensionnement cible (ex: combien de panneaux pour 10kw / 10000w)
+    match_dim = re.search(r"(?:combien|nombre)\s+de\s+panneaux?\s+(?:pour|faut-il|pour avoir)?\s*(\d+(?:[.,]\d+)?)\s*(k[wW]|w[wW]|wc|kwc)?", last_msg)
+    if match_dim:
+        val = float(match_dim.group(1).replace(",", "."))
+        unit = (match_dim.group(2) or "kw").lower()
+        target_w = val * 1000.0 if "k" in unit or val < 100 else val
+        target_kw = target_w / 1000.0
+        
+        # Panneaux par defaut si aucun produit injecte
+        panel_list = []
+        if products:
+            for p in products:
+                pw = p.get("power_w")
+                if not pw:
+                    m = re.search(r"(\d+)\s*[wW]c?", p.get("name", "") + " " + p.get("description", ""))
+                    if m:
+                        pw = float(m.group(1))
+                if pw:
+                    panel_list.append((p.get("name", "Panneau"), int(pw), p.get("price"), p.get("reference")))
+        
+        if not panel_list:
+            panel_list = [("Panneau 715 Wc N-Type TOPCon", 715, 1067.18, "TEST-CS-715"), ("Panneau 590 Wc TOPBiHiKu6", 590, 1135.20, "CS6W-590TB-AG")]
+        
+        lines = [f"Pour atteindre une puissance cible de {target_kw:.1f} kWc ({int(target_w):,} Wc) :".replace(",", " ")]
+        for name, pw, price, ref in panel_list[:3]:
+            nb = int(target_w // pw) + (1 if target_w % pw != 0 else 0)
+            real_kw = (nb * pw) / 1000.0
+            price_info = f" ({price} DH HT/unite)" if price else ""
+            lines.append(f"• {nb} × {pw} Wc ({name}) = {real_kw:.2f} kWc installe{price_info}")
+        lines.append("Consultez les references ci-dessous pour verifier les fiches techniques et demander un devis.")
+        
+        return {
+            "role": "assistant",
+            "content": "\n".join(lines)
+        }
 
-    total = watts * quantity
-    explicit_panels = re.search(r"\b(?:panneaux?|modules?|crete|kwc|wc)\b", text)
-    intro = "Pour" if explicit_panels else "Si vous parlez de"
-    return {
-        "role": "assistant",
-        "content": (
-            f"{intro} {quantity} panneaux de {readable(watts)} Wc, la puissance totale est "
-            f"{readable(watts)} × {quantity} = {readable(total)} Wc, soit {readable(total / 1000)} kWc. "
-            "C'est la puissance crete installee ; la production en kWh depend de l'ensoleillement et de l'installation."
-        ),
-    }
-
+    return None
 
 def quick_assistant_response(messages: list[dict[str, str]]) -> dict[str, str] | None:
     """Return only high-confidence local answers; None always means delegate to Ollama."""
