@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import json
+import math
 import re
 import unicodedata
 from typing import Any, Callable
@@ -15,16 +16,16 @@ from typing import Any, Callable
 
 QuoteFactory = Callable[[str, dict[str, Any], dict[str, Any]], dict[str, Any]]
 
-NUMBER_PATTERN = r"(\d+(?:[,.]\d+)?)"
+NUMBER_PATTERN = r"((?:\d{1,3}(?:[ \u00a0\u202f]\d{3})+|\d+)(?:[,.]\d+)?)"
+# Technical input ceiling, not a sizing or commercial rule. Prevent pathological
+# customer numbers from overflowing calculator inputs or derived quantities.
+MAX_CUSTOMER_NUMBER = 1_000_000_000
 DEVIS_MARKER_TEMPLATE = "<<<DEVIS_DATA:{payload}>>>"
 
 QUOTE_INTENT_WORDS = (
     "devis",
     "estimation",
     "estimer",
-    "prix",
-    "tarif",
-    "cout",
     "chiffrage",
     "offre",
 )
@@ -48,6 +49,8 @@ CITY_NAMES = {
     "agadir": "Agadir",
     "ait melloul": "Ait Melloul",
     "beni mellal": "Beni Mellal",
+    "casablanca": "Casablanca",
+    "casa": "Casablanca",
     "el jadida": "El Jadida",
     "errachidia": "Errachidia",
     "essaouira": "Essaouira",
@@ -95,6 +98,8 @@ class AssistantDevisSlots:
     flow_m3_h: float | None = None
     hmt_m: float | None = None
     monthly_consumption_kwh: float | None = None
+    monthly_consumption_basis: str = ""
+    monthly_bill_dh: float | None = None
     phase: str = ""
     meter_type: str = ""
     name: str = ""
@@ -124,16 +129,22 @@ def parse_float(value: Any) -> float | None:
     if value is None:
         return None
     try:
-        number = float(str(value).replace(" ", "").replace(",", "."))
+        number = float(re.sub(r"\s+", "", str(value)).replace(",", "."))
     except (TypeError, ValueError):
         return None
-    return number if number > 0 else None
+    return number if math.isfinite(number) and 0 < number <= MAX_CUSTOMER_NUMBER else None
+
+
+def negative_number_prefix(text: str, start: int) -> bool:
+    """A minus sign, including a spaced or Unicode minus, belongs to the value."""
+    return bool(re.search(r"[-\u2212]\s*$", text[:start]))
 
 
 def first_number(patterns: tuple[str, ...], text: str) -> float | None:
     for pattern in patterns:
-        match = re.search(pattern, text, flags=re.IGNORECASE)
-        if match:
+        for match in re.finditer(pattern, text, flags=re.IGNORECASE):
+            if negative_number_prefix(text, match.start(1)):
+                continue
             number = parse_float(match.group(1))
             if number is not None:
                 return number
@@ -175,7 +186,12 @@ def previous_assistant_prompt(messages: list[dict[str, str]]) -> bool:
 
 def has_quote_intent(text: str) -> bool:
     normalized = normalize_text(text)
-    return any(word in normalized for word in QUOTE_INTENT_WORDS)
+    return any(re.search(rf"\b{re.escape(word)}\b", normalized) for word in QUOTE_INTENT_WORDS)
+
+
+def has_explicit_quote_intent(text: str) -> bool:
+    """An indicative calculation is only a quote when the customer asks for one."""
+    return bool(re.search(r"\b(?:devis|chiffrage)\b", normalize_text(text)))
 
 
 def is_information_question(text: str) -> bool:
@@ -286,12 +302,28 @@ def extract_city(text: str) -> str:
     return ""
 
 
+def contextual_city(text: str, assistant_prompt: str) -> str:
+    normalized_prompt = normalize_text(assistant_prompt)
+    if not re.search(r"\b(?:votre|ta|la)\s+ville\b", normalized_prompt):
+        return ""
+    if re.search(r"\b(?:nom|prenom|telephone|phone|consommation|debit|hmt|phase)\b", normalized_prompt):
+        return ""
+    if not re.fullmatch(r"[^\W\d_]+(?:[ '\u2019-][^\W\d_]+){0,5}", text.strip()):
+        return ""
+    if normalize_text(text).strip() in {"oui", "non", "ok", "merci", "bonjour", "salut", "salam"}:
+        return ""
+    return text.strip()[:40]
+
+
 def extract_phase(text: str) -> str:
     normalized = normalize_text(text)
-    if re.search(r"\b(tri|triphase|380\s*v?)\b", normalized):
-        return "triphase"
-    if re.search(r"\b(mono|monophase|220\s*v?)\b", normalized):
-        return "monophase"
+    labels = list(re.finditer(r"\b(tri|triphase|mono|monophase)\b", normalized))
+    if labels:
+        return "triphase" if labels[-1].group(1) in {"tri", "triphase"} else "monophase"
+    # Amounts and energy values such as 380 DH or 380 kWh are not voltages.
+    voltages = list(re.finditer(r"\b(380|400|220|230)\s*(?:v|volts?)\b", normalized))
+    if voltages:
+        return "triphase" if voltages[-1].group(1) in {"380", "400"} else "monophase"
     return ""
 
 
@@ -304,10 +336,66 @@ def extract_meter_type(text: str) -> str:
     return ""
 
 
+def precise_consumption_prompt(assistant_prompt: str) -> bool:
+    """A question supplies the requested unit, never the consumption value."""
+    normalized = normalize_text(assistant_prompt)
+    return bool(
+        re.search(r"\b(?:consommation|conso)\b", normalized)
+        and re.search(r"\bkwh\b|\bkw\s+h\b", normalized)
+        and not re.search(r"\b(?:nom|prenom|telephone|phone|ville|debit|hmt|branchement|phase|compteur)\b", normalized)
+    )
+
+
+def extract_consumption(text: str, assistant_prompt: str = "") -> tuple[float | None, str]:
+    """Extract customer energy. Daily values use an explicit 30-day month.
+
+    Monetary bills are never converted into official quote inputs. Battery
+    capacities and unqualified numbers cannot provide consumption either.
+    """
+    normalized = normalize_text(text)
+    matches = list(re.finditer(rf"\b{NUMBER_PATTERN}\s*(?:kwh|kw\s+h)\b", normalized))
+    for match in reversed(matches):
+        if negative_number_prefix(normalized, match.start(1)):
+            continue
+        before = normalized[:match.start()]
+        after = normalized[match.end():]
+        labels = re.findall(r"\b(?:consommation|conso|facture|batterie|batteries|stockage|capacite)\b", before[-80:])
+        if labels and labels[-1] in {"batterie", "batteries", "stockage", "capacite"}:
+            continue
+        # The period belongs to this value, not a later field in the message.
+        period = re.split(r"[,;\n]|\.(?!\d)", after, maxsplit=1)[0][:35]
+        if re.match(r"\s*(?:/|par|chaque)?\s*(?:an(?:nee)?|semaine|heure|h)\b", period):
+            continue
+        explicit_daily = bool(
+            re.match(r"\s*(?:/|par|chaque)\s*(?:j|jour|jours|day)\b", period)
+            or re.search(r"\b(?:journalier|journaliere|quotidien|quotidienne)\b", before[-55:])
+        )
+        explicit_monthly = bool(
+            re.match(r"\s*(?:/|par|chaque)?\s*(?:mois|mensuel|mensuelle)\b", period)
+        )
+        customer_consumption = bool(re.search(r"\b(?:consommation|conso|facture)\b", before[-65:]))
+        if not (explicit_daily or explicit_monthly or customer_consumption or precise_consumption_prompt(assistant_prompt)):
+            if re.search(r"\b(?:batterie|batteries|stockage|capacite)\b", before[-45:]):
+                continue
+        number = parse_float(match.group(1))
+        if number is not None:
+            monthly = parse_float(number * 30) if explicit_daily else number
+            if monthly is not None:
+                return monthly, "daily_30_days" if explicit_daily else "monthly"
+
+    if precise_consumption_prompt(assistant_prompt):
+        match = re.fullmatch(rf"\s*{NUMBER_PATTERN}\s*", normalized)
+        if match:
+            number = parse_float(match.group(1))
+            daily = bool(re.search(r"\b(?:jour|journalier|journaliere|quotidien|quotidienne)\b", normalize_text(assistant_prompt)))
+            if number is not None:
+                monthly = parse_float(number * 30) if daily else number
+                if monthly is not None:
+                    return monthly, "daily_30_days" if daily else "monthly"
+    return None, ""
+
+
 def extract_slots(messages: list[dict[str, str]]) -> AssistantDevisSlots:
-    texts = user_messages(messages)
-    raw_text = "\n".join(texts)
-    normalized = normalize_text(raw_text)
     slots = AssistantDevisSlots()
     assistant_prompt = ""
     for message in messages:
@@ -321,51 +409,52 @@ def extract_slots(messages: list[dict[str, str]]) -> AssistantDevisSlots:
         slots.project = extract_project(text) or slots.project
         slots.phone = extract_phone(text) or slots.phone
         slots.name = extract_name(text) or contextual_name(text, assistant_prompt) or slots.name
-        slots.city = extract_city(text) or slots.city
+        slots.city = extract_city(text) or contextual_city(text, assistant_prompt) or slots.city
         slots.phase = extract_phase(text) or slots.phase
         slots.meter_type = extract_meter_type(text) or slots.meter_type
-        assistant_prompt = ""
-
-    existing_cv = latest_number(
-        (
+        normalized = normalize_text(text)
+        existing_cv = first_number((
             rf"(?:pompe|puissance)[^\n,.;]{{0,30}}?{NUMBER_PATTERN}\s*(?:cv|ch|hp)\b",
             rf"\b{NUMBER_PATTERN}\s*(?:cv|ch|hp)\b",
-        ),
-        texts,
-    )
-    slots.existing_pump_cv = existing_cv
+        ), normalized)
+        if any(token in normalized for token in ("pas de pompe", "sans pompe", "besoin d'une pompe", "besoin dune pompe", "recommandation de pompe")):
+            slots.pump_existing = False
+            slots.existing_pump_cv = None
+        elif existing_cv is not None:
+            slots.existing_pump_cv = existing_cv
+            slots.pump_existing = True
+        elif any(token in normalized for token in ("deja une pompe", "pompe existe", "pompe existante", "j'ai une pompe", "jai une pompe")):
+            slots.pump_existing = True
 
-    if existing_cv is not None:
-        slots.pump_existing = True
-    elif any(token in normalized for token in ("pas de pompe", "sans pompe", "besoin d'une pompe", "besoin dune pompe", "recommandation de pompe")):
-        slots.pump_existing = False
-    elif any(token in normalized for token in ("deja une pompe", "pompe existe", "pompe existante", "j'ai une pompe", "jai une pompe")):
-        slots.pump_existing = True
-
-    slots.flow_m3_h = latest_number(
-        (
+        slots.flow_m3_h = first_number((
             rf"\b{NUMBER_PATTERN}\s*(?:m3\s*/?\s*h|m3h)\b",
             rf"(?:debit)[^\n,.;]{{0,24}}?{NUMBER_PATTERN}",
-        ),
-        texts,
-    )
-    slots.hmt_m = latest_number(
-        (
+        ), normalized) or slots.flow_m3_h
+        slots.hmt_m = first_number((
             rf"(?:hmt|hauteur|profondeur)[^\n,.;]{{0,24}}?{NUMBER_PATTERN}\s*(?:m|metres?)?\b",
             rf"\b{NUMBER_PATTERN}\s*(?:m|metres?)\s*(?:hmt|de hmt|hauteur|profondeur)\b",
-        ),
-        texts,
-    )
+        ), normalized) or slots.hmt_m
+        monthly, basis = extract_consumption(text, assistant_prompt)
+        bill = first_number((rf"\b{NUMBER_PATTERN}\s*(?:dh|dhs|mad|dirhams?)\b",), normalized)
+        if monthly is not None:
+            slots.monthly_consumption_kwh = monthly
+            slots.monthly_consumption_basis = basis
+        elif bill is not None and (
+            re.search(r"\b(?:consommation|conso|facture)\b", normalized)
+            or precise_consumption_prompt(assistant_prompt)
+        ):
+            # A correction supplying only a bill invalidates prior energy.
+            slots.monthly_consumption_kwh = None
+            slots.monthly_consumption_basis = ""
+        if bill is not None and (
+            re.search(r"\b(?:consommation|conso|facture)\b", normalized)
+            or precise_consumption_prompt(assistant_prompt)
+        ):
+            slots.monthly_bill_dh = bill
+        assistant_prompt = ""
+
     if slots.flow_m3_h is not None or slots.hmt_m is not None:
         slots.pump_existing = slots.pump_existing if slots.pump_existing is not None else False
-
-    slots.monthly_consumption_kwh = latest_number(
-        (
-            rf"\b{NUMBER_PATTERN}\s*(?:kwh|kw h)\s*(?:/|par)?\s*(?:mois|mensuel|mensuelle)?\b",
-            rf"(?:consommation|conso)[^\n,.;]{{0,30}}?{NUMBER_PATTERN}\s*(?:kwh)?\b",
-        ),
-        texts,
-    )
     return slots
 
 
@@ -374,6 +463,35 @@ def should_handle_devis(messages: list[dict[str, str]], slots: AssistantDevisSlo
     all_text = "\n".join(user_messages(messages))
     quote_intent = has_quote_intent(all_text)
     collecting = previous_assistant_prompt(messages)
+
+    if not has_explicit_quote_intent(latest):
+        from .ai_service import is_quick_solar_power_query
+
+        previous_prompt = ""
+        for message in reversed(messages[:-1]):
+            if message.get("role") == "assistant":
+                previous_prompt = str(message.get("content") or "")
+                break
+        # Consumption given during an active quote completes its slots. An
+        # unrelated arithmetic or sizing request can interrupt that collection.
+        consumption, _ = extract_consumption(latest, previous_prompt)
+        monetary_consumption_answer = bool(
+            precise_consumption_prompt(previous_prompt)
+            and first_number((rf"\b{NUMBER_PATTERN}\s*(?:dh|dhs|mad|dirhams?)\b",), normalize_text(latest)) is not None
+        )
+        numeric_quote_answer = (
+            quote_intent and (consumption is not None or monetary_consumption_answer)
+            and not is_information_question(latest)
+            and (
+                precise_consumption_prompt(previous_prompt)
+                or collecting and (
+                    re.search(r"\b(?:consommation|conso)\b", normalize_text(previous_prompt))
+                    or re.search(r"\b(?:ma|mon|notre)\s+(?:consommation|conso)\b", normalize_text(latest))
+                )
+            )
+        )
+        if is_quick_solar_power_query(messages) and not numeric_quote_answer:
+            return False
 
     # A technical question can interrupt collection without discarding earlier customer facts.
     if is_information_question(latest) and not has_quote_intent(latest):
@@ -423,6 +541,8 @@ def missing_slots(slots: AssistantDevisSlots) -> list[str]:
     elif slots.project == "hybrid":
         if slots.monthly_consumption_kwh is None:
             missing.append("monthly_consumption_kwh")
+        if not slots.phase:
+            missing.append("phase")
 
     if not slots.name:
         missing.append("name")
@@ -459,8 +579,8 @@ def build_data(slots: AssistantDevisSlots) -> dict[str, Any]:
     if slots.project == "hybrid":
         return {
             "monthly_consumption_kwh": slots.monthly_consumption_kwh,
-            "phase": "monophase",
-            "voltage_v": 220,
+            "phase": slots.phase or "monophase",
+            "voltage_v": 380 if slots.phase == "triphase" else 220,
             "city": slots.city,
         }
 
@@ -502,7 +622,13 @@ def question_for_missing(slots: AssistantDevisSlots, missing: list[str]) -> str:
     requested.extend(contact_labels[key] for key in missing if key in contact_labels)
     if not requested:
         requested = ["les informations manquantes"]
-    return f"Pour preparer votre devis {project_label(slots.project)}, il me manque {format_list(requested)}."
+    question = f"Pour preparer votre devis {project_label(slots.project)}, il me manque {format_list(requested)}."
+    if "monthly_consumption_kwh" in missing and slots.monthly_bill_dh is not None:
+        question += (
+            " Le montant en DH de votre facture ne donne pas votre consommation reelle. "
+            "Indiquez les kWh figurant sur votre facture pour utiliser le calculateur officiel."
+        )
+    return question
 
 
 def format_list(items: list[str]) -> str:
@@ -549,6 +675,20 @@ class AssistantDevisManager:
         if not should_handle_devis(messages, slots):
             return AssistantDevisResponse(handled=False)
 
+        if slots.project == "hybrid" and slots.phase == "triphase":
+            return AssistantDevisResponse(
+                handled=True,
+                content=(
+                    "Votre branchement triphase (380 V) est conserve. Le calculateur hybride officiel "
+                    "gere actuellement uniquement le 220 V monophase. Un conseiller doit valider "
+                    "une solution hybride compatible avec votre branchement avant de preparer le devis."
+                ),
+                project=slots.project,
+                data=build_data(slots),
+                contact=build_contact(slots),
+                missing=["hybrid_three_phase_validation"],
+            )
+
         missing = missing_slots(slots)
         if missing:
             return AssistantDevisResponse(
@@ -560,10 +700,14 @@ class AssistantDevisManager:
 
         data = build_data(slots)
         contact = build_contact(slots)
+        consumption_note = (
+            " Votre consommation journaliere a ete convertie en consommation mensuelle sur une base de 30 jours."
+            if slots.monthly_consumption_basis == "daily_30_days" else ""
+        )
         if quote_factory is None:
             return AssistantDevisResponse(
                 handled=True,
-                content="J'ai les informations necessaires pour preparer le devis.",
+                content="J'ai les informations necessaires pour preparer le devis." + consumption_note,
                 project=slots.project,
                 data=data,
                 contact=contact,
@@ -581,7 +725,7 @@ class AssistantDevisManager:
 
         return AssistantDevisResponse(
             handled=True,
-            content=final_content_for_quote(quote),
+            content=final_content_for_quote(quote) + consumption_note,
             quote=quote,
             project=slots.project,
             data=data,

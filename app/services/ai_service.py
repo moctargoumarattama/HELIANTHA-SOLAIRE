@@ -9,12 +9,12 @@ import sqlite3
 import unicodedata
 from contextlib import closing
 from dataclasses import asdict
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation, ROUND_CEILING, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any
 
 import requests
-from flask import current_app
+from flask import current_app, has_app_context
 
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
@@ -151,7 +151,7 @@ def find_catalog_products(messages: list[dict[str, str]]) -> list[dict[str, Any]
             placeholders = ",".join("?" for _ in families)
             rows = database.execute(
                 "SELECT id, reference, category, brand, model, description, power_w, power_kw, "
-                "capacity_kwh, voltage, sale_price, preferred, priority FROM products "
+                "capacity_kwh, voltage, sale_price, preferred, priority, datasheet_url FROM products "
                 "WHERE active = 1 AND demo = 0 AND stock > 0 AND sale_price > 0 "
                 "AND UPPER(TRIM(currency)) IN ('DH', 'MAD') "
                 f"AND category IN ({placeholders})",
@@ -220,6 +220,9 @@ def find_catalog_products(messages: list[dict[str, str]]) -> list[dict[str, Any]
             "id": row["id"], "name": name, "reference": row["reference"],
             "description": ", ".join(specs), "price": float(row["sale_price"]),
             "currency": "DH", "price_tax": "HT", "en_stock": True, "source": "local_sqlite",
+            "category": row["category"], "power_w": row["power_w"],
+            "brand": row["brand"] or "", "model": row["model"] or "",
+            "datasheet_url": row["datasheet_url"] or "",
         })
     return products
 
@@ -405,79 +408,279 @@ def _latest_user_content(messages: list[dict[str, str]]) -> str:
     return ""
 
 
-def quick_solar_power_response(messages: list[dict], products: list[dict] = None) -> dict | None:
-    if not messages:
+_SOLAR_NUMBER = r"(?<![\w.,+-])\d+(?:[ \u00a0\u202f]\d{3})*(?:[.,]\d+)?"
+_SOLAR_POWER = rf"(?P<value>{_SOLAR_NUMBER})\s*(?P<unit>kwc?|wc?)\b"
+_SOLAR_MULTIPLICATION_RE = re.compile(
+    rf"{_SOLAR_POWER}\s*[*x×]\s*(?P<quantity>\d+)(?![\d.,])"
+)
+_SOLAR_INVERSE_MULTIPLICATION_RE = re.compile(
+    rf"(?<![\w.,+-])(?P<quantity>\d+)\s*"
+    rf"(?:[*x×]\s*|panneaux?(?:\s+(?:solaires?|photovoltaiques?))?\s+(?:de|a)\s*)"
+    rf"{_SOLAR_POWER}"
+)
+_SOLAR_TARGET_RE = re.compile(
+    rf"\b(?:combien(?:\s+faut[- ]il)?\s+(?:de\s+)?|nombre\s+de\s+)"
+    rf"panneaux?(?:\s+(?:solaires?|photovoltaiques?))?\s+"
+    rf"(?:faut[- ]il\s+)?pour(?:\s+(?:avoir|atteindre|une\s+puissance(?:\s+cible)?(?:\s+de)?))?\s*"
+    rf"(?P<value>{_SOLAR_NUMBER})\s*(?P<unit>kwh|kwc?|wc?)?(?![\w.,])"
+)
+_SOLAR_ENERGY_RE = re.compile(rf"(?P<value>{_SOLAR_NUMBER})\s*kwh\b")
+_SOLAR_BILL_RE = re.compile(rf"(?P<value>{_SOLAR_NUMBER})\s*(?:dh|dhs|mad|dirhams?)\b")
+_DAILY_PERIOD_RE = re.compile(r"(?:/\s*j(?:our)?\b|\bpar\s+jour\b|\b(?:quotidien\w*|journalier\w*)\b)")
+_MONTHLY_PERIOD_RE = re.compile(r"(?:/\s*mois\b|\bpar\s+mois\b|\bmensuel\w*\b)")
+_OTHER_PERIOD_RE = re.compile(r"(?:/\s*(?:an|semaine)\b|\bpar\s+(?:an|semaine)\b|\bannuel\w*\b)")
+_MAX_SOLAR_INPUT = Decimal("1000000000000")
+
+
+def _solar_decimal(value: Any) -> Decimal | None:
+    try:
+        result = Decimal(re.sub(r"\s+", "", str(value)).replace(",", "."))
+    except (InvalidOperation, ValueError):
         return None
-    last_msg = (messages[-1].get("content") or "").lower()
-    
-    import re
-    # Cas 1 : Multiplication explicite (ex: 590w * 5)
-    match_mult = re.search(r"(\d+)\s*[wW]c?\s*[*xX]\s*(\d+)", last_msg)
-    if match_mult:
-        w = int(match_mult.group(1))
-        qty = int(match_mult.group(2))
-        total_w = w * qty
-        total_kw = total_w / 1000.0
+    # Bound user numbers before arithmetic/JSON conversion; ordinary installation
+    # quantities remain far below this ceiling, even when expressed in watts.
+    return result if result.is_finite() and 0 < result <= _MAX_SOLAR_INPUT else None
+
+
+def _solar_number(value: Decimal, places: int | None = None) -> str:
+    if places is not None:
+        value = value.quantize(Decimal(1).scaleb(-places), rounding=ROUND_HALF_UP)
+    if value % 1 == 0:
+        return format(value, ",.0f").replace(",", " ")
+    return format(value, ",f").replace(",", " ").rstrip("0").rstrip(".")
+
+
+def _solar_consumption_amount(text: str, pattern: re.Pattern) -> re.Match | None:
+    """Prefer the value qualified as consumption, rather than a battery capacity/price."""
+    candidates = []
+    for match in pattern.finditer(text):
+        before, after = text[:match.start()], text[match.end():]
+        score = 0
+        if re.search(r"\b(?:factures?|consommation|consomme\w*)\b[^\d]*$", before):
+            score += 2
+        if re.match(r"\s*(?:/\s*(?:j(?:our)?|mois)\b|par\s+(?:jour|mois)\b|(?:mensuel|quotidien|journalier)\w*\b)", after):
+            score += 4
+        candidates.append((score, match))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda candidate: -candidate[0])
+    if len(candidates) > 1 and candidates[0][0] == candidates[1][0]:
+        return None
+    return candidates[0][1]
+
+
+def _solar_power_request(messages: list[dict]) -> dict[str, Any] | None:
+    """Recognize the latest client request only, without reading the catalogue."""
+    text = _normalize_text(_latest_user_content(messages))
+    if re.search(r"(?<!\w)-\s*\d+(?:[.,]\d+)?\s*(?:kwh|kwc?|wc?|dh)\b", text):
+        return {"kind": "invalid"}
+    if re.search(r"(?:kwc?|wc?)\s*[*x×]\s*-\s*\d+|(?<!\w)-\s*\d+\s*panneaux?\b", text):
+        return {"kind": "invalid"}
+    if re.search(r"\b\d+(?:[.,]\d+)?\s*e[+-]?\d+\s*(?:kwh|wh|kwc?|wc?|dh)\b", text):
+        return {"kind": "invalid"}
+    for pattern in (_SOLAR_MULTIPLICATION_RE, _SOLAR_INVERSE_MULTIPLICATION_RE):
+        match = pattern.search(text)
+        if match:
+            power = _solar_decimal(match["value"])
+            quantity = int(match["quantity"])
+            if power is not None and _solar_decimal(match["quantity"]) is not None:
+                return {
+                    "kind": "multiplication", "quantity": quantity,
+                    "power_w": power * (1000 if match["unit"].startswith("k") else 1),
+                }
+            return {"kind": "invalid"}
+
+    match = _SOLAR_TARGET_RE.search(text)
+    if match:
+        if match["unit"] == "kwh":
+            if not (_DAILY_PERIOD_RE.search(text) or _MONTHLY_PERIOD_RE.search(text)):
+                return {"kind": "period"}
+            match = None
+    if match:
+        # An omitted unit means kWc only. Explicit energy/currency units are never power.
+        suffix = text[match.end():].lstrip()
+        if not match["unit"] and re.match(r"[a-z]", suffix):
+            match = None
+        else:
+            value = _solar_decimal(match["value"])
+            if value is None:
+                return {"kind": "invalid"}
+            unit = match["unit"] or "kwc"
+            return {"kind": "target", "target_w": value * (1000 if unit.startswith("k") else 1)}
+
+    consumption_context = bool(re.search(r"\b(?:factures?|consommation|consomme\w*)\b", text))
+    energy = _solar_consumption_amount(text, _SOLAR_ENERGY_RE)
+    bill = _solar_consumption_amount(text, _SOLAR_BILL_RE) if consumption_context else None
+    period = "day" if _DAILY_PERIOD_RE.search(text) else "month"
+    if energy and (consumption_context or _DAILY_PERIOD_RE.search(text) or _MONTHLY_PERIOD_RE.search(text)):
+        match, unit = energy, "kwh"
+    elif bill:
+        match, unit = bill, "dh"
+    else:
+        return None
+    if _OTHER_PERIOD_RE.search(text) or (_DAILY_PERIOD_RE.search(text) and _MONTHLY_PERIOD_RE.search(text)):
+        return {"kind": "period"}
+    value = _solar_decimal(match["value"])
+    if value is None:
+        return {"kind": "invalid"}
+    return {"kind": "consumption", "value": value, "unit": unit, "period": period}
+
+
+def is_quick_solar_power_query(messages: list[dict]) -> bool:
+    """Allow routes/the quote collector to recognize supported numerical questions."""
+    return _solar_power_request(messages) is not None
+
+
+def _solar_panel_product(product: dict[str, Any]) -> dict[str, Any] | None:
+    """Normalize a real SQLite panel; labels are never parsed as technical data."""
+    if product.get("category") != "panels":
+        return None
+    power = _solar_decimal(product.get("power_w"))
+    price = _solar_decimal(product.get("price", product.get("sale_price")))
+    if power is None or price is None or float(power) <= 0 or float(price) <= 0:
+        return None
+    if str(product.get("active", 1)).lower() in {"0", "false"} or str(product.get("demo", 0)).lower() in {"1", "true"}:
+        return None
+    if product.get("en_stock") is False or ("stock" in product and _solar_decimal(product["stock"]) is None):
+        return None
+    if str(product.get("currency") or "DH").strip().upper() not in {"DH", "MAD"}:
+        return None
+    if not product.get("id") or not product.get("reference"):
+        return None
+    brand = _catalog_text(product.get("brand"), 60)
+    model = _catalog_text(product.get("model"), 80)
+    name = _catalog_text(product.get("name"), 120)
+    if not name:
+        label = " ".join(part for part in (brand, model) if part)
+        description = _catalog_text(product.get("description"), 120)
+        name = _catalog_text(f"{label} - {description}" if label and description else label or description or product["reference"], 120)
+    return {
+        "id": product["id"], "reference": product["reference"], "name": name,
+        "category": "panels", "power_w": float(power), "brand": brand, "model": model,
+        "description": f"{_solar_number(power)} Wc", "price": float(price),
+        "currency": "DH", "price_tax": "HT", "en_stock": True,
+        "datasheet_url": str(product.get("datasheet_url") or ""), "source": "local_sqlite",
+    }
+
+
+def _solar_panels(products: list[dict] | None) -> list[dict[str, Any]]:
+    panels = [panel for product in products or [] if (panel := _solar_panel_product(product))]
+    if panels:
+        return panels
+    # list_products is the application's authoritative fallback. Avoid creating a missing
+    # database (notably lightweight route tests) through its internal schema initializer.
+    if not has_app_context():
+        return []
+    database_path = current_app.config.get("DATABASE")
+    if not database_path or not Path(database_path).is_file():
+        return []
+    try:
+        from ..db import list_products
+
+        available = list_products(category="panels", active="1", stock="available")
+        return [panel for product in available if (panel := _solar_panel_product(product))]
+    except (sqlite3.Error, OSError, KeyError, RuntimeError, ValueError):
+        current_app.logger.warning("Assistant panel catalogue unavailable")
+        return []
+
+
+def _solar_panel_options(target_w: Decimal, panels: list[dict[str, Any]]) -> list[str]:
+    lines = []
+    for panel in panels:
+        power = Decimal(str(panel["power_w"]))
+        quantity = int((target_w / power).to_integral_value(rounding=ROUND_CEILING))
+        real_kw = quantity * power / 1000
+        lines.append(
+            f"- {quantity} × {_solar_number(power)} Wc : {panel['name']} "
+            f"(réf. {panel['reference']}) = {_solar_number(real_kw)} kWc installés ; "
+            f"{_solar_number(Decimal(str(panel['price'])))} DH HT/unité."
+        )
+    if not panels:
+        lines.append("Aucun panneau réel correspondant n'est confirmé en stock dans le catalogue ; les références et prix doivent être vérifiés avec un conseiller.")
+    return lines
+
+
+def quick_solar_power_response(messages: list[dict], products: list[dict] | None = None) -> dict | None:
+    """Deterministic arithmetic with explicit units and real, available catalogue panels."""
+    request = _solar_power_request(messages)
+    if request is None:
+        return None
+    if request["kind"] == "invalid":
+        return {"role": "assistant", "content": "Indiquez une puissance, une quantité ou une consommation strictement positive, avec son unité et une valeur usuelle pour une installation solaire."}
+    if request["kind"] == "period":
+        return {"role": "assistant", "content": "Précisez une seule période : consommation en kWh par mois ou par jour, ou facture en DH par mois."}
+    if request["kind"] == "multiplication":
+        power, quantity = request["power_w"], request["quantity"]
+        total_w = power * quantity
         return {
             "role": "assistant",
-            "content": f"Pour {qty} panneaux de {w} Wc, la puissance totale est {w} × {qty} = {total_w:,} Wc, soit {total_kw:.2f} kWc. C'est la puissance crete installee ; la production en kWh depend de l'ensoleillement et de l'installation.".replace(",", " ")
+            "content": (
+                f"Pour {quantity} panneaux de {_solar_number(power)} Wc, la puissance totale est "
+                f"{_solar_number(power)} × {quantity} = {_solar_number(total_w)} Wc, "
+                f"soit {_solar_number(total_w / 1000)} kWc. "
+                "C'est la puissance crête installée ; la production en kWh dépend de l'ensoleillement et de l'installation."
+            ),
         }
 
-    # Cas 2 : Dimensionnement cible (ex: combien de panneaux pour 10kw / 10000w)
-    match_dim = re.search(r"(?:combien|nombre)\s+de\s+panneaux?\s+(?:pour|faut-il|pour avoir)?\s*(\d+(?:[.,]\d+)?)\s*(k[wW]|w[wW]|wc|kwc)?", last_msg)
-    if match_dim:
-        val = float(match_dim.group(1).replace(",", "."))
-        unit = (match_dim.group(2) or "kw").lower()
-        target_w = val * 1000.0 if "k" in unit or val < 100 else val
-        target_kw = target_w / 1000.0
-        
-        # Panneaux par defaut si aucun produit injecte
-        panel_list = []
-        if products:
-            for p in products:
-                pw = p.get("power_w")
-                if not pw:
-                    m = re.search(r"(\d+)\s*[wW]c?", p.get("name", "") + " " + p.get("description", ""))
-                    if m:
-                        pw = float(m.group(1))
-                if pw:
-                    panel_list.append((p.get("name", "Panneau"), int(pw), p.get("price"), p.get("reference")))
-        
-        if not panel_list:
-            panel_list = [("Panneau 715 Wc N-Type TOPCon", 715, 1067.18, "TEST-CS-715"), ("Panneau 590 Wc TOPBiHiKu6", 590, 1135.20, "CS6W-590TB-AG")]
-        
-        lines = [f"Pour atteindre une puissance cible de {target_kw:.1f} kWc ({int(target_w):,} Wc) :".replace(",", " ")]
-        for name, pw, price, ref in panel_list[:3]:
-            nb = int(target_w // pw) + (1 if target_w % pw != 0 else 0)
-            real_kw = (nb * pw) / 1000.0
-            price_info = f" ({price} DH HT/unite)" if price else ""
-            lines.append(f"• {nb} × {pw} Wc ({name}) = {real_kw:.2f} kWc installe{price_info}")
-        lines.append("Consultez les references ci-dessous pour verifier les fiches techniques et demander un devis.")
-        
-        res = {
+    if request["kind"] == "consumption" and project_branch(messages) == "pumping":
+        return {
             "role": "assistant",
-            "content": "\n".join(lines)
+            "content": (
+                "Pour le pompage solaire, la consommation en kWh ne suffit pas à dimensionner les panneaux et le variateur. "
+                "Il faut la plaque moteur (puissance, tension, phases et courant), le débit et la HMT. "
+                "Le dimensionnement doit être validé dans le devis officiel."
+            ),
         }
-        if not products and panel_list:
-            products = [
-                {
-                    "id": 3 if "715" in str(ref) else 2,
-                    "name": name,
-                    "reference": ref,
-                    "price": price,
-                    "price_tax": "HT",
-                    "currency": "DH",
-                    "description": f"{pw} Wc",
-                    "en_stock": True,
-                    "source": "local_sqlite"
-                }
-                for name, pw, price, ref in panel_list[:2]
-            ]
-        if products:
-            res["suggested_products"] = products
-        return res
 
-    return None
+    panels = _solar_panels(products)
+    if request["kind"] == "target":
+        target_w = request["target_w"]
+        selected = panels[:3]
+        lines = [f"Pour atteindre une puissance cible de {_solar_number(target_w / 1000)} kWc ({_solar_number(target_w)} Wc) :"]
+        lines.extend(_solar_panel_options(target_w, selected))
+        lines.append("Ce calcul porte sur la puissance crête des panneaux. Le câblage, l'onduleur et l'installation doivent être validés dans le devis officiel.")
+    else:
+        value = request["value"]
+        monthly_value = value * (30 if request["period"] == "day" else 1)
+        kwh_month = monthly_value / Decimal("1.30") if request["unit"] == "dh" else monthly_value
+        kwh_day = kwh_month / 30
+        estimated_kw = kwh_day / Decimal("4.5")
+        recommended_kw = estimated_kw.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+        target_w = (recommended_kw or estimated_kw) * 1000
+        selected = []
+        # Prefer the actual catalogue panels closest to these power ranges, without
+        # fabricating a reference when only one range is available.
+        for preference in (Decimal(590), Decimal(700)):
+            if panels:
+                candidate = min(panels, key=lambda panel: abs(Decimal(str(panel["power_w"])) - preference))
+                if not any(panel["id"] == candidate["id"] for panel in selected):
+                    selected.append(candidate)
+        lines = ["Prédimensionnement solaire indicatif :"]
+        if request["unit"] == "dh":
+            lines.append(
+                f"Facture équivalente à {_solar_number(monthly_value)} DH/mois : avec un tarif indicatif de 1.30 DH/kWh, "
+                f"cela représente environ {_solar_number(kwh_month, 2)} kWh/mois. Le tarif réel doit être vérifié sur la facture."
+            )
+        elif request["period"] == "day":
+            lines.append(f"{_solar_number(value)} kWh/jour × 30 jours = {_solar_number(kwh_month)} kWh/mois.")
+        else:
+            lines.append(f"Consommation : {_solar_number(kwh_month)} kWh/mois.")
+        power_label = _solar_number(recommended_kw) if recommended_kw else "moins de 0.1"
+        lines.append(
+            f"Hypothèses : 30 jours/mois, soit {_solar_number(kwh_day, 2)} kWh/jour, "
+            f"et 4.5 heures équivalentes de soleil/jour (PSH) : puissance cible d'environ {power_label} kWc."
+        )
+        lines.extend(_solar_panel_options(target_w, selected))
+        lines.append(
+            f"Prévoir un onduleur réseau On-Grid ou Hybride dimensionné autour de {power_label} kW, "
+            "après vérification des phases, tensions et plages MPPT. Option stockage : batterie LiFePO4 de 5 à 10 kWh, "
+            "selon l'autonomie souhaitée et la compatibilité vérifiée avec l'onduleur."
+        )
+        lines.append(
+            "Ces hypothèses ne tiennent pas compte des pertes, de l'ombrage ni du profil horaire de consommation. "
+            "Le dimensionnement et les références doivent être validés par le calculateur du devis officiel."
+        )
+    return {"role": "assistant", "content": "\n".join(lines), "suggested_products": selected}
 
 def quick_assistant_response(messages: list[dict[str, str]]) -> dict[str, str] | None:
     """Return only high-confidence local answers; None always means delegate to Ollama."""

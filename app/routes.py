@@ -67,7 +67,7 @@ from .pumping_rules import (
 )
 from .public_presenters import build_public_quote_payload, company_profile, sanitize_calculation_result_for_public
 from .services.anti_abuse import ASSISTANT_WAIT_MESSAGE
-from .services.assistant_devis import AssistantDevisManager
+from .services.assistant_devis import AssistantDevisManager, extract_phase
 from .services.ai_service import (
     can_use_quote_manager,
     chat_with_ollama,
@@ -579,6 +579,13 @@ def _build_quote_from_ai_payload(raw_payload: dict) -> dict | None:
         }
     elif mode in {"hybrid", "hybride", "batterie", "batteries", "stockage", "solaire_batterie", "solaire_avec_batterie"}:
         project = "hybrid"
+        phase = extract_phase(_ai_text(raw_payload, "phase", "reseau", "network"))
+        voltage = _ai_float(raw_payload, "voltage_v", "voltage", "tension", default=220)
+        if phase == "triphase" or voltage in {380, 400}:
+            raise ValidationError(
+                "Votre branchement est triphase. Notre configurateur hybride traite actuellement "
+                "le 220 V monophase ; un conseiller doit valider votre solution triphasee."
+            )
         data = {
             "monthly_consumption_kwh": _ai_float(
                 raw_payload,
@@ -634,6 +641,9 @@ def _assistant_payload_from_content(content: str) -> dict:
         if not quote:
             try:
                 quote = _build_quote_from_ai_payload(quote_payload)
+            except ValidationError as exc:
+                response_payload["content"] = str(exc)
+                quote = None
             except Exception:
                 current_app.logger.exception("Assistant quote generation failed")
                 quote = None
@@ -647,6 +657,13 @@ def _assistant_payload_from_content(content: str) -> dict:
 
 def _ndjson(payload: dict) -> str:
     return json_dumps(payload, ensure_ascii=False) + "\n"
+
+
+def _assistant_with_products(payload: dict, products: list[dict]) -> dict:
+    """Attach verified catalogue facts to every final response, including quotes."""
+    if products and not payload.get("suggested_products"):
+        payload["suggested_products"] = products
+    return payload
 
 
 @bp.before_request
@@ -674,26 +691,23 @@ def assistant_chat():
         messages = sanitize_messages(payload.get("messages"))
     except ValueError:
         return jsonify(error="messages doit etre une liste non vide."), 400
-    power_response = quick_solar_power_response(messages)
-    if power_response:
-        return jsonify(power_response)
     products = find_catalog_products(messages)
     catalog_query = is_catalog_query(messages)
     devis_response = None
     if not catalog_query and can_use_quote_manager(messages):
         devis_response = assistant_devis_manager.handle(messages, quote_factory=_assistant_quote_factory)
     if devis_response and devis_response.handled:
-        return jsonify(_assistant_payload_from_content(devis_response.content))
-    quick_response = quick_solar_power_response(messages, products=products) or (quick_assistant_response(messages) if not catalog_query else None)
+        return jsonify(_assistant_with_products(
+            _assistant_payload_from_content(devis_response.content), products
+        ))
+    quick_response = quick_solar_power_response(messages, products=products)
+    if quick_response is None and not catalog_query:
+        quick_response = quick_assistant_response(messages)
     if quick_response:
-        if products and "suggested_products" not in quick_response:
-            quick_response["suggested_products"] = products
-        return jsonify(quick_response)
+        return jsonify(_assistant_with_products(quick_response, products))
     assistant_response = chat_with_ollama(messages, products=products)
     result = _assistant_payload_from_content(assistant_response.get("content", ""))
-    if products:
-        result["suggested_products"] = products
-    return jsonify(result)
+    return jsonify(_assistant_with_products(result, products))
 
 
 @bp.post("/api/assistant/chat/stream")
@@ -706,9 +720,6 @@ def assistant_chat_stream():
     except ValueError:
         return jsonify(error="messages doit etre une liste non vide."), 400
 
-    power_response = quick_solar_power_response(messages)
-    if power_response:
-        return Response(_ndjson({"type": "final", **power_response}), mimetype="application/x-ndjson")
     products = find_catalog_products(messages)
     catalog_query = is_catalog_query(messages)
     devis_response = None
@@ -716,15 +727,17 @@ def assistant_chat_stream():
         devis_response = assistant_devis_manager.handle(messages, quote_factory=_assistant_quote_factory)
     if devis_response and devis_response.handled:
         return Response(
-            _ndjson({"type": "final", **_assistant_payload_from_content(devis_response.content)}),
+            _ndjson({"type": "final", **_assistant_with_products(
+                _assistant_payload_from_content(devis_response.content), products
+            )}),
             mimetype="application/x-ndjson",
         )
 
-    quick_response = quick_solar_power_response(messages, products=products) or (quick_assistant_response(messages) if not catalog_query else None)
+    quick_response = quick_solar_power_response(messages, products=products)
+    if quick_response is None and not catalog_query:
+        quick_response = quick_assistant_response(messages)
     if quick_response:
-        stream_payload = dict(quick_response)
-        if products and "suggested_products" not in stream_payload:
-            stream_payload["suggested_products"] = products
+        stream_payload = _assistant_with_products(dict(quick_response), products)
         return Response(_ndjson({"type": "final", **stream_payload}), mimetype="application/x-ndjson")
 
     @stream_with_context
@@ -762,9 +775,7 @@ def assistant_chat_stream():
             yield _ndjson({"type": "token", "content": pending_visible})
 
         result = _assistant_payload_from_content(full_content)
-        if products:
-            result["suggested_products"] = products
-        yield _ndjson({"type": "final", **result})
+        yield _ndjson({"type": "final", **_assistant_with_products(result, products)})
 
     return Response(generate(), mimetype="application/x-ndjson")
 
