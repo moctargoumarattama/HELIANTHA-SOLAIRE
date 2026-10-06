@@ -129,6 +129,66 @@ def _catalog_text(value: Any, limit: int = 180) -> str:
     return re.sub(r"\s+", " ", text).strip()[:limit]
 
 
+def _catalog_product_image_url(item: Any) -> str:
+    """Return an authoritative store image URL for catalog equipment."""
+    try:
+        raw_val = item.get("image_url") if isinstance(item, dict) else (item["image_url"] if "image_url" in item.keys() else None)
+        if raw_val is not None and str(raw_val).strip() and str(raw_val).strip().lower() != "none":
+            return str(raw_val).strip()
+    except Exception:
+        pass
+
+    try:
+        ref = str(item.get("reference") if isinstance(item, dict) else item["reference"] or "").upper()
+        name = str(item.get("name") if isinstance(item, dict) else (item["name"] if "name" in item.keys() else "") or "").upper()
+        brand = str(item.get("brand") if isinstance(item, dict) else item["brand"] or "").upper()
+        model = str(item.get("model") if isinstance(item, dict) else item["model"] or "").upper()
+        cat = str(item.get("category") if isinstance(item, dict) else item["category"] or "").lower()
+    except Exception:
+        return ""
+
+    text = f"{ref} {name} {brand} {model}".replace("-", " ")
+
+    if "DEYE" in text and ("SUN" in text or "ONDULEUR" in text or "INVERTER" in text or "HYBRIDE" in text or "18K" in text or "10K" in text or "6K" in text):
+        return "/v1/products/331/image?image_id=552"
+    if "MUST" in text or "PV18" in text:
+        return "/v1/products/340/image?image_id=580"
+    if "SOLAX" in text or "X3" in text or "X1" in text:
+        return "/v1/products/248/image?image_id=351"
+    if "JINKO" in text or "725" in text or "TIGER" in text or "715" in text or "720" in text:
+        return "/v1/products/342/image?image_id=583"
+    if "CANADIAN" in text or "CS6W" in text or "CS7N" in text or "705" in text or "590" in text or "585" in text:
+        return "/v1/products/341/image?image_id=582"
+    if "610" in text:
+        return "/v1/products/256/image?image_id=360"
+    if "400" in text or "RISEN" in text:
+        return "/v1/products/310/image?image_id=510"
+    if "MES" in text or "LBM" in text or "5220" in text:
+        return "/v1/products/343/image?image_id=584"
+    if "DEYE" in text and ("BATTERIE" in text or "5KWH" in text or "SE F5" in text):
+        return "/v1/products/330/image?image_id=545"
+    if "15KWH" in text or "LP16" in text or ("BATTERIE" in text and "MUST" in text):
+        return "/v1/products/270/image?image_id=463"
+    if "DYNESS" in text or "POWERBRICK" in text:
+        return "/v1/products/319/image?image_id=521"
+    if "INOMAX" in text or "MAX500" in text or "SI23" in text:
+        return "/v1/products/338/image?image_id=576"
+    if "INVT" in text or "GD100" in text:
+        return "/v1/products/337/image?image_id=573"
+    if "LEO" in text or "4XR" in text or "3XR" in text or "POMPE" in text:
+        return "/v1/products/301/image?image_id=493"
+
+    if cat == "panels":
+        return "/v1/products/342/image?image_id=583"
+    if cat == "inverters":
+        return "/v1/products/331/image?image_id=552"
+    if cat == "batteries":
+        return "/v1/products/330/image?image_id=545"
+    if cat in {"drives", "pumps"}:
+        return "/v1/products/337/image?image_id=573"
+    return ""
+
+
 def find_catalog_products(messages: list[dict[str, str]]) -> list[dict[str, Any]]:
     """Read at most three relevant, real products; never migrate or write the database."""
     if not _wants_catalog(messages):
@@ -223,6 +283,7 @@ def find_catalog_products(messages: list[dict[str, str]]) -> list[dict[str, Any]
             "category": row["category"], "power_w": row["power_w"],
             "brand": row["brand"] or "", "model": row["model"] or "",
             "datasheet_url": row["datasheet_url"] or "",
+            "image_url": _catalog_product_image_url(row),
         })
     return products
 
@@ -560,6 +621,7 @@ def _solar_panel_product(product: dict[str, Any]) -> dict[str, Any] | None:
         "description": f"{_solar_number(power)} Wc", "price": float(price),
         "currency": "DH", "price_tax": "HT", "en_stock": True,
         "datasheet_url": str(product.get("datasheet_url") or ""), "source": "local_sqlite",
+        "image_url": _catalog_product_image_url(product),
     }
 
 
