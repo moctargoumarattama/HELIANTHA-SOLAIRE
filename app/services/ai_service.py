@@ -458,6 +458,21 @@ def quick_solar_power_response(messages: list[dict], products: list[dict] = None
             "role": "assistant",
             "content": "\n".join(lines)
         }
+        if not products and panel_list:
+            products = [
+                {
+                    "id": 3 if "715" in str(ref) else 2,
+                    "name": name,
+                    "reference": ref,
+                    "price": price,
+                    "price_tax": "HT",
+                    "currency": "DH",
+                    "description": f"{pw} Wc",
+                    "en_stock": True,
+                    "source": "local_sqlite"
+                }
+                for name, pw, price, ref in panel_list[:2]
+            ]
         if products:
             res["suggested_products"] = products
         return res
