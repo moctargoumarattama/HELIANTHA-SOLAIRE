@@ -66,10 +66,14 @@ from .pumping_rules import (
     parse_number,
 )
 from .public_presenters import build_public_quote_payload, company_profile, sanitize_calculation_result_for_public
+from .services.anti_abuse import ASSISTANT_WAIT_MESSAGE
 from .services.assistant_devis import AssistantDevisManager
 from .services.ai_service import (
+    can_use_quote_manager,
     chat_with_ollama,
     extract_quote_request,
+    find_catalog_products,
+    is_catalog_query,
     quick_assistant_response,
     sanitize_messages,
     stream_ollama_chat,
@@ -295,7 +299,8 @@ def _notify_quote_created_safely(
                 "whatsapp_gateway_url": settings.get("whatsapp_gateway_url"),
                 "admin_whatsapp": settings.get("admin_whatsapp"),
                 "app_base_url": settings.get("app_base_url"),
-            }
+            },
+            dispatch_immediately=False,
         )
     except Exception:
         current_app.logger.exception("WhatsApp quote notification failed")
@@ -643,6 +648,22 @@ def _ndjson(payload: dict) -> str:
     return json_dumps(payload, ensure_ascii=False) + "\n"
 
 
+@bp.before_request
+def _limit_assistant_messages():
+    if request.endpoint not in {"main.assistant_chat", "main.assistant_chat_stream"}:
+        return None
+    # The WSGI peer address honors any trusted proxy configured by deployment.
+    # Never trust a client-supplied forwarding header here.
+    retry_after = current_app.extensions["assistant_quota"].retry_after(
+        request.remote_addr or "unknown"
+    )
+    if retry_after:
+        return jsonify(
+            role="assistant", content=ASSISTANT_WAIT_MESSAGE, error=ASSISTANT_WAIT_MESSAGE
+        ), 429, {"Retry-After": str(retry_after)}
+    return None
+
+
 @bp.post("/api/assistant/chat")
 def assistant_chat():
     payload = request.get_json(silent=True)
@@ -652,14 +673,21 @@ def assistant_chat():
         messages = sanitize_messages(payload.get("messages"))
     except ValueError:
         return jsonify(error="messages doit etre une liste non vide."), 400
-    devis_response = assistant_devis_manager.handle(messages, quote_factory=_assistant_quote_factory)
-    if devis_response.handled:
+    products = find_catalog_products(messages)
+    catalog_query = is_catalog_query(messages)
+    devis_response = None
+    if not catalog_query and can_use_quote_manager(messages):
+        devis_response = assistant_devis_manager.handle(messages, quote_factory=_assistant_quote_factory)
+    if devis_response and devis_response.handled:
         return jsonify(_assistant_payload_from_content(devis_response.content))
-    quick_response = quick_assistant_response(messages)
+    quick_response = quick_assistant_response(messages) if not catalog_query else None
     if quick_response:
         return jsonify(quick_response)
-    assistant_response = chat_with_ollama(messages)
-    return jsonify(_assistant_payload_from_content(assistant_response.get("content", "")))
+    assistant_response = chat_with_ollama(messages, products=products)
+    result = _assistant_payload_from_content(assistant_response.get("content", ""))
+    if products:
+        result["suggested_products"] = products
+    return jsonify(result)
 
 
 @bp.post("/api/assistant/chat/stream")
@@ -672,14 +700,18 @@ def assistant_chat_stream():
     except ValueError:
         return jsonify(error="messages doit etre une liste non vide."), 400
 
-    devis_response = assistant_devis_manager.handle(messages, quote_factory=_assistant_quote_factory)
-    if devis_response.handled:
+    products = find_catalog_products(messages)
+    catalog_query = is_catalog_query(messages)
+    devis_response = None
+    if not catalog_query and can_use_quote_manager(messages):
+        devis_response = assistant_devis_manager.handle(messages, quote_factory=_assistant_quote_factory)
+    if devis_response and devis_response.handled:
         return Response(
             _ndjson({"type": "final", **_assistant_payload_from_content(devis_response.content)}),
             mimetype="application/x-ndjson",
         )
 
-    quick_response = quick_assistant_response(messages)
+    quick_response = quick_assistant_response(messages) if not catalog_query else None
     if quick_response:
         return Response(_ndjson({"type": "final", **quick_response}), mimetype="application/x-ndjson")
 
@@ -691,7 +723,7 @@ def assistant_chat_stream():
         marker_tail = len(marker) - 1
         suppress_tag = False
 
-        for chunk in stream_ollama_chat(messages):
+        for chunk in stream_ollama_chat(messages, products=products):
             if not chunk:
                 continue
             full_content += chunk
@@ -717,7 +749,10 @@ def assistant_chat_stream():
         if pending_visible and not suppress_tag:
             yield _ndjson({"type": "token", "content": pending_visible})
 
-        yield _ndjson({"type": "final", **_assistant_payload_from_content(full_content)})
+        result = _assistant_payload_from_content(full_content)
+        if products:
+            result["suggested_products"] = products
+        yield _ndjson({"type": "final", **result})
 
     return Response(generate(), mimetype="application/x-ndjson")
 

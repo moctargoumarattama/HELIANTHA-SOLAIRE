@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 import time
 from typing import Any
 
 import requests
+from flask import current_app
 
 from ..db import (
     enqueue_whatsapp_message,
@@ -174,6 +176,18 @@ def _gateway_url_from_settings() -> str:
 
 
 def process_outbox(limit: int = 10, gateway_url: str | None = None) -> dict[str, int]:
+    """Only one dispatcher may send a pending item at a time in this process."""
+    dispatch_lock = current_app.extensions["whatsapp_outbox_lock"]
+    if not dispatch_lock.acquire(blocking=False):
+        return {"processed": 0, "sent": 0, "failed": 0,
+                "pending": len(list_whatsapp_outbox("PENDING", limit))}
+    try:
+        return _process_outbox(limit, gateway_url)
+    finally:
+        dispatch_lock.release()
+
+
+def _process_outbox(limit: int, gateway_url: str | None) -> dict[str, int]:
     """Replay pending WhatsApp messages when the gateway is connected."""
 
     gateway = str(gateway_url or _gateway_url_from_settings() or WHATSAPP_GATEWAY_URL).strip()
@@ -185,6 +199,12 @@ def process_outbox(limit: int = 10, gateway_url: str | None = None) -> dict[str,
     failed = 0
     pending_items = list_whatsapp_outbox("PENDING", limit, newest=False)
     for item in pending_items:
+        phone = item.get("phone", "")
+        if not current_app.extensions["whatsapp_cooldown"].claim(phone):
+            logger.info(
+                "WhatsApp throttle active for %s, skipping immediate redundant push", phone
+            )
+            continue
         success = False
         error_message = ""
         try:
@@ -203,23 +223,26 @@ def process_outbox(limit: int = 10, gateway_url: str | None = None) -> dict[str,
                     gateway_url=gateway,
                 )
             if success:
-                mark_whatsapp_outbox_sent(item["id"])
+                mark_whatsapp_outbox_sent(item["id"], expected_payload=item)
                 sent += 1
             else:
                 error_message = "Echec envoi passerelle"
                 attempts = int(item.get("attempts") or 0) + 1
-                mark_whatsapp_outbox_failed(item["id"], attempts, error_message)
+                mark_whatsapp_outbox_failed(item["id"], attempts, error_message, expected_payload=item)
                 failed += 1
         except Exception as exc:  # pragma: no cover - defensive safety net
             attempts = int(item.get("attempts") or 0) + 1
-            mark_whatsapp_outbox_failed(item["id"], attempts, str(exc))
+            mark_whatsapp_outbox_failed(item["id"], attempts, str(exc), expected_payload=item)
             failed += 1
         time.sleep(0.5)
 
-    return {"processed": len(pending_items), "sent": sent, "failed": failed, "pending": 0}
+    return {"processed": sent + failed, "sent": sent, "failed": failed,
+            "pending": len(list_whatsapp_outbox("PENDING", limit))}
 
 
-def notify_quote_created(quote_data: dict[str, Any]) -> None:
+def notify_quote_created(
+    quote_data: dict[str, Any], *, dispatch_immediately: bool = True
+) -> None:
     """Notify the client and the administrator after a quote is generated."""
 
     client_phone = str(quote_data.get("client_phone") or "").strip()
@@ -248,6 +271,7 @@ def notify_quote_created(quote_data: dict[str, Any]) -> None:
             pdf_link,
             filename,
             client_msg,
+            replace_pending=True,
         )
 
     if admin_phone:
@@ -266,6 +290,19 @@ def notify_quote_created(quote_data: dict[str, Any]) -> None:
             pdf_link,
             filename,
             admin_msg,
+            replace_pending=True,
         )
 
-    process_outbox(gateway_url=gateway_url)
+    if dispatch_immediately:
+        process_outbox(gateway_url=gateway_url)
+    else:
+        app = current_app._get_current_object()
+
+        def dispatch():
+            with app.app_context():
+                try:
+                    process_outbox(gateway_url=gateway_url)
+                except Exception:
+                    logger.exception("WhatsApp background dispatch failed")
+
+        threading.Thread(target=dispatch, name="whatsapp-quote-dispatch", daemon=True).start()

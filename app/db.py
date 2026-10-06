@@ -1089,9 +1089,34 @@ def save_quote_client_event(quote_id, quote_number, event_type, event_value=""):
     db.commit()
 
 
-def enqueue_whatsapp_message(phone, msg_type="text", pdf_url="", filename="", caption=""):
+def enqueue_whatsapp_message(
+    phone, msg_type="text", pdf_url="", filename="", caption="", *, replace_pending=False
+):
     db = get_db()
     ensure_schema(db)
+    if replace_pending:
+        from .services.anti_abuse import whatsapp_queue_key
+
+        if not db.in_transaction:
+            db.execute("BEGIN IMMEDIATE")
+        key = whatsapp_queue_key(phone, caption)
+        pending = db.execute(
+            "SELECT id, phone, caption FROM whatsapp_outbox WHERE status = 'PENDING' "
+            "AND msg_type = ? ORDER BY id DESC", (str(msg_type),)
+        ).fetchall()
+        existing = next(
+            (row for row in pending if whatsapp_queue_key(row["phone"], row["caption"]) == key),
+            None,
+        )
+        if existing is not None:
+            db.execute(
+                """UPDATE whatsapp_outbox SET phone = ?, pdf_url = ?, filename = ?,
+                caption = ?, attempts = 0, error_message = NULL WHERE id = ?""",
+                (str(phone).strip(), str(pdf_url).strip(), str(filename).strip(),
+                 str(caption).strip(), existing["id"]),
+            )
+            db.commit()
+            return int(existing["id"])
     cursor = db.execute(
         """INSERT INTO whatsapp_outbox
         (phone, msg_type, pdf_url, filename, caption, status, attempts)
@@ -1131,27 +1156,38 @@ def list_whatsapp_outbox(status=None, limit=10, newest=True):
     return [dict(row) for row in rows]
 
 
-def mark_whatsapp_outbox_sent(item_id):
+def _outbox_payload_condition(payload):
+    if payload is None:
+        return "", ()
+    fields = ("phone", "msg_type", "pdf_url", "filename", "caption")
+    return "".join(f" AND {field} = ?" for field in fields), tuple(
+        str(payload.get(field) or "") for field in fields
+    )
+
+
+def mark_whatsapp_outbox_sent(item_id, *, expected_payload=None):
     db = get_db()
     ensure_schema(db)
+    condition, values = _outbox_payload_condition(expected_payload)
     db.execute(
         """UPDATE whatsapp_outbox
         SET status = 'SENT', sent_at = ?, error_message = NULL
-        WHERE id = ?""",
-        (utc_now(), item_id),
+        WHERE id = ?""" + condition,
+        (utc_now(), item_id, *values),
     )
     db.commit()
 
 
-def mark_whatsapp_outbox_failed(item_id, attempts, error_message=""):
+def mark_whatsapp_outbox_failed(item_id, attempts, error_message="", *, expected_payload=None):
     db = get_db()
     ensure_schema(db)
     next_status = "FAILED" if int(attempts or 0) >= 5 else "PENDING"
+    condition, values = _outbox_payload_condition(expected_payload)
     db.execute(
         """UPDATE whatsapp_outbox
         SET status = ?, attempts = ?, error_message = ?
-        WHERE id = ?""",
-        (next_status, int(attempts or 0), str(error_message or "").strip(), item_id),
+        WHERE id = ?""" + condition,
+        (next_status, int(attempts or 0), str(error_message or "").strip(), item_id, *values),
     )
     db.commit()
 
