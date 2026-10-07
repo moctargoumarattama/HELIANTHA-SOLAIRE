@@ -1,0 +1,64 @@
+              {% for item in outbox_items %}
+              <tr id="wa-row-{{ item.id }}" data-id="{{ item.id }}">
+                <td class="wa-td-date">
+                  <span class="wa-date-val">{{ item.created_at }}</span>
+                </td>
+                <td class="wa-td-phone">
+                  <span class="wa-phone-chip">{{ item.phone or "-" }}</span>
+                </td>
+                <td>
+                  <span class="wa-type-tag {{ 'pdf' if item.msg_type == 'document' else 'text' }}">
+                    {{ '📄 PDF' if item.msg_type == 'document' else '💬 Texte' }}
+                  </span>
+                </td>
+                <td>
+                  <span class="status outbox-status {{ item.status|lower }} wa-status-pill">
+                    {% if item.status == "SENT" %}
+                      Envoyé
+                    {% elif item.status == "FAILED" %}
+                      Échoué
+                    {% else %}
+                      En attente
+                    {% endif %}
+                  </span>
+                </td>
+                <td class="wa-td-attempts">
+                  <span class="wa-attempts-badge">{{ item.attempts }}</span>
+                </td>
+                <td class="wa-td-error">
+                  {% if item.error_message %}
+                    <span class="wa-error-text" title="{{ item.error_message }}">{{ item.error_message }}</span>
+                  {% elif item.status == "SENT" %}
+                    <span class="wa-ok-text">Envoyé avec succès</span>
+                  {% else %}
+                    <span class="muted">En file de traitement</span>
+                  {% endif %}
+                </td>
+                <td class="wa-td-actions">
+                  <div class="wa-row-actions">
+                    <button type="button" class="wa-btn-row-retry" data-id="{{ item.id }}" data-url="{{ url_for('main.admin_whatsapp_retry_outbox_item', item_id=item.id) }}" title="Relancer l'envoi immédiatement">
+                      🔄
+                    </button>
+                    <button type="button" class="wa-btn-row-delete" data-id="{{ item.id }}" data-url="{{ url_for('main.admin_whatsapp_delete_outbox_item', item_id=item.id) }}" title="Supprimer ce message de la file">
+                      🗑️
+                    </button>
+                  </div>
+                </td>
+              </tr>
+              {% else %}
+              <tr class="wa-empty-row">
+                <td colspan="7" class="wa-empty-td">
+                  <div class="wa-empty-state">
+                    {% if view_mode == 'sent' %}
+                      <span class="wa-empty-icon">📭</span>
+                      <strong>Aucun message envoyé pour le moment.</strong>
+                      <p class="muted">Les messages transmis s'afficheront dans cet historique.</p>
+                    {% else %}
+                      <span class="wa-empty-icon">✨</span>
+                      <strong>Aucun message en échec ni en attente</strong>
+                      <p class="muted">Tous les messages ont été transmis avec succès. La file est propre et légère !</p>
+                    {% endif %}
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}

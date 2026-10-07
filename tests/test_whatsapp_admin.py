@@ -12,6 +12,8 @@ def test_admin_whatsapp_page_and_proxy_routes(tmp_path):
     assert page.status_code == 200
     assert b"Passerelle WhatsApp" in page.data
     assert b"QR code WhatsApp" in page.data
+    assert b"js/admin_whatsapp.js" in page.data
+    assert b"setInterval" not in page.data
 
     with (
         patch("app.routes.get_gateway_status", return_value={"online": False, "connected": False}),
@@ -52,6 +54,11 @@ def test_admin_whatsapp_outbox_filter_and_item_actions(tmp_path):
     assert res_default.status_code == 200
     assert b"0611111111" in res_default.data
     assert b"0622222222" not in res_default.data
+    fragment = client.get("/admin/whatsapp?view=failed&fragment=1")
+    assert fragment.status_code == 200 and fragment.is_json
+    assert fragment.get_json()["count"] == 1
+    assert b"0611111111" in fragment.get_json()["html"].encode()
+    assert b"0622222222" not in fragment.get_json()["html"].encode()
 
     # 2. Vue envoyes : montre seulement les messages SENT
     res_sent = client.get("/admin/whatsapp?view=sent")
@@ -70,6 +77,8 @@ def test_admin_whatsapp_outbox_filter_and_item_actions(tmp_path):
         res_retry = client.post(f"/admin/whatsapp/outbox/{id_failed}/retry")
         assert res_retry.status_code == 200
         assert res_retry.get_json()["success"] is True
+        assert res_retry.get_json()["item"]["id"] == id_failed
+        assert res_retry.get_json()["item"]["status"] == "PENDING"
 
     # 5. Suppression unitaire d'un message
     res_del = client.post(f"/admin/whatsapp/outbox/{id_failed}/delete")

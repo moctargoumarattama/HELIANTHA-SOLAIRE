@@ -2148,6 +2148,16 @@ def admin_whatsapp():
     else:
         # Vue par defaut : affiche seulement les echecs et messages en attente (exclut les envoyes)
         outbox_items = list_whatsapp_outbox(limit=50, exclude_sent=True)
+    if request.args.get("fragment") == "1":
+        return jsonify(
+            success=True,
+            html=render_template(
+                "admin/_whatsapp_outbox_rows.html",
+                outbox_items=outbox_items,
+                view_mode=view,
+            ),
+            count=len(outbox_items),
+        )
     return render_template(
         "admin/whatsapp.html",
         settings=settings,
@@ -2199,10 +2209,15 @@ def admin_whatsapp_delete_outbox_item(item_id):
 
 @bp.post("/admin/whatsapp/outbox/<int:item_id>/retry")
 def admin_whatsapp_retry_outbox_item(item_id):
-    retry_whatsapp_outbox_item(item_id)
+    if not retry_whatsapp_outbox_item(item_id):
+        return jsonify(success=False, error="Message introuvable."), 404
     settings = _whatsapp_admin_settings()
     result = process_outbox(limit=10, gateway_url=settings["gateway_url"])
-    return jsonify(success=True, result=result)
+    item = get_db().execute(
+        "SELECT id, status, attempts, error_message FROM whatsapp_outbox WHERE id = ?",
+        (item_id,),
+    ).fetchone()
+    return jsonify(success=True, result=result, item=dict(item) if item else None)
 
 
 @bp.post("/admin/whatsapp/outbox/purge")
