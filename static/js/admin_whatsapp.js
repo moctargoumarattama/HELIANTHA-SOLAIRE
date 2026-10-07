@@ -278,16 +278,33 @@
   }
 
   async function deleteOne(button) {
-    if (button.disabled || !confirm(`Supprimer définitivement le message #${button.dataset.id} de la file ?`)) return;
+    if (button.disabled) return;
+    const ok = window.confirmAdminAction
+      ? await window.confirmAdminAction({
+          title: "Supprimer le message",
+          message: `Supprimer définitivement le message #${button.dataset.id} de la file d'attente ?`,
+          icon: "🗑️",
+          confirmText: "Supprimer",
+          danger: true,
+        })
+      : confirm(`Supprimer définitivement le message #${button.dataset.id} de la file ?`);
+    if (!ok) return;
+
     button.disabled = true;
     try {
       const response = await fetch(button.dataset.url, { method: "POST", headers: csrfHeaders() });
       const payload = await response.json();
       if (!response.ok || !payload.success) throw new Error("Suppression impossible");
       button.closest("tr")?.remove();
+      if (window.showAdminToast) {
+        window.showAdminToast(`Message #${button.dataset.id} supprimé de la file d'attente.`, "delete");
+      }
       if (outboxResult) outboxResult.textContent = `Message #${button.dataset.id} supprimé.`;
       await refreshOutbox();
     } catch (error) {
+      if (window.showAdminToast) {
+        window.showAdminToast("Erreur lors de la suppression.", "error");
+      }
       if (outboxResult) outboxResult.textContent = "Erreur lors de la suppression.";
       console.warn("Suppression WhatsApp indisponible :", error);
     } finally {
@@ -306,10 +323,23 @@
   replayButton?.addEventListener("click", () => void replayOutbox());
 
   document.getElementById("wa-logout")?.addEventListener("click", async () => {
-    if (!confirm("Déconnecter la session WhatsApp ?")) return;
+    const ok = window.confirmAdminAction
+      ? await window.confirmAdminAction({
+          title: "Déconnexion WhatsApp",
+          message: "Déconnecter la passerelle WhatsApp ? Le QR code devra être scanné à nouveau.",
+          icon: "📱",
+          confirmText: "Déconnecter",
+          danger: true,
+        })
+      : confirm("Déconnecter la session WhatsApp ?");
+    if (!ok) return;
+
     try {
       const response = await fetch(root.dataset.logoutUrl, { method: "POST", headers: csrfHeaders() });
       if (!response.ok) throw new Error("Déconnexion impossible");
+      if (window.showAdminToast) {
+        window.showAdminToast("Session WhatsApp déconnectée.", "info");
+      }
       requestImmediatePoll();
     } catch (error) {
       if (outboxResult) outboxResult.textContent = "Déconnexion momentanément indisponible.";

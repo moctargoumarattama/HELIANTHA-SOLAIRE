@@ -13,7 +13,7 @@
   <link rel="icon" href="{{ url_for('main.brand_image') }}" type="image/jpeg">
   <link rel="apple-touch-icon" href="{{ url_for('main.brand_image') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}?v=20261007-no-stock">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin_ajax.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin_ajax.css') }}?v=20261007-toasts">
 </head>
 <body class="admin-app">
   <div class="admin-backdrop" id="admin-backdrop" aria-hidden="true"></div>
@@ -22,18 +22,63 @@
       <span class="admin-mark" aria-hidden="true"><img class="admin-logo" src="{{ url_for('main.brand_image') }}" alt=""></span>
       <div><b>HELIANTHA</b><small>ADMIN</small></div>
     </a>
-    <nav>
-      <a class="admin-nav-link{% if request.endpoint == 'main.admin_dashboard' %} active{% endif %}" href="{{ url_for('main.admin_dashboard') }}">Tableau de bord</a>
-      <a class="admin-nav-link{% if request.endpoint in ('main.admin_quotes', 'main.admin_quote_detail', 'main.admin_quote_pdf') %} active{% endif %}" href="{{ url_for('main.admin_quotes') }}">Devis</a>
-      <a class="admin-nav-link{% if request.endpoint == 'main.admin_catalog' %} active{% endif %}" href="{{ url_for('main.admin_catalog') }}">Catalogue</a>
-      <a class="admin-nav-link{% if request.endpoint == 'main.admin_pumping_method' %} active{% endif %}" href="{{ url_for('main.admin_pumping_method') }}">Méthode Pompage</a>
-      <a class="admin-nav-link{% if request.endpoint == 'main.admin_pumping_rules' %} active{% endif %}" href="{{ url_for('main.admin_pumping_rules') }}">Règles Pompage solaire</a>
-      <a class="admin-nav-link{% if request.endpoint == 'main.admin_ongrid_rules' %} active{% endif %}" href="{{ url_for('main.admin_ongrid_rules') }}">Règles On-Grid</a>
-      <a class="admin-nav-link{% if request.endpoint == 'main.admin_tva' %} active{% endif %}" href="{{ url_for('main.admin_tva') }}"><span aria-hidden="true">%</span> TVA &amp; Transport</a>
-      <a class="admin-nav-link{% if request.endpoint and request.endpoint.startswith('main.admin_whatsapp') %} active{% endif %}" href="{{ url_for('main.admin_whatsapp') }}">WhatsApp</a>
-      <a class="admin-nav-link{% if request.endpoint == 'main.admin_users' %} active{% endif %}" href="{{ url_for('main.admin_users') }}">Utilisateurs</a>
-      <a class="admin-nav-link{% if request.endpoint == 'main.admin_settings' %} active{% endif %}" href="{{ url_for('main.admin_settings') }}">Paramètres</a>
+    <nav class="admin-sidebar-nav">
+      <a class="admin-nav-link{% if request.endpoint == 'main.admin_dashboard' %} active{% endif %}" href="{{ url_for('main.admin_dashboard') }}">
+        <span class="admin-nav-icon" aria-hidden="true">📊</span>
+        <span>Tableau de bord</span>
+      </a>
+      <a class="admin-nav-link{% if request.endpoint in ('main.admin_quotes', 'main.admin_quote_detail', 'main.admin_quote_pdf') %} active{% endif %}" href="{{ url_for('main.admin_quotes') }}">
+        <span class="admin-nav-icon" aria-hidden="true">📋</span>
+        <span>Devis</span>
+      </a>
+      <a class="admin-nav-link{% if request.endpoint == 'main.admin_catalog' %} active{% endif %}" href="{{ url_for('main.admin_catalog') }}">
+        <span class="admin-nav-icon" aria-hidden="true">📦</span>
+        <span>Catalogue</span>
+      </a>
+      <a class="admin-nav-link{% if request.endpoint == 'main.admin_pumping_method' %} active{% endif %}" href="{{ url_for('main.admin_pumping_method') }}">
+        <span class="admin-nav-icon" aria-hidden="true">💧</span>
+        <span>Méthode Pompage</span>
+      </a>
+      <a class="admin-nav-link{% if request.endpoint == 'main.admin_pumping_rules' %} active{% endif %}" href="{{ url_for('main.admin_pumping_rules') }}">
+        <span class="admin-nav-icon" aria-hidden="true">⚙️</span>
+        <span>Règles Pompage</span>
+      </a>
+      <a class="admin-nav-link{% if request.endpoint == 'main.admin_ongrid_rules' %} active{% endif %}" href="{{ url_for('main.admin_ongrid_rules') }}">
+        <span class="admin-nav-icon" aria-hidden="true">☀️</span>
+        <span>Règles On-Grid</span>
+      </a>
+      <a class="admin-nav-link{% if request.endpoint == 'main.admin_tva' %} active{% endif %}" href="{{ url_for('main.admin_tva') }}">
+        <span class="admin-nav-icon" aria-hidden="true">🧾</span>
+        <span>TVA &amp; Transport</span>
+      </a>
+      <a class="admin-nav-link{% if request.endpoint and request.endpoint.startswith('main.admin_whatsapp') %} active{% endif %}" href="{{ url_for('main.admin_whatsapp') }}">
+        <span class="admin-nav-icon" aria-hidden="true">💬</span>
+        <span>WhatsApp</span>
+      </a>
+      <a class="admin-nav-link{% if request.endpoint == 'main.admin_users' %} active{% endif %}" href="{{ url_for('main.admin_users') }}">
+        <span class="admin-nav-icon" aria-hidden="true">👥</span>
+        <span>Utilisateurs</span>
+      </a>
+      <a class="admin-nav-link{% if request.endpoint == 'main.admin_settings' %} active{% endif %}" href="{{ url_for('main.admin_settings') }}">
+        <span class="admin-nav-icon" aria-hidden="true">🔧</span>
+        <span>Paramètres</span>
+      </a>
     </nav>
+
+    <div class="admin-sidebar-footer">
+      {% set raw_user = session.get('admin_user', 'Admin') %}
+      {% set clean_user = raw_user.split('@')[0] | capitalize %}
+      <div class="admin-sidebar-user">
+        <div class="admin-user-avatar" aria-hidden="true">{{ clean_user[0] if clean_user else 'A' }}</div>
+        <div class="admin-user-info">
+          <span class="admin-user-name" title="{{ raw_user }}">{{ clean_user }}</span>
+          <span class="admin-user-status"><span class="user-status-dot"></span> Connecté</span>
+        </div>
+      </div>
+      <button type="button" class="admin-sidebar-logout-btn" onclick="openLogoutModal()" title="Se déconnecter" aria-label="Se déconnecter">
+        <span aria-hidden="true">🚪</span>
+      </button>
+    </div>
   </aside>
   <div class="admin-main">
     <header class="admin-topbar">
@@ -46,18 +91,59 @@
         <h1>{% block page_title %}Administration{% endblock %}</h1>
       </div>
       <div class="admin-topbar-actions">
-        <form method="post" action="{{ url_for('main.admin_logout') }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
-          <button class="ghost-button" type="submit">Déconnexion</button>
-        </form>
+        {% set raw_user = session.get('admin_user', 'Admin') %}
+        {% set clean_user = raw_user.split('@')[0] | capitalize %}
+        <div class="admin-topbar-user-pill" title="Compte actif : {{ raw_user }}">
+          <span class="user-status-dot"></span>
+          <span class="admin-topbar-user-name">{{ clean_user }}</span>
+        </div>
+        <button type="button" class="ghost-button admin-topbar-logout-btn" onclick="openLogoutModal()" title="Se déconnecter de la session">
+          <span aria-hidden="true">🚪</span> Déconnexion
+        </button>
       </div>
     </header>
     <main class="admin-content">
       {% block content %}{% endblock %}
     </main>
   </div>
+
+  {# Pont pour messages flashés convertis en toasts non intrusifs #}
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <script id="flashed-toast-data" type="application/json">{{ messages | tojson }}</script>
+    {% endif %}
+  {% endwith %}
+
+  {# Boîtes de dialogue / Popups propres #}
+  <dialog id="logout-confirm-dialog" class="admin-modal-dialog" aria-labelledby="logout-dialog-title">
+    <div class="admin-modal-box">
+      <div class="admin-modal-icon-badge" aria-hidden="true">🚪</div>
+      <h3 id="logout-dialog-title">Déconnexion</h3>
+      <p>Êtes-vous sûr de vouloir fermer votre session administrateur HELIANTHA ?</p>
+      <div class="admin-modal-actions">
+        <button type="button" class="ghost-button" onclick="closeLogoutModal()">Annuler</button>
+        <form method="post" action="{{ url_for('main.admin_logout') }}" style="margin: 0; display: flex; flex: 1;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+          <button type="submit" class="admin-button danger-btn" style="width: 100%;">Se déconnecter</button>
+        </form>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="admin-global-confirm-dialog" class="admin-modal-dialog" aria-labelledby="global-dialog-title">
+    <div class="admin-modal-box">
+      <div class="admin-modal-icon-badge" id="admin-confirm-icon" aria-hidden="true">⚠️</div>
+      <h3 id="global-dialog-title">Confirmation</h3>
+      <p id="admin-confirm-message">Êtes-vous sûr de vouloir continuer ?</p>
+      <div class="admin-modal-actions">
+        <button type="button" class="ghost-button" id="admin-confirm-cancel-btn">Annuler</button>
+        <button type="button" class="admin-button danger-btn" id="admin-confirm-ok-btn">Confirmer</button>
+      </div>
+    </div>
+  </dialog>
+
   <div id="admin-toast-container" aria-live="polite"></div>
-  <script src="{{ url_for('static', filename='js/admin_ajax.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/admin_ajax.js') }}?v=20261007-toasts"></script>
   <script>
     (() => {
       const toggle = document.getElementById("admin-menu-toggle");

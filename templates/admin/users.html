@@ -252,7 +252,9 @@
                       </span>
                     {% else %}
                       <form method="post" action="{{ url_for('main.admin_users') }}"
-                            onsubmit="return confirm('Confirmer la suppression définitive du compte {{ user.username }} ?');"
+                            data-confirm="Confirmer la suppression définitive du compte {{ user.username }} ?"
+                            data-confirm-title="Supprimer l'utilisateur"
+                            data-confirm-btn="Supprimer"
                             style="display: inline;">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
                         <input type="hidden" name="action" value="delete">

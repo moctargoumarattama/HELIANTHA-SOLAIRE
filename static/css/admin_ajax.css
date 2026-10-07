@@ -1,47 +1,249 @@
+/* ==========================================================================
+   HELIANTHA ADMIN - TOASTS & MODALES ÉLÉGANTES (NON AGAÇANTES)
+   ========================================================================== */
+
+/* Conteneur flottant des toasts (en haut à droite) */
 #admin-toast-container {
   position: fixed;
-  top: 18px;
-  right: 18px;
-  z-index: 1500;
-  display: grid;
-  gap: 8px;
-  max-width: min(400px, calc(100vw - 36px));
+  top: 20px;
+  right: 20px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: min(420px, calc(100vw - 32px));
   pointer-events: none;
 }
 
+/* Carte Toast Individuelle */
 .admin-ajax-toast {
+  pointer-events: auto;
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
   padding: 12px 16px;
-  border-radius: 10px;
-  background: #e5f7f1;
-  border: 1px solid #8bd6ba;
-  color: #075a3e;
-  box-shadow: 0 10px 30px #10223924;
+  border-radius: 12px;
+  background: #ffffff;
+  border: 1px solid #d1e2d8;
+  color: #1e3d32;
+  box-shadow: 0 10px 30px rgba(17, 58, 47, 0.15), 0 2px 8px rgba(0, 0, 0, 0.04);
   font-size: 13px;
   font-weight: 600;
+  overflow: hidden;
+  animation: toastSlideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.admin-ajax-toast.toast-hiding {
+  opacity: 0;
+  transform: translateX(30px);
+}
+
+@keyframes toastSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(100%) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+/* Variantes thématiques de toasts */
+.admin-ajax-toast.is-success,
+.admin-ajax-toast.toast-save {
+  background: #f0fdf4;
+  border-color: #86efac;
+  color: #14532d;
+}
+
+.admin-ajax-toast.is-delete {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #991b1b;
 }
 
 .admin-ajax-toast.is-error {
-  background: #fff1f1;
-  border-color: #f2b3b3;
-  color: #8f2020;
+  background: #fff1f2;
+  border-color: #fda4af;
+  color: #9f1239;
 }
 
+.admin-ajax-toast.is-info,
+.admin-ajax-toast.toast-info {
+  background: #f0f9ff;
+  border-color: #bae6fd;
+  color: #0369a1;
+}
+
+.admin-ajax-toast.toast-auth {
+  background: #f0fdfa;
+  border-color: #99f6e4;
+  color: #115e59;
+}
+
+/* Éléments internes du toast */
+.toast-icon-wrap {
+  font-size: 18px;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.toast-content-wrap {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.toast-title {
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.toast-message {
+  font-size: 12px;
+  font-weight: 500;
+  opacity: 0.9;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.toast-close-btn {
+  background: transparent;
+  border: none;
+  font-size: 14px;
+  color: currentColor;
+  opacity: 0.5;
+  cursor: pointer;
+  padding: 0 2px;
+  margin-left: 4px;
+  line-height: 1;
+  transition: opacity 0.15s ease;
+}
+
+.toast-close-btn:hover {
+  opacity: 1;
+}
+
+/* Barre de progression du timer */
+.toast-progress-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  background: currentColor;
+  opacity: 0.35;
+  width: 100%;
+  animation: toastProgress 3.5s linear forwards;
+}
+
+@keyframes toastProgress {
+  from { width: 100%; }
+  to { width: 0%; }
+}
+
+/* Modale de confirmation élégante (Popop propre) */
+.admin-modal-dialog {
+  border: none;
+  border-radius: 18px;
+  padding: 0;
+  width: min(440px, 92vw);
+  box-shadow: 0 25px 60px -15px rgba(15, 23, 42, 0.35);
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.admin-modal-dialog::backdrop {
+  background: rgba(15, 23, 42, 0.5);
+  backdrop-filter: blur(4px);
+  animation: modalBackdropFade 0.2s ease;
+}
+
+@keyframes modalBackdropFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.admin-modal-box {
+  padding: 26px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.admin-modal-icon-badge {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: #fef2f2;
+  border: 1px solid #fee2e2;
+  color: #dc2626;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  margin-bottom: 14px;
+}
+
+.admin-modal-box h3 {
+  margin: 0 0 8px;
+  font-size: 16.5px;
+  font-weight: 800;
+  color: #113a2f;
+}
+
+.admin-modal-box p {
+  margin: 0 0 22px;
+  font-size: 13px;
+  color: #556b61;
+  line-height: 1.5;
+}
+
+.admin-modal-actions {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  justify-content: center;
+}
+
+.admin-modal-actions button,
+.admin-modal-actions .ghost-button,
+.admin-modal-actions .admin-button {
+  flex: 1;
+  padding: 9px 18px !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  border-radius: 10px !important;
+}
+
+.admin-modal-actions .danger-btn {
+  background: #dc2626 !important;
+  border-color: #dc2626 !important;
+  color: #ffffff !important;
+}
+
+.admin-modal-actions .danger-btn:hover {
+  background: #b91c1c !important;
+  border-color: #b91c1c !important;
+}
+
+/* Erreurs de formulaire AJAX */
 .admin-ajax-field-error {
   display: block;
   margin-top: 5px;
-  color: #a32626;
+  color: #dc2626;
   font-size: 12px;
+  font-weight: 600;
 }
 
-.is-invalid { border-color: #d94949 !important; }
-
-.crm-inline-status-form {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 6px;
+.is-invalid {
+  border-color: #dc2626 !important;
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.15) !important;
 }
-
-.crm-inline-status-form select { max-width: 145px; padding: 5px 6px; font-size: 11px; }
-.crm-inline-status-form button { padding: 5px 8px; font-size: 11px; }
