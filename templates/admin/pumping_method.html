@@ -340,47 +340,16 @@
 <!-- MODE STANDARD : AUCUNE SIMULATION ACTIVE                   -->
 <!-- ========================================================== -->
 
-<!-- 1. EN-TÊTE HERO & FRISSE VISUELLE DU PIPELINE POMPAGE      -->
-<section class="panel pm-hero-card">
-  <div class="pm-hero-header">
-    <div class="pm-title-badge-row">
-      <span class="source-badge">Lecture seule</span>
-      <h2>Méthode de sélection Pompage</h2>
-    </div>
-    <p class="pm-hero-desc">
-      Cette page présente la logique utilisée par HeliAntha Smart Quote
-      pour sélectionner une pompe et sa configuration solaire.
-      Aucune donnée ne peut être modifiée ici.
-    </p>
+<!-- 1. EN-TÊTE COMPACT (ACCÈS DIRECT SANS BLA-BLA)            -->
+<header class="panel pm-hero-compact">
+  <div class="pm-hero-compact-left">
+    <span class="source-badge">Lecture seule</span>
+    <h2>Méthode de sélection Pompage</h2>
   </div>
-
-  <!-- Stepper Visuel en 3 Étapes -->
-  <div class="pm-stepper">
-    <div class="pm-step-item">
-      <div class="pm-step-badge">1</div>
-      <div class="pm-step-content">
-        <strong class="pm-step-title">💧 Saisie Puits</strong>
-        <span class="pm-step-sub">Débit ($m^3/h$) & HMT totale (m)</span>
-      </div>
-    </div>
-    <div class="pm-step-sep" aria-hidden="true">➔</div>
-    <div class="pm-step-item">
-      <div class="pm-step-badge">2</div>
-      <div class="pm-step-content">
-        <strong class="pm-step-title">⚙️ Sélection Pompe</strong>
-        <span class="pm-step-sub">Abaques Débit/HMT & plus petit CV</span>
-      </div>
-    </div>
-    <div class="pm-step-sep" aria-hidden="true">➔</div>
-    <div class="pm-step-item">
-      <div class="pm-step-badge">3</div>
-      <div class="pm-step-content">
-        <strong class="pm-step-title">☀️ Kit Solaire Direct</strong>
-        <span class="pm-step-sub">Variateur MPPT + 1.35× en panneaux</span>
-      </div>
-    </div>
+  <div class="pm-hero-compact-right">
+    <a class="pr-chip pr-chip-link" href="{{ url_for('main.admin_pumping_rules') }}">💧 Voir les règles &amp; tarifs →</a>
   </div>
-</section>
+</header>
 
 <!-- 2. CHIFFRES CLÉS & PARAMÈTRES COMMERCIAUX                   -->
 <section class="pm-stats-grid">

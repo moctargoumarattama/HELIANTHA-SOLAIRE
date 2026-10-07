@@ -17,57 +17,19 @@
   {% endif %}
 
   <!-- ========================================================== -->
-  <!-- 1. EN-TÊTE HERO COCKPIT & EXPLICATIONS DU PIPELINE ON-GRID -->
-  <!-- ========================================================== -->
-  <section class="panel og-hero-panel">
-    <div class="og-hero-header">
-      <div class="og-hero-title-group">
-        <div class="og-title-badge-row">
-          <span class="og-live-badge"><span class="og-live-dot"></span> Paramètres Actifs</span>
-          <span class="source-badge">Moteur HeliAntha On-Grid</span>
-        </div>
-        <h2>Règles &amp; Tarification On-Grid</h2>
-        <p class="og-hero-desc">
-          Cette page configure les forfaits techniques et barèmes appliqués automatiquement lors de la génération
-          des devis d'autoconsommation raccordée au réseau (« Réduire ma facture »).
-          Les formules sont automatiques : vous ajustez ici les montants unitaires facturés au client.
-        </p>
-      </div>
-      <div class="og-hero-actions">
-        <a class="og-link-tva" href="{{ url_for('main.admin_tva') }}">
-          <span>📊 Gérer la TVA &amp; Transport</span>
-          <span class="og-link-arrow">➔</span>
-        </a>
-      </div>
+  <!-- 1. EN-TÊTE COMPACT (ACCÈS DIRECT SANS BLA-BLA)            -->
+  <header class="panel og-hero-compact">
+    <div class="og-hero-compact-left">
+      <span class="og-hero-icon">☀️</span>
+      <h2>Règles &amp; Tarification On-Grid</h2>
+      <span class="og-live-badge"><span class="og-live-dot"></span> Paramètres Actifs</span>
     </div>
-
-    <!-- Frise explicative des 3 piliers On-Grid -->
-    <div class="og-pillars-bar">
-      <div class="og-pillar-item">
-        <div class="og-pillar-badge">1</div>
-        <div class="og-pillar-info">
-          <strong>📦 Forfaits par Panneau</strong>
-          <span>Protection, Câblage et Pose unitaire</span>
-        </div>
-      </div>
-      <div class="og-pillar-sep" aria-hidden="true">➔</div>
-      <div class="og-pillar-item">
-        <div class="og-pillar-badge">2</div>
-        <div class="og-pillar-info">
-          <strong>🔌 Limiteur d'Injection</strong>
-          <span>Forfaits Réseau Mono &amp; Triphasé</span>
-        </div>
-      </div>
-      <div class="og-pillar-sep" aria-hidden="true">➔</div>
-      <div class="og-pillar-item">
-        <div class="og-pillar-badge">3</div>
-        <div class="og-pillar-info">
-          <strong>☀️ Hypothèse PSH</strong>
-          <span>Ensoleillement fixe de référence</span>
-        </div>
-      </div>
+    <div class="og-hero-compact-right">
+      <a class="og-link-tva" href="{{ url_for('main.admin_tva') }}">
+        <span>📊 Gérer la TVA &amp; Transport →</span>
+      </a>
     </div>
-  </section>
+  </header>
 
   <!-- ========================================================== -->
   <!-- 2. SYNTHÈSE DES CHIFFRES CLÉS EN DIRECT (KPI CARDS)         -->
