@@ -31,6 +31,7 @@ from app.pumping_rules import (
     normalize_pump_cv,
 )
 from app.parameter_views import format_display_value
+from app.tax import get_vat_rates, money, vat_rate_for_component
 from app.services import BOMBuilder, CompatibilityChecker, PricingEngine as ServicePricingEngine, ProductSelector
 from app.services.compatibility import as_float, normalize_text, spec_value
 from app.services.hybrid_service import calculate_hybrid
@@ -164,6 +165,8 @@ class CalculationResult:
 class ContextView:
     def __init__(self, context: dict[str, Any] | None = None):
         context = context or {}
+        self.tax_context = deepcopy(context)
+        self.vat_rates = get_vat_rates(context)
         default_params = {
             key: {
                 "key": key,
@@ -365,7 +368,7 @@ class ContextView:
         return {
             "coefficient_1": rule.get("coefficient_1", 0.5),
             "coefficient_2": rule.get("coefficient_2", 1.3),
-            "vat_rate": rule.get("vat_rate", 0.20),
+            "vat_rate": float(vat_rate_for_component(self, "pumping", "pump")),
             "source_rule_key": rule.get("rule_key") or "pump-sale-parameters",
         }
 
@@ -431,6 +434,9 @@ class CalculationEngine:
         cfg = ContextView(context)
         technical = calculators[project](data, cfg)
         technical = self._phase3_enrich(project, technical, data, cfg)
+        for line in technical.selected_equipment:
+            component = line.get("component") or line.get("category") or line.get("financial_category")
+            line["vat_rate"] = float(vat_rate_for_component(cfg, project, component))
         offers = self._offers(technical, cfg)
         optimal = next((offer for offer in offers if offer["recommended"]), offers[0])
         warnings = technical.warnings
@@ -525,7 +531,7 @@ class CalculationEngine:
             bom = {
                 "version": version,
                 "lines": technical.selected_equipment,
-                "material_total": round(sum(float(line.get("total_price") or 0) for line in technical.selected_equipment), 2),
+                "material_total": float(money(sum(money(line.get("total_price")) for line in technical.selected_equipment))),
                 "currency": "DH",
                 "line_count": len(technical.selected_equipment),
                 "unpriced_line_count": 0,
@@ -736,7 +742,7 @@ class CalculationEngine:
                 description=description,
                 role=role,
                 financial_category=financial_category,
-                vat_rate=vat_rate,
+                vat_rate=float(vat_rate_for_component(cfg, project, component)),
                 source_reference=source_reference,
                 source_name=source_name,
                 technical_specs=technical_specs or {},
@@ -922,8 +928,10 @@ class CalculationEngine:
                 drive_brand = str(final.get("drive_brand") or "").strip()
                 if panels <= 0 or panel_power_w <= 0 or drive_power_kw <= 0 or not phase or not drive_brand:
                     raise ValidationError("Produit catalogue exact introuvable")
-                panel_vat_rate = float(final.get("rule_panel_vat_rate") or 0.10)
-                other_vat_rate = float(final.get("rule_other_vat_rate") or 0.20)
+                panel_vat_rate = float(vat_rate_for_component(cfg, "pumping", "panel"))
+                other_vat_rate = float(vat_rate_for_component(cfg, "pumping", "pump_drive"))
+                accessories_vat_rate = float(vat_rate_for_component(cfg, "pumping", "structure"))
+                installation_vat_rate = float(vat_rate_for_component(cfg, "pumping", "installation"))
 
                 if recommended_curve_mode and selected_pump:
                     pump_selection = selections.get("pump")
@@ -1052,7 +1060,7 @@ class CalculationEngine:
                     description=f"Structure pour panneau {panel_power_w:.0f} W.",
                     role="Structure photovoltaïque",
                     financial_category="structure",
-                    vat_rate=other_vat_rate,
+                    vat_rate=accessories_vat_rate,
                     source_reference=str(structure_rule.get("rule_key") or pump_rule_key),
                     source_name=str(structure_rule.get("source_name") or "HeliAntha"),
                     technical_specs={"panel_power_w": panel_power_w, "rule_key": pump_rule_key},
@@ -1090,7 +1098,7 @@ class CalculationEngine:
                     description=f"Coffret de protection {format_phase(phase)}.",
                     role="Coffret de protection",
                     financial_category="protections",
-                    vat_rate=other_vat_rate,
+                    vat_rate=accessories_vat_rate,
                     source_reference=str(coffret_rule.get("rule_key") or pump_rule_key),
                     source_name=str(coffret_rule.get("source_name") or "HeliAntha"),
                     technical_specs={"pump_cv": pump_cv, "phase": phase, "rule_key": pump_rule_key},
@@ -1128,7 +1136,7 @@ class CalculationEngine:
                     description="Câblage DC et accessoires par panneau.",
                     role="Câblage DC et accessoires",
                     financial_category="cabling",
-                    vat_rate=other_vat_rate,
+                    vat_rate=accessories_vat_rate,
                     source_reference=str(cabling_rule.get("rule_key") or pump_rule_key),
                     source_name=str(cabling_rule.get("source_name") or "HeliAntha"),
                     technical_specs={"panel_count": panels, "rule_key": pump_rule_key},
@@ -1173,7 +1181,7 @@ class CalculationEngine:
                     description=installation_description,
                     role="Installation et mise en service",
                     financial_category="installation",
-                    vat_rate=other_vat_rate,
+                    vat_rate=installation_vat_rate,
                     source_reference=str(installation_rule.get("rule_key") or pump_rule_key),
                     source_name=str(installation_rule.get("source_name") or "HeliAntha"),
                     technical_specs={"pump_cv": pump_cv, "panel_count": panels, "pricing_mode": installation_mode, "rule_key": pump_rule_key},
@@ -1208,6 +1216,8 @@ class CalculationEngine:
                     "solar_drive_kw": drive_power_kw,
                     "rule_panel_vat_rate": panel_vat_rate,
                     "rule_other_vat_rate": other_vat_rate,
+                    "rule_accessories_vat_rate": accessories_vat_rate,
+                    "rule_installation_vat_rate": installation_vat_rate,
                 })
                 if not recommended_curve_mode:
                     final_updates["existing_pump_cv"] = pump_cv
@@ -1228,7 +1238,9 @@ class CalculationEngine:
                         {"label": "Câblage", "value": f"{panels} × {float(cabling_unit_price):.0f} DH", "details": "Tarif par panneau."},
                         {"label": "Installation", "value": f"{float(installation_unit_price):.0f} DH HT" if installation_mode == "fixed" else f"{panels} × {float(installation_unit_price):.0f} DH", "details": format_pricing_mode(installation_mode)},
                         {"label": "TVA panneaux", "value": format_percent(panel_vat_rate), "details": "Appliquee aux panneaux uniquement."},
-                        {"label": "TVA autres", "value": format_percent(other_vat_rate), "details": "Appliquee aux autres postes."},
+                        {"label": "TVA équipements", "value": format_percent(other_vat_rate), "details": "Appliquée à la pompe et au variateur."},
+                        {"label": "TVA accessoires", "value": format_percent(accessories_vat_rate), "details": "Appliquée à la structure, au coffret et au câblage."},
+                        {"label": "TVA installation", "value": format_percent(installation_vat_rate), "details": "Appliquée à la pose et à la mise en service."},
                     ],
                 })
                 calculation_blocks.append(self._calc_block("Règle HeliAntha appliquée", [
@@ -1253,8 +1265,10 @@ class CalculationEngine:
                     self._calc_item("Coffret", coffret_unit_price, "DH HT", formula=f"Tranche pompe = {format_phase(phase)}"),
                     self._calc_item("Câblage et accessoires", cabling_unit_price, "DH / panneau", formula=f"{panels} × {self._format_decimal(cabling_unit_price, 0)} DH"),
                     self._calc_item("Installation", installation_unit_price, "DH HT", formula=f"{format_pricing_mode(installation_mode)}"),
-                    self._calc_item("TVA panneaux", panel_vat_rate, "%", decimals=0, formula=f"{format_percent(panel_vat_rate)} sur les panneaux"),
-                    self._calc_item("TVA autres", other_vat_rate, "%", decimals=0, formula=f"{format_percent(other_vat_rate)} sur les autres postes"),
+                    self._calc_item("TVA panneaux", panel_vat_rate * 100, "%", formula=f"{format_percent(panel_vat_rate)} sur les panneaux"),
+                    self._calc_item("TVA équipements", other_vat_rate * 100, "%", formula=f"{format_percent(other_vat_rate)} sur la pompe et le variateur"),
+                    self._calc_item("TVA accessoires", accessories_vat_rate * 100, "%", formula=f"{format_percent(accessories_vat_rate)} sur la structure, le coffret et le câblage"),
+                    self._calc_item("TVA installation", installation_vat_rate * 100, "%", formula=f"{format_percent(installation_vat_rate)} sur la pose"),
                 ]))
                 compat_items["configuration"] = {
                     "status": "compatible",
@@ -1626,6 +1640,7 @@ class CalculationEngine:
             result = calculate_ongrid(
                 d,
                 {
+                    **cfg.tax_context,
                     "ongrid_parameters": cfg.ongrid_parameters,
                     "products": cfg.all_products,
                 },
@@ -1695,6 +1710,7 @@ class CalculationEngine:
             result = calculate_hybrid(
                 d,
                 {
+                    **cfg.tax_context,
                     "ongrid_parameters": cfg.ongrid_parameters,
                     "products": cfg.all_products,
                 },
@@ -1786,14 +1802,8 @@ class CalculationEngine:
             pump_voltage_v = int(float(pump_rule.get("voltage_v") or (220 if phase == "monophase" else 380 if phase == "triphase" else 0) or 0))
             pump_power_kw = round(existing_pump_cv * 0.7355, 2)
             panel_kwp = panel_count * panel_power_w / WATTS_PER_KILOWATT
-            panel_vat_rate = next(
-                (float(row.get("vat_rate") or 0.10) for row in cfg.pumping_rule_rows("vat_pricing") if str(row.get("applies_to") or "") == "panels"),
-                0.10,
-            )
-            other_vat_rate = next(
-                (float(row.get("vat_rate") or 0.20) for row in cfg.pumping_rule_rows("vat_pricing") if str(row.get("applies_to") or "") == "others"),
-                0.20,
-            )
+            panel_vat_rate = float(vat_rate_for_component(cfg, "pumping", "panel"))
+            other_vat_rate = float(vat_rate_for_component(cfg, "pumping", "pump_drive"))
             final = {
                 "pump_existing": True,
                 "pump_power_kw": pump_power_kw,
@@ -1819,8 +1829,14 @@ class CalculationEngine:
                 "rule_other_vat_rate": other_vat_rate,
                 "pump_rule_mode": "existing_pump_cv",
             }
-            pump_vat_source = cfg.pumping_rule("vat_pricing", applies_to="panels") or {"vat_rate": panel_vat_rate}
-            other_vat_source = cfg.pumping_rule("vat_pricing", applies_to="others") or {"vat_rate": other_vat_rate}
+            pump_vat_source = {
+                "key": "pumping_panels", "value": panel_vat_rate,
+                "source_type": "heliantha", "source_name": "TVA centralisée", "source_reference": "pumping_panels",
+            }
+            other_vat_source = {
+                "key": "pumping_equipment", "value": other_vat_rate,
+                "source_type": "heliantha", "source_name": "TVA centralisée", "source_reference": "pumping_equipment",
+            }
             resolved_sources = {
                 "pump_power_cv": self._resolved_source(
                     "Puissance pompe existante",

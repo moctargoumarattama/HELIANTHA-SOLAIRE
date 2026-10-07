@@ -8,6 +8,7 @@ from math import ceil
 from typing import Any
 
 from app.defaults import ONGRID_PARAMETER_DEFAULTS
+from app.tax import money, vat_rate_for_component
 
 
 MONEY = Decimal("0.01")
@@ -21,7 +22,7 @@ def _decimal(value: Any, default: Decimal = Decimal("0")) -> Decimal:
 
 
 def _money(value: Decimal) -> Decimal:
-    return value.quantize(MONEY, rounding=ROUND_HALF_EVEN)
+    return money(value)
 
 
 def _as_float(value: Decimal) -> float:
@@ -41,6 +42,14 @@ def parameters_from_context(context: dict[str, Any] | None) -> dict[str, Decimal
     for key, row in rows.items():
         if key in params:
             params[key] = _decimal(row.get("value"), params[key])
+    for key, component in {
+        "vat_pv_rate": "panel",
+        "vat_standard_rate": "inverter",
+        "vat_accessories_rate": "structure",
+        "vat_transport_rate": "transport",
+        "vat_installation_rate": "installation",
+    }.items():
+        params[key] = vat_rate_for_component(context, "photovoltaic", component) * Decimal("100")
     return params
 
 
@@ -209,7 +218,7 @@ def _catalog_line(
         "total_price": _as_float(total),
         "price_status": "catalog_price",
         "currency": product.get("currency") or "DH",
-        "vat_rate": float(vat_rate / Decimal("100")),
+        "vat_rate": float(vat_rate),
         "technical_reason": "Produit catalogue On-Grid retenu.",
         "selection_reasons": ["Dimensionnement On-Grid HeliAntha."],
         "compatibility_status": "compatible",
@@ -251,7 +260,7 @@ def _service_line(
         "total_price": _as_float(total),
         "price_status": "rule_price",
         "currency": "DH",
-        "vat_rate": float(vat_rate / Decimal("100")),
+        "vat_rate": float(vat_rate),
         "technical_reason": "Forfait On-Grid administrable.",
         "selection_reasons": ["Règle On-Grid HeliAntha."],
         "compatibility_status": "compatible",
@@ -299,14 +308,14 @@ def calculate_ongrid(data: dict[str, Any], context: dict[str, Any] | None) -> di
     )
 
     lines = [
-        _catalog_line("panel", panel, panel_count, "Panneaux photovoltaïques", params["vat_pv_rate"], "principal_equipment"),
-        _catalog_line("inverter", inverter, Decimal("1"), f"Onduleur réseau {inverter_brand or 'On-Grid'}", params["vat_standard_rate"], "principal_equipment"),
-        _catalog_line("structure", structure, panel_count, "Structure photovoltaïque", params["vat_standard_rate"], "structure"),
-        _service_line("protection_acdc", "protections", "Protection AC/DC", panel_count, params["protection_acdc_per_pv"], params["vat_standard_rate"], "protections"),
-        _service_line("cabling_acdc", "cables", "Câblage AC/DC", panel_count, params["cablage_acdc_per_pv"], params["vat_standard_rate"], "cabling"),
-        _service_line("injection_limiter", "accessories", "Limiteur d'injection", Decimal("1"), injection_limit, params["vat_standard_rate"], "accessories"),
-        _service_line("installation", "services", "Installation et mise en service", panel_count, params["installation_per_pv"], params["vat_standard_rate"], "installation"),
-        _service_line("transport", "transport", "Transport", panel_count, params["transport_per_pv"], params["vat_transport_rate"], "transport"),
+        _catalog_line("panel", panel, panel_count, "Panneaux photovoltaïques", vat_rate_for_component(context, "photovoltaic", "panel"), "principal_equipment"),
+        _catalog_line("inverter", inverter, Decimal("1"), f"Onduleur réseau {inverter_brand or 'On-Grid'}", vat_rate_for_component(context, "photovoltaic", "inverter"), "principal_equipment"),
+        _catalog_line("structure", structure, panel_count, "Structure photovoltaïque", vat_rate_for_component(context, "photovoltaic", "structure"), "structure"),
+        _service_line("protection_acdc", "protections", "Protection AC/DC", panel_count, params["protection_acdc_per_pv"], vat_rate_for_component(context, "photovoltaic", "protection_acdc"), "protections"),
+        _service_line("cabling_acdc", "cables", "Câblage AC/DC", panel_count, params["cablage_acdc_per_pv"], vat_rate_for_component(context, "photovoltaic", "cabling_acdc"), "cabling"),
+        _service_line("injection_limiter", "accessories", "Limiteur d'injection", Decimal("1"), injection_limit, vat_rate_for_component(context, "photovoltaic", "injection_limiter"), "accessories"),
+        _service_line("installation", "services", "Installation et mise en service", panel_count, params["installation_per_pv"], vat_rate_for_component(context, "photovoltaic", "installation"), "installation"),
+        _service_line("transport", "transport", "Transport", panel_count, params["transport_per_pv"], vat_rate_for_component(context, "photovoltaic", "transport"), "transport"),
     ]
 
     return {

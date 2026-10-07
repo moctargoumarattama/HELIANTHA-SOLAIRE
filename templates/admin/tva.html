@@ -1,0 +1,50 @@
+{% extends "admin/base.html" %}
+{% block title %}TVA - HeliAntha Admin{% endblock %}
+{% block page_title %}Taux de TVA{% endblock %}
+{% block content %}
+{% for category, message in get_flashed_messages(with_categories=True) %}
+  <div class="{{ 'admin-success' if category == 'success' else 'admin-alert' }}" role="{{ 'status' if category == 'success' else 'alert' }}">{{ message }}</div>
+{% endfor %}
+
+<section class="learning-panel">
+  <h2>Une saisie claire pour tous vos devis</h2>
+  <p>Saisissez les taux sous forme de pourcentage direct (ex : tapez 10 pour 10 %, 20 pour 20 %, 0 pour exonéré).</p>
+  <p>Plage autorisée : 0 % à 30 %.</p>
+  <div class="legend-row">
+    <span>0 % = exonération</span>
+    <span>On-Grid et Hybride : mêmes taux</span>
+    <span>Nouveaux devis uniquement</span>
+  </div>
+</section>
+
+<form method="post" class="panel catalog-form">
+  {% for profile in profiles %}
+  <section class="form-section" aria-labelledby="profile-{{ profile.key }}">
+    <h2 id="profile-{{ profile.key }}">{{ profile.title }}</h2>
+    <div class="form-grid">
+      {% for field in fields if field.profile == profile.key %}
+      <label for="{{ field.key }}">
+        {{ field.label }}
+        <div class="input-with-unit">
+          <input id="{{ field.key }}" name="{{ field.key }}" type="number"
+                 min="0" max="30" step="any" required
+                 value="{{ values.get(field.key, '') }}" placeholder="{{ field.default }}"
+                 {% if errors.get(field.key) %}aria-invalid="true" aria-describedby="error-{{ field.key }}"{% endif %}>
+          <small>%</small>
+        </div>
+        {% if errors.get(field.key) %}
+        <small class="field-error" id="error-{{ field.key }}">{{ errors[field.key] }}</small>
+        {% endif %}
+      </label>
+      {% endfor %}
+    </div>
+    {% if profile.key == 'pumping' %}
+    <p class="muted">Le taux de transport s’appliquera lorsqu’un poste de transport sera facturé.</p>
+    {% endif %}
+  </section>
+  {% endfor %}
+  <div class="detail-actions">
+    <button class="admin-button" type="submit">Enregistrer les taux de TVA</button>
+  </div>
+</form>
+{% endblock %}

@@ -10,6 +10,7 @@ from flask import (
     Response,
     abort,
     current_app,
+    flash,
     jsonify,
     redirect,
     render_template,
@@ -37,6 +38,7 @@ from .db import (
     list_products,
     list_quotes,
     list_users,
+    list_vat_rates,
     list_whatsapp_outbox,
     load_calculation_context,
     save_user,
@@ -52,8 +54,18 @@ from .db import (
     update_pumping_solar_rule,
     update_quote_selected_offer,
     update_quote_status,
+    update_vat_rates,
 )
 from .defaults import PROJECT_LABELS, PUBLIC_PROJECTS, QUOTE_STATUSES
+from .tax import (
+    VAT_FIELDS,
+    VAT_PROFILES,
+    TaxValidationError,
+    line_vat_amount,
+    money,
+    parse_vat_percentage,
+    vat_rate_for_component,
+)
 from .pumping_rules import (
     PUMPING_RULE_SECTIONS,
     format_cv,
@@ -230,26 +242,27 @@ def _display_equipment_lines(lines):
         specs = row.get("technical_specs") or {}
         row["display_reference"] = ""
         row["display_designation"] = simple_designation(row, specs)
-        unit_ht = float(row.get("unit_price") or 0)
-        total_ht = float(row.get("total_price") or 0)
+        unit_ht = money(row.get("unit_price") or 0)
+        total_ht = money(row.get("total_price") or 0)
         vat_rate = float(row.get("vat_rate") or 0)
-        row["display_unit_price_ht"] = unit_ht
-        row["display_total_price_ht"] = total_ht
+        row["display_unit_price_ht"] = float(unit_ht)
+        row["display_total_price_ht"] = float(total_ht)
         row["display_vat_rate"] = f"{clean_number(vat_rate * 100, 1)} %"
-        row["display_vat_amount"] = round(total_ht * vat_rate, 2)
-        row["display_total_ttc"] = round(total_ht + row["display_vat_amount"], 2)
+        line_vat = line_vat_amount(row)
+        row["display_vat_amount"] = float(line_vat)
+        row["display_total_ttc"] = float(money(total_ht + line_vat))
         display_lines.append(row)
     return display_lines
 
 
 def _financial_summary_rows(financial_breakdown: dict) -> list[dict]:
     categories = {
-        item.get("key"): float(item.get("amount") or 0)
+        item.get("key"): money(item.get("amount") or 0)
         for item in (financial_breakdown.get("categories") or [])
     }
 
     def total(*keys: str) -> float:
-        return round(sum(categories.get(key, 0) for key in keys), 2)
+        return float(money(sum(categories.get(key, 0) for key in keys)))
 
     return [
         {"label": "Matériel", "amount": total("principal_equipment")},
@@ -958,9 +971,7 @@ def _method_pump_sale_parameters(context):
     )
     coefficient_1 = float(rule.get("coefficient_1") or 0.5)
     coefficient_2 = float(rule.get("coefficient_2") or 1.3)
-    vat_rate = float(rule.get("vat_rate") or 0.20)
-    if vat_rate > 1:
-        vat_rate = vat_rate / 100
+    vat_rate = float(vat_rate_for_component(context, "pumping", "pump"))
     return {
         "coefficient_1": coefficient_1,
         "coefficient_2": coefficient_2,
@@ -1502,7 +1513,16 @@ def admin_pumping_rules():
         rules = list_pumping_solar_rules()
         rule_id = request.form.get("rule_id", type=int)
         current = next((row for row in rules if int(row.get("id") or 0) == int(rule_id or 0)), None) if rule_id else None
-        payload = _pumping_rule_payload(rule_type, request.form, current)
+        try:
+            payload = _pumping_rule_payload(rule_type, request.form, current)
+        except TaxValidationError as exc:
+            flash(str(exc), "error")
+            return render_template(
+                "admin/pumping_rules.html",
+                sections=group_rules(list_pumping_solar_rules()),
+                section_definitions=PUMPING_RULE_SECTIONS,
+                saved=False,
+            ), 400
 
         if action == "add_rule":
             if not section.get("addable"):
@@ -1559,7 +1579,11 @@ def admin_ongrid_rules():
             for key, value in request.form.items()
             if key.startswith("value_")
         }
-        update_ongrid_parameters(values, changed_by=session.get("admin_user", "HeliAntha"))
+        try:
+            update_ongrid_parameters(values, changed_by=session.get("admin_user", "HeliAntha"))
+        except TaxValidationError as exc:
+            flash(str(exc), "error")
+            return redirect(url_for("main.admin_ongrid_rules"))
         return redirect(url_for("main.admin_ongrid_rules", saved=1))
 
     groups = [
@@ -1577,9 +1601,9 @@ def admin_ongrid_rules():
         },
         {
             "key": "taxes",
-            "title": "Taxes et soleil utilisé pour l'estimation",
-            "intro": "Ces valeurs servent à calculer le prix TTC et la taille de l'installation. Le soleil utilisé ici est une valeur fixe, pas une ville.",
-            "keys": ["vat_pv_rate", "vat_transport_rate", "vat_standard_rate", "psh_hours"],
+            "title": "Soleil utilisé pour l'estimation",
+            "intro": "Le soleil utilisé ici est une valeur fixe, pas une ville. Les taux de TVA sont gérés dans la page TVA.",
+            "keys": ["psh_hours"],
         },
     ]
     friendly = {
@@ -1668,6 +1692,34 @@ def admin_ongrid_rules():
         saved=bool(request.args.get("saved")),
     )
 
+
+
+@bp.route("/admin/tva", methods=["GET", "POST"])
+def admin_tva():
+    values = {row["key"]: row["value"] for row in list_vat_rates()}
+    errors = {}
+    if request.method == "POST":
+        values = {field["key"]: request.form.get(field["key"], "") for field in VAT_FIELDS}
+        for field in VAT_FIELDS:
+            key = field["key"]
+            try:
+                parse_vat_percentage(values[key])
+            except TaxValidationError as exc:
+                errors[key] = str(exc)
+        if errors:
+            for message in dict.fromkeys(errors.values()):
+                flash(message, "error")
+        else:
+            update_vat_rates(values, changed_by=session.get("admin_user", "HeliAntha"))
+            flash("Taux de TVA mis à jour avec succès", "success")
+            return redirect(url_for("main.admin_tva"))
+    return render_template(
+        "admin/tva.html",
+        profiles=VAT_PROFILES,
+        fields=VAT_FIELDS,
+        values=values,
+        errors=errors,
+    ), 400 if errors else 200
 
 
 @bp.route("/admin/parametres", methods=["GET", "POST"])
@@ -1884,6 +1936,13 @@ def _pumping_rule_payload(rule_type: str, form, current: dict | None = None) -> 
         raw = (form.get(f"field_{key}") or "").strip()
         kind = field.get("kind")
         if kind == "number":
+            if key == "vat_rate":
+                payload[key] = (
+                    float(parse_vat_percentage(raw) / 100)
+                    if f"field_{key}" in form
+                    else current.get(key)
+                )
+                continue
             value = parse_number(raw, None)
             if value is None and current.get(key) not in (None, ""):
                 value = current.get(key)
@@ -1891,8 +1950,6 @@ def _pumping_rule_payload(rule_type: str, form, current: dict | None = None) -> 
                 value = int(round(float(value)))
             if value is not None and key == "pump_cv":
                 value = normalize_pump_cv(value)
-            if value is not None and key == "vat_rate" and float(value) > 1:
-                value = float(value) / 100
             payload[key] = value
         elif kind == "select":
             payload[key] = raw or current.get(key) or ""

@@ -3,6 +3,9 @@
 {% block page_title %}Regles On-Grid{% endblock %}
 
 {% block content %}
+  {% for category, message in get_flashed_messages(with_categories=True) %}
+    <div class="{{ 'admin-success' if category == 'success' else 'admin-alert' }}" role="alert">{{ message }}</div>
+  {% endfor %}
   {% if saved %}
     <div class="admin-success">Regles On-Grid enregistrees.</div>
   {% endif %}
@@ -11,10 +14,11 @@
     <div class="learning-panel">
       <h2>Reglages On-Grid</h2>
       <p>
-        Cette page sert a modifier les prix et taux utilises dans le devis
+        Cette page sert a modifier les prix utilises dans le devis
         "Reduire ma consommation". Les formules restent automatiques :
         vous changez seulement les montants appliques au devis.
       </p>
+      <p><a class="text-button" href="{{ url_for('main.admin_tva') }}">Gérer les taux dans la page TVA</a></p>
       <div class="legend-row">
         <span>Exemple : 14 panneaux x pose par panneau</span>
         <span>Pris en compte immediatement</span>

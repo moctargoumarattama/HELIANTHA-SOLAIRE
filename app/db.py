@@ -62,6 +62,7 @@ from .defaults import (
     TECHNICAL_REFERENCE,
 )
 from .pumping_rules import PUMPING_SOLAR_RULE_DEFAULTS
+from .tax import VAT_FIELDS, TaxValidationError, get_vat_rates, parse_vat_percentage
 
 
 SCHEMA = """
@@ -220,6 +221,13 @@ CREATE TABLE IF NOT EXISTS ongrid_parameters (
     description TEXT,
     updated_by TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS vat_rates (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_by TEXT,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -415,6 +423,7 @@ def ensure_schema(db=None):
     _migrate_public_tracking(db)
     _migrate_users(db)
     _seed_defaults(db)
+    _seed_vat_rates(db)
     db.commit()
 
 
@@ -896,6 +905,125 @@ def utc_now():
     return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
+def _seed_vat_rates(db):
+    """Migrate legacy active rates once; subsequent initialization preserves all edits."""
+    existing = {row["key"]: dict(row) for row in db.execute("SELECT * FROM vat_rates").fetchall()}
+    if len(existing) == len(VAT_FIELDS) and all(field["key"] in existing for field in VAT_FIELDS):
+        return
+    context = {
+        "vat_rates": existing,
+        "ongrid_parameters": {
+            row["key"]: dict(row) for row in db.execute("SELECT * FROM ongrid_parameters").fetchall()
+        },
+        "pumping_solar_rules": {
+            row["rule_key"]: dict(row)
+            for row in db.execute("SELECT * FROM pumping_solar_rules WHERE active = 1").fetchall()
+        },
+    }
+    rates = get_vat_rates(context)
+    db.executemany(
+        "INSERT OR IGNORE INTO vat_rates (key, value, updated_by) VALUES (?, ?, ?)",
+        [(field["key"], format(rates[field["key"]], "f"), "Migration TVA") for field in VAT_FIELDS],
+    )
+
+
+def _validate_vat_values(values):
+    known = {field["key"] for field in VAT_FIELDS}
+    parsed = {}
+    errors = {}
+    for key, raw in values.items():
+        if key not in known:
+            errors[key] = "Paramètre de TVA inconnu."
+            continue
+        try:
+            parsed[key] = parse_vat_percentage(raw)
+        except TaxValidationError as exc:
+            errors[key] = str(exc)
+    if errors:
+        raise TaxValidationError(next(iter(errors.values())), errors=errors)
+    return parsed
+
+
+def _sync_legacy_vat_rates(db, changed_by):
+    """Keep old administrative readers compatible; calculations use the central profiles."""
+    rates = {row["key"]: parse_vat_percentage(row["value"]) for row in db.execute("SELECT * FROM vat_rates").fetchall()}
+    timestamp = utc_now()
+    for old_key, central_key in (
+        ("vat_pv_rate", "residential_panels"),
+        ("vat_standard_rate", "residential_equipment"),
+        ("vat_transport_rate", "residential_transport"),
+    ):
+        db.execute(
+            "UPDATE ongrid_parameters SET value = ?, updated_by = ?, updated_at = ? WHERE key = ?",
+            (format(rates[central_key], "f"), changed_by, timestamp, old_key),
+        )
+    for applies_to, central_key in (
+        ("panels", "pumping_panels"),
+        ("others", "pumping_accessories"),
+        ("transport", "pumping_transport"),
+    ):
+        db.execute(
+            "UPDATE pumping_solar_rules SET vat_rate = ?, updated_by = ?, updated_at = ? "
+            "WHERE rule_type = 'vat_pricing' AND applies_to = ?",
+            (float(rates[central_key] / 100), changed_by, timestamp, applies_to),
+        )
+    db.execute(
+        "UPDATE pumping_solar_rules SET vat_rate = ?, updated_by = ?, updated_at = ? WHERE rule_type = 'pump_sale_parameters'",
+        (float(rates["pumping_equipment"] / 100), changed_by, timestamp),
+    )
+
+
+def _write_vat_rates(db, values, changed_by):
+    timestamp = utc_now()
+    db.executemany(
+        "INSERT INTO vat_rates (key, value, updated_by, updated_at) VALUES (?, ?, ?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_by = excluded.updated_by, updated_at = excluded.updated_at",
+        [(key, format(value, "f"), changed_by, timestamp) for key, value in values.items()],
+    )
+    _sync_legacy_vat_rates(db, changed_by)
+
+
+def list_vat_rates():
+    db = get_db()
+    ensure_schema(db)
+    rows = {row["key"]: dict(row) for row in db.execute("SELECT * FROM vat_rates").fetchall()}
+    return [dict(rows[field["key"]], label=field["label"], profile=field["profile"]) for field in VAT_FIELDS]
+
+
+def update_vat_rates(values, changed_by="HeliAntha"):
+    # Validate the entire payload before initialization or any writes. A failed form
+    # neither partially changes valid fields nor invalidates the calculation cache.
+    parsed = _validate_vat_values(values)
+    if not parsed:
+        return
+    db = get_db()
+    ensure_schema(db)
+    with db:
+        _write_vat_rates(db, parsed, changed_by)
+    invalidate_calculation_context()
+
+
+def _validated_legacy_vat_fraction(raw):
+    percentage = parse_vat_percentage(parse_vat_percentage(raw) * 100)
+    return float(percentage / 100)
+
+
+def _pumping_vat_updates(rule, fraction):
+    if int(rule.get("active", 1) or 0) != 1:
+        return {}
+    if rule.get("rule_type") == "pump_sale_parameters":
+        components = ("equipment",)
+    elif rule.get("rule_type") == "vat_pricing":
+        components = {
+            "panels": ("panels",), "transport": ("transport",),
+            "others": ("equipment", "accessories", "installation"),
+        }.get(rule.get("applies_to"), ())
+    else:
+        components = ()
+    percentage = parse_vat_percentage(str(fraction)) * 100
+    return {f"pumping_{component}": percentage for component in components}
+
+
 def _load_raw_calculation_context():
     db = get_db()
     ensure_schema(db)
@@ -928,6 +1056,7 @@ def _load_raw_calculation_context():
         "pricing_rules": pricing,
         "pumping_solar_rules": pumping_rules,
         "ongrid_parameters": ongrid_parameters,
+        "vat_rates": {row["key"]: dict(row) for row in db.execute("SELECT * FROM vat_rates").fetchall()},
         "products": products,
         "technical_reference": reference,
     }
@@ -1574,7 +1703,9 @@ def get_pumping_solar_rule(rule_id):
 
 
 def update_pumping_solar_rule(rule_id, data: dict[str, object], changed_by: str = "HeliAntha") -> bool:
-    invalidate_calculation_context()
+    data = dict(data)
+    if "vat_rate" in data and data["vat_rate"] not in (None, ""):
+        data["vat_rate"] = _validated_legacy_vat_fraction(data["vat_rate"])
     db = get_db()
     ensure_schema(db)
     row = db.execute("SELECT * FROM pumping_solar_rules WHERE id = ?", (rule_id,)).fetchone()
@@ -1617,15 +1748,24 @@ def update_pumping_solar_rule(rule_id, data: dict[str, object], changed_by: str 
     updates["updated_by"] = changed_by
     updates["updated_at"] = utc_now()
     assignments = ", ".join(f"{key} = ?" for key in updates)
-    db.execute(
-        f"UPDATE pumping_solar_rules SET {assignments} WHERE id = ?",
-        tuple(updates.values()) + (rule_id,),
-    )
-    db.commit()
+    with db:
+        db.execute(
+            f"UPDATE pumping_solar_rules SET {assignments} WHERE id = ?",
+            tuple(updates.values()) + (rule_id,),
+        )
+        merged = dict(current, **updates)
+        if merged.get("vat_rate") not in (None, "") and ("vat_rate" in updates or "applies_to" in updates):
+            central = _pumping_vat_updates(merged, merged["vat_rate"])
+            if central:
+                _write_vat_rates(db, central, changed_by)
+    invalidate_calculation_context()
     return True
 
 
 def create_pumping_solar_rule(data: dict[str, object], changed_by: str = "HeliAntha") -> int:
+    data = dict(data)
+    if data.get("vat_rate") not in (None, ""):
+        data["vat_rate"] = _validated_legacy_vat_fraction(data["vat_rate"])
     db = get_db()
     ensure_schema(db)
     payload = {
@@ -1661,11 +1801,16 @@ def create_pumping_solar_rule(data: dict[str, object], changed_by: str = "HeliAn
     }
     columns = ", ".join(payload.keys())
     placeholders = ", ".join("?" for _ in payload)
-    cursor = db.execute(
-        f"INSERT INTO pumping_solar_rules ({columns}) VALUES ({placeholders})",
-        tuple(payload.values()),
-    )
-    db.commit()
+    with db:
+        cursor = db.execute(
+            f"INSERT INTO pumping_solar_rules ({columns}) VALUES ({placeholders})",
+            tuple(payload.values()),
+        )
+        if payload["vat_rate"] not in (None, ""):
+            central = _pumping_vat_updates(payload, payload["vat_rate"])
+            if central:
+                _write_vat_rates(db, central, changed_by)
+    invalidate_calculation_context()
     return int(cursor.lastrowid)
 
 
@@ -1676,7 +1821,21 @@ def list_ongrid_parameters():
 
 
 def update_ongrid_parameters(values: dict[str, object], changed_by: str = "HeliAntha") -> None:
-    invalidate_calculation_context()
+    legacy_vat = {
+        "vat_pv_rate": ("panels",), "vat_transport_rate": ("transport",),
+        "vat_standard_rate": ("equipment", "accessories", "installation"),
+    }
+    central = {}
+    errors = {}
+    for key, raw in values.items():
+        if key in legacy_vat:
+            try:
+                value = parse_vat_percentage(raw)
+                central.update({f"residential_{component}": value for component in legacy_vat[key]})
+            except TaxValidationError as exc:
+                errors[key] = str(exc)
+    if errors:
+        raise TaxValidationError(next(iter(errors.values())), errors=errors)
     db = get_db()
     ensure_schema(db)
     known = {
@@ -1684,28 +1843,31 @@ def update_ongrid_parameters(values: dict[str, object], changed_by: str = "HeliA
         for row in db.execute("SELECT * FROM ongrid_parameters").fetchall()
     }
     defaults = {key: (label, value, unit, description) for key, label, value, unit, description in ONGRID_PARAMETER_DEFAULTS}
-    for key, raw_value in values.items():
-        if key not in defaults:
-            continue
-        value_text = str(raw_value or "").strip().replace(",", ".")
-        if not value_text:
-            continue
-        label, _default, unit, description = defaults[key]
-        if key in known:
-            db.execute(
-                """UPDATE ongrid_parameters
-                SET value = ?, updated_by = ?, updated_at = ?
-                WHERE key = ?""",
-                (value_text, changed_by, utc_now(), key),
-            )
-        else:
-            db.execute(
-                """INSERT INTO ongrid_parameters
-                (key, label, value, unit, description, updated_by)
-                VALUES (?, ?, ?, ?, ?, ?)""",
-                (key, label, value_text, unit, description, changed_by),
-            )
-    db.commit()
+    with db:
+        for key, raw_value in values.items():
+            if key not in defaults:
+                continue
+            value_text = str("" if raw_value is None else raw_value).strip().replace(",", ".")
+            if not value_text:
+                continue
+            label, _default, unit, description = defaults[key]
+            if key in known:
+                db.execute(
+                    """UPDATE ongrid_parameters
+                    SET value = ?, updated_by = ?, updated_at = ?
+                    WHERE key = ?""",
+                    (value_text, changed_by, utc_now(), key),
+                )
+            else:
+                db.execute(
+                    """INSERT INTO ongrid_parameters
+                    (key, label, value, unit, description, updated_by)
+                    VALUES (?, ?, ?, ?, ?, ?)""",
+                    (key, label, value_text, unit, description, changed_by),
+                )
+        if central:
+            _write_vat_rates(db, central, changed_by)
+    invalidate_calculation_context()
 
 
 def active_reference():

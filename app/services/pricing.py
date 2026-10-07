@@ -7,9 +7,10 @@ priced catalogue product yet.
 
 from __future__ import annotations
 
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal
 from typing import Any
 
+from app.tax import line_vat_amount, money, vat_amount, vat_rate_for_component
 
 MAIN_EQUIPMENT_CATEGORIES = {
     "panels", "pumps", "drives"
@@ -24,7 +25,7 @@ def _decimal(value: Any) -> Decimal:
 
 
 def _money(value: Decimal | float | int) -> Decimal:
-    return _decimal(value).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return money(value)
 
 
 def _float(value: Decimal) -> float:
@@ -76,17 +77,18 @@ class PricingEngine:
         demo_prices = False
         line_items: list[dict[str, Any]] = []
 
-        global_vat_rate = _decimal(context.r("vat_rate", 0))
+        global_vat_rate = vat_rate_for_component(context, project, "inverter")
 
         for item in equipment:
             financial_category = item.get("financial_category") or self._financial_category(item)
             total = _money(item.get("total_price"))
             categories[financial_category] = categories.get(financial_category, Decimal("0")) + total
-            line_vat_rate = self._line_vat_rate(project, item, financial_category, global_vat_rate)
+            line_vat_rate = self._line_vat_rate(project, item, financial_category, context)
             line_items.append({
                 "category": financial_category,
                 "total": _decimal(total),
                 "vat_rate": line_vat_rate,
+                "vat_amount": line_vat_amount({**item, "total_price": total, "vat_rate": line_vat_rate}),
                 "price_status": item.get("price_status") or "",
                 "source_type": item.get("source_type") or item.get("source", {}).get("source_type") or "",
                 "source_name": item.get("source_name") or item.get("source", {}).get("source_name") or "",
@@ -139,7 +141,7 @@ class PricingEngine:
                 line_items.append({
                     "category": family,
                     "total": _decimal(fallback_amount),
-                    "vat_rate": global_vat_rate,
+                    "vat_rate": vat_rate_for_component(context, project, family),
                     "price_status": "fallback_price",
                     "source_type": "fallback_pricing_rule",
                     "source_name": getattr(context, "pricing", {}).get(rule_key, {}).get("name") or rule_key,
@@ -175,7 +177,7 @@ class PricingEngine:
                 line_items.append({
                     "category": family,
                     "total": _decimal(amount),
-                    "vat_rate": global_vat_rate,
+                    "vat_rate": vat_rate_for_component(context, project, family),
                     "price_status": "pricing_rule",
                     "source_type": "pricing_rule",
                     "source_name": ", ".join(keys),
@@ -200,7 +202,9 @@ class PricingEngine:
                     continue
                 line_ht = base
                 line_vat_rate = _decimal(item.get("vat_rate") if item.get("vat_rate") not in (None, "") else global_vat_rate)
-                line_vat = _money(line_ht * line_vat_rate)
+                line_vat = item.get("vat_amount")
+                if line_vat is None:
+                    line_vat = vat_amount(line_ht, line_vat_rate)
                 vat += _decimal(line_vat)
                 vat_breakdown.append({
                     "category": item.get("category"),
@@ -256,21 +260,13 @@ class PricingEngine:
         project: str,
         item: dict[str, Any],
         financial_category: str,
-        global_vat_rate: Decimal,
+        context: Any,
     ) -> Decimal:
         explicit = item.get("vat_rate")
         if explicit not in (None, ""):
             return _decimal(explicit)
-        if project == "pumping":
-            category = str(item.get("category") or "").strip().lower()
-            component = str(item.get("component") or "").strip().lower()
-            role = str(item.get("role") or "").strip().lower()
-            if category == "panels":
-                return Decimal("0.10")
-            if financial_category == "transport" or category == "transport" or component == "transport" or "transport" in role:
-                return Decimal("0.10")
-            return Decimal("0.20")
-        return global_vat_rate
+        component = item.get("component") or item.get("category") or financial_category
+        return vat_rate_for_component(context, project, component)
 
     @staticmethod
     def _financial_category(item: dict[str, Any]) -> str:

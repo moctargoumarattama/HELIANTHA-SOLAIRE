@@ -1478,6 +1478,7 @@ def _guard_technical_content(
     correction = (
         "Pour dimensionner vos panneaux solaires et votre onduleur, quel est le montant moyen de votre facture d'électricité mensuelle (en DH) ?"
     ) if domestic else (
+        "Les panneaux solaires s'expriment en Wc (watts-cr?te). "
         "Pour dimensionner le champ solaire et le variateur de pompage, quelle est la puissance de votre pompe (en CV ou kW) ?"
     )
     if incompatible_quote:

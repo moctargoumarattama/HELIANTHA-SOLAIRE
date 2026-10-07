@@ -4,6 +4,7 @@
 {% block content %}
 {% macro render_rule_field(rule, field, required=False) -%}
   {% set value = rule.get(field.key) if rule else '' %}
+  {% if field.key == 'vat_rate' and value not in (None, '') %}{% set value = (value|float) * 100 %}{% endif %}
   <label>
     <span>{{ field.label }}</span>
     {% if field.kind == "select" %}
@@ -19,6 +20,7 @@
           step="{{ field.step or 'any' }}"
           name="field_{{ field.key }}"
           value="{{ value if value not in (None, '') else '' }}"
+          {% if field.key == 'vat_rate' %}min="0" max="30"{% endif %}
           {% if required %}required{% endif %}
         >
         {% if field.unit %}<small>{{ field.unit }}</small>{% endif %}
@@ -39,7 +41,9 @@
 
       <div class="pumping-rule-fields">
         {% for field in section.fields %}
+          {% if field.key != 'vat_rate' %}
           {{ render_rule_field(rule, field) }}
+          {% endif %}
         {% endfor %}
       </div>
 
@@ -59,6 +63,9 @@
 {%- endmacro %}
 
 <div class="pumping-rules-page">
+  {% for category, message in get_flashed_messages(with_categories=True) %}
+    <div class="{{ 'admin-success' if category == 'success' else 'admin-alert' }}" role="alert">{{ message }}</div>
+  {% endfor %}
   <section class="learning-panel pumping-lead">
     <h2>Règles Pompage solaire</h2>
     <p>Configurez les règles utilisées pour les projets de pompage solaire.</p>
@@ -75,6 +82,13 @@
   {% endif %}
 
   {% for section in sections %}
+  {% if section.key == 'vat_pricing' %}
+  <section class="panel">
+    <h2>TVA Pompage solaire</h2>
+    <p class="muted">Les taux des panneaux, équipements, accessoires, transport et installation sont gérés dans la page TVA.</p>
+    <a class="admin-button secondary" href="{{ url_for('main.admin_tva') }}">Gérer la TVA</a>
+  </section>
+  {% else %}
   <section class="parameter-group pumping-section">
     <div class="group-title pumping-section-head">
       <span>{{ section.icon }}</span>
@@ -230,6 +244,7 @@
     </details>
     {% endif %}
   </section>
+  {% endif %}
   {% endfor %}
 </div>
 {% endblock %}

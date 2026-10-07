@@ -7,6 +7,7 @@ import re
 from typing import Any
 
 from .defaults import PROJECT_LABELS
+from .tax import line_vat_amount, money
 
 
 MAIN_COMPONENT_ORDER = ("panels", "inverters", "batteries", "pumps", "drives", "structures")
@@ -129,15 +130,15 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
-def _line_public_amounts(row: dict[str, Any]) -> None:
-    unit_ht = _safe_float(row.get("unit_price"))
-    total_ht = _safe_float(row.get("total_price"))
-    vat_rate = _safe_float(row.get("vat_rate"))
-    vat_amount = round(total_ht * vat_rate, 2)
-    row["unit_price_ht"] = round(unit_ht, 2)
-    row["total_price_ht"] = round(total_ht, 2)
-    row["vat_amount"] = vat_amount
-    row["total_price_ttc"] = round(total_ht + vat_amount, 2)
+def _line_public_amounts(row: dict[str, Any], *, original: dict[str, Any] | None = None) -> None:
+    unit_ht = money(_safe_float(row.get("unit_price")))
+    total_ht = money(_safe_float(row.get("total_price")))
+    # Use the original pump's contractual TTC before private pricing metadata is removed.
+    vat = line_vat_amount(original if original is not None else row)
+    row["unit_price_ht"] = float(unit_ht)
+    row["total_price_ht"] = float(total_ht)
+    row["vat_amount"] = float(vat)
+    row["total_price_ttc"] = float(money(total_ht + vat))
     row.pop("unit_price", None)
     row.pop("total_price", None)
 
@@ -188,7 +189,7 @@ def _sanitize_public_equipment(
             row["model"] = ""
             row["reference"] = ""
         row["technical_specs"] = safe_specs
-        _line_public_amounts(row)
+        _line_public_amounts(row, original=item)
         sanitized.append(row)
     return sanitized
 

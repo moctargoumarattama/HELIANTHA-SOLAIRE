@@ -6,6 +6,7 @@ from copy import deepcopy
 from decimal import Decimal, ROUND_HALF_EVEN
 from typing import Any
 
+from app.tax import vat_rate_for_component
 from app.services.ongrid_service import (
     _as_float,
     _catalog_line,
@@ -150,14 +151,14 @@ def calculate_hybrid(data: dict[str, Any], context: dict[str, Any] | None) -> di
     battery_total = battery_count * tier["battery_unit_capacity_kwh"]
 
     lines = [
-        _catalog_line("panel", panel, panel_count, "Panneaux photovoltaïques", params["vat_pv_rate"], "principal_equipment"),
-        _catalog_line("inverter", inverter, Decimal("1"), "Onduleur hybride Deye", params["vat_standard_rate"], "principal_equipment"),
-        _catalog_line("battery", battery, battery_count, "Stockage Lithium", params["vat_standard_rate"], "principal_equipment"),
-        _catalog_line("structure", structure, panel_count, "Structure photovoltaïque", params["vat_standard_rate"], "structure"),
-        _service_line("protection_acdc", "protections", "Protection AC/DC", panel_count, params["protection_acdc_per_pv"], params["vat_standard_rate"], "protections"),
-        _service_line("cabling_acdc", "cables", "Câblage AC/DC", panel_count, params["cablage_acdc_per_pv"], params["vat_standard_rate"], "cabling"),
-        _service_line("installation", "services", "Installation et mise en service", panel_count, params["installation_per_pv"], params["vat_standard_rate"], "installation"),
-        _service_line("transport", "transport", "Transport", panel_count, params["transport_per_pv"], params["vat_transport_rate"], "transport"),
+        _catalog_line("panel", panel, panel_count, "Panneaux photovoltaïques", vat_rate_for_component(context, "hybrid", "panel"), "principal_equipment"),
+        _catalog_line("inverter", inverter, Decimal("1"), "Onduleur hybride Deye", vat_rate_for_component(context, "hybrid", "inverter"), "principal_equipment"),
+        _catalog_line("battery", battery, battery_count, "Stockage Lithium", vat_rate_for_component(context, "hybrid", "battery"), "principal_equipment"),
+        _catalog_line("structure", structure, panel_count, "Structure photovoltaïque", vat_rate_for_component(context, "hybrid", "structure"), "structure"),
+        _service_line("protection_acdc", "protections", "Protection AC/DC", panel_count, params["protection_acdc_per_pv"], vat_rate_for_component(context, "hybrid", "protection_acdc"), "protections"),
+        _service_line("cabling_acdc", "cables", "Câblage AC/DC", panel_count, params["cablage_acdc_per_pv"], vat_rate_for_component(context, "hybrid", "cabling_acdc"), "cabling"),
+        _service_line("installation", "services", "Installation et mise en service", panel_count, params["installation_per_pv"], vat_rate_for_component(context, "hybrid", "installation"), "installation"),
+        _service_line("transport", "transport", "Transport", panel_count, params["transport_per_pv"], vat_rate_for_component(context, "hybrid", "transport"), "transport"),
     ]
 
     return {

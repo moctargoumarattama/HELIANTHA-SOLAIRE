@@ -19,3 +19,4 @@ def get_all_products(category: str = "", active: str = "1", stock: str = "availa
         return products or []
     except Exception:
         return []
+
