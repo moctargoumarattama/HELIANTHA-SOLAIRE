@@ -3,6 +3,7 @@
 {% block page_title %}Paramètres généraux{% endblock %}
 {% block content %}
 <form class="panel" method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
   <div class="form-grid">
     {% for s in settings %}
     {% set long_field = s.key in ['pdf_social_links', 'pdf_legal_footer'] or (s.value and s.value|length > 120) %}

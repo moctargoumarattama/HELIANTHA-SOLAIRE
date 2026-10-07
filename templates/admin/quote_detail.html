@@ -9,6 +9,7 @@
   <a class="admin-button secondary" href="{{ url_for('main.admin_quotes') }}">Retour</a>
   <a class="admin-button" href="{{ url_for('main.admin_quote_pdf', quote_id=quote.id) }}" target="_blank">Imprimer / PDF</a>
   <form method="post" action="{{ url_for('main.admin_quote_status', quote_id=quote.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
     <select name="status" required aria-label="Statut du devis">
       {% if quote.status not in statuses %}<option value="" selected disabled>Choisir un statut</option>{% endif %}
       {% for status in statuses %}

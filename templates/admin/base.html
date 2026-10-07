@@ -6,6 +6,7 @@
   <title>{% block title %}HELIANTHA Admin{% endblock %}</title>
   <meta name="theme-color" content="#102638">
   <meta name="application-name" content="HELIANTHA">
+  <meta name="csrf-token" content="{{ csrf_token() if csrf_token is defined else '' }}">
   <meta name="apple-mobile-web-app-title" content="HELIANTHA">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -45,6 +46,7 @@
       </div>
       <div class="admin-topbar-actions">
         <form method="post" action="{{ url_for('main.admin_logout') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
           <button class="ghost-button" type="submit">Déconnexion</button>
         </form>
       </div>

@@ -23,6 +23,7 @@
     <p>Accès réservé à l'équipe HELIANTHA.</p>
     {% if error %}<div class="admin-alert">{{ error }}</div>{% endif %}
     <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
       <label>Email</label>
       <input type="email" name="email" placeholder="direction@heliantha.ma" autofocus>
       <label>Mot de passe</label>

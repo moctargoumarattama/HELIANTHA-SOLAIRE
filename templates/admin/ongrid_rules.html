@@ -11,6 +11,7 @@
   {% endif %}
 
   <form method="post" class="catalog-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
     <div class="learning-panel">
       <h2>Reglages On-Grid</h2>
       <p>

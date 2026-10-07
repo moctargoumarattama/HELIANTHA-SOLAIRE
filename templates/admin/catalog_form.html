@@ -28,6 +28,7 @@
 {% endif %}
 
 <form class="panel form-panel catalog-form" method="post" data-catalog-form>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
   <input type="hidden" name="active_submitted" value="1">
   <div class="form-section">
     <h2>Identification</h2>

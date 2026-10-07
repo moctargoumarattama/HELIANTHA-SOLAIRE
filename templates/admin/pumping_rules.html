@@ -35,6 +35,7 @@
   <details class="rule-editor">
     <summary class="ghost-button">{{ action_label }}</summary>
     <form class="parameter-edit-form pumping-inline-form" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
       <input type="hidden" name="action" value="{{ action_value }}">
       <input type="hidden" name="rule_id" value="{{ rule.id }}">
       <input type="hidden" name="rule_type" value="{{ section.key }}">
@@ -214,6 +215,7 @@
     <details class="panel pumping-rule-add-panel compact-add">
       <summary>+ Ajouter une règle</summary>
       <form class="parameter-edit-form pumping-rule-add-form" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
         <input type="hidden" name="action" value="add_rule">
         <input type="hidden" name="rule_type" value="{{ section.key }}">
 

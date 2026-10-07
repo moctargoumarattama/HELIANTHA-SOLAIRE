@@ -15,6 +15,7 @@
   {% endif %}
 
   <form method="post" class="admin-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
     <input type="hidden" name="action" value="save">
     <input type="hidden" name="user_id" value="{{ editing_user.id if editing_user else '' }}">
     <label>
@@ -64,6 +65,7 @@
           <td class="row-actions">
             <a href="{{ url_for('main.admin_users', edit_id=user.id) }}">Modifier</a>
             <form method="post" action="{{ url_for('main.admin_users') }}" onsubmit="return confirm('Supprimer ce compte ?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
               <input type="hidden" name="action" value="delete">
               <input type="hidden" name="user_id" value="{{ user.id }}">
               <button type="submit">Supprimer</button>

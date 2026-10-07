@@ -13,3 +13,6 @@ client sans pompe catalogue/
 *.db-wal
 _tmp_*.db
 .pytest_temp/
+.env
+.env.*
+!.env.example

@@ -18,6 +18,7 @@
 </section>
 
 <form method="post" class="panel catalog-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
   {% for profile in profiles %}
   <section class="form-section" aria-labelledby="profile-{{ profile.key }}">
     <h2 id="profile-{{ profile.key }}">{{ profile.title }}</h2>

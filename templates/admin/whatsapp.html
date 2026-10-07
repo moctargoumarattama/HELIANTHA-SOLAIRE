@@ -104,6 +104,8 @@
 {% block page_scripts %}
 <script>
 (() => {
+  const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || "";
+  const csrfHeaders = () => ({ "X-CSRFToken": csrfToken });
   const statusBadge = document.getElementById("wa-status-badge");
   const statusText = document.getElementById("wa-status-text");
   const phone = document.getElementById("wa-phone");
@@ -158,13 +160,13 @@
   document.getElementById("wa-refresh")?.addEventListener("click", loadStatus);
   document.getElementById("wa-logout")?.addEventListener("click", async () => {
     if (!confirm("Deconnecter la session WhatsApp ?")) return;
-    await fetch("{{ url_for('main.admin_whatsapp_logout') }}", { method: "POST" });
+    await fetch("{{ url_for('main.admin_whatsapp_logout') }}", { method: "POST", headers: csrfHeaders() });
     window.setTimeout(loadStatus, 600);
   });
   const retryOutbox = async (reload = true) => {
     if (outboxResult) outboxResult.textContent = "Rejeu en cours...";
     try {
-      const response = await fetch("{{ url_for('main.admin_whatsapp_retry_outbox') }}", { method: "POST" });
+      const response = await fetch("{{ url_for('main.admin_whatsapp_retry_outbox') }}", { method: "POST", headers: csrfHeaders() });
       const payload = await response.json();
       if (outboxResult) outboxResult.textContent = `${payload.sent || 0} envoye(s), ${payload.failed || 0} echec(s).`;
       if (reload) window.setTimeout(() => window.location.reload(), 900);
@@ -181,7 +183,7 @@
     try {
       const response = await fetch("{{ url_for('main.admin_whatsapp_test') }}", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...csrfHeaders() },
         body: JSON.stringify(data),
       });
       const payload = await response.json();
