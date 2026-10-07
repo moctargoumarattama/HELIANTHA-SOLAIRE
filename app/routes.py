@@ -2009,7 +2009,6 @@ def _catalog_form_defaults():
         "brand": "",
         "model": "",
         "sale_price": "",
-        "stock": 0,
         "vat_rate": None,
         "currency": "DH",
         "active": 1,
@@ -2027,8 +2026,6 @@ def _product_from_form(form, existing_product=None):
             product[key] = form.get(key, "").strip()
     if "power_w" not in form and "spec_power_w" in form:
         product["power_w"] = form.get("spec_power_w", "").strip()
-    if "stock" in form and product.get("category") != "pumps":
-        product["stock"] = form.get("stock", "").strip()
     if "active" in form:
         product["active"] = form.get("active")
     elif "active_submitted" in form or not existing_product:
@@ -2044,6 +2041,9 @@ def _product_from_form(form, existing_product=None):
 
 def _catalog_form_view_product(product: dict | None) -> dict:
     view = dict(product or {})
+    # Inventory is not editable or sent to the administration's forms.
+    view.pop("stock", None)
+    view.pop("stock_label", None)
     specs = dict(view.get("technical_specs") or {})
     for key in ("power_w", "power_kw", "capacity_kwh", "capacity_l", "voltage", "current_amp"):
         if view.get(key) not in (None, "") and (key == "power_w" or key not in specs):
@@ -2127,11 +2127,6 @@ def _decorate_catalog_product(product):
     item["category_label"] = category_label(item.get("category"))
     item["main_characteristic"] = _main_catalog_characteristic(item)
     item["datasheet_available"] = bool(item.get("datasheet_url"))
-    item["stock_label"] = (
-        ""
-        if item.get("category") == "pumps"
-        else ("Disponible" if float(item.get("stock") or 0) > 0 else "A confirmer")
-    )
     return item
 
 

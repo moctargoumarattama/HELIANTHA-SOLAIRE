@@ -143,13 +143,16 @@ def test_admin_partial_post_preserves_hidden_json_and_sql_fields(application):
                       "description": "Description conservée", "voltage": 48,
                       "technology": "TOPCon", "supplier": "Fournisseur", "warranty": "25 ans"}, product_id)
         before = get_product(product_id)
-    assert client.post(f"/admin/catalogue/{product_id}/edit", data={"sale_price": "1350", "model": "Nouveau nom"}).status_code == 302
+    # A stale form must no longer modify inventory through the administration.
+    assert client.post(f"/admin/catalogue/{product_id}/edit", data={"sale_price": "1350", "model": "Nouveau nom", "stock": "999"}).status_code == 302
     with app.app_context():
         after = get_product(product_id)
     assert after["technical_specs"] == before["technical_specs"]
     for key in ("reference", "category", "brand", "description", "voltage", "efficiency", "technology", "supplier", "warranty", "unit", "subcategory", "stock", "active"):
         assert after[key] == before[key]
     assert after["sale_price"] == 1350
+    editor_data = client.get(f"/admin/catalogue/{product_id}/edit?format=json").get_json()["product"]
+    assert "stock" not in editor_data and "stock_label" not in editor_data
 
 
 def test_rejected_admin_posts_leave_database_intact_and_report_errors(application):
@@ -202,6 +205,12 @@ def test_editor_uses_shared_power_metadata(application):
     assert 'min="50"' in html and 'max="1500"' in html
     assert "Puissance réelle en Watts utilisée par le calculateur de dimensionnement" in html
     assert 'id="catalog-field-definitions"' in html
+    for url in ("/admin/catalogue", "/admin/catalogue/new"):
+        page = client.get(url).get_data(as_text=True)
+        assert 'name="stock"' not in page
+        assert 'modal-f-stock' not in page
+        assert '"stock":' not in page
+    assert 'name="stock"' not in html
 
 
 def test_ongrid_fractional_power_uses_exact_rating_without_truncation():

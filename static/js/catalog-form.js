@@ -101,7 +101,6 @@
   const referenceInput = form.querySelector("input[name='reference']");
   const brandInput = form.querySelector("input[name='brand']");
   const requiredMarkers = form.querySelectorAll("[data-non-pump-required-marker]");
-  const stockField = form.querySelector("[data-pump-stock-field]");
   const priceLabel = form.querySelector("[data-current-price-label]");
   const priceNote = form.querySelector("[data-pump-price-note]");
   const vatLabel = form.querySelector("[data-vat-label]");
@@ -110,7 +109,6 @@
   const syncPumpCommercialFields = (category) => {
     const isPump = category === "pumps";
     if (referenceField) referenceField.hidden = isPump;
-    if (stockField) stockField.hidden = isPump;
     if (referenceInput) referenceInput.required = !isPump;
     if (brandInput) brandInput.required = !isPump;
     requiredMarkers.forEach((marker) => {

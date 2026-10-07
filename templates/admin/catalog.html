@@ -233,10 +233,6 @@
               <input type="number" step="any" name="vat_rate" id="modal-f-vat" value="20" required>
             </label>
 
-            <label class="cat-m-field" data-pump-stock-field>
-              <span class="cat-m-label">Stock disponible</span>
-              <input type="number" step="1" min="0" name="stock" id="modal-f-stock" value="10">
-            </label>
           </div>
         </div>
 
@@ -417,7 +413,6 @@
   const syncPumpCommercialFields = (category) => {
     const isPump = category === "pumps";
     const refField = modalForm.querySelector("[data-pump-reference-field]");
-    const stockField = modalForm.querySelector("[data-pump-stock-field]");
     const refInput = document.getElementById("modal-f-reference");
     const brandInput = document.getElementById("modal-f-brand");
     const priceLabel = modalForm.querySelector("[data-current-price-label]");
@@ -427,7 +422,6 @@
     const markers = modalForm.querySelectorAll("[data-non-pump-required-marker]");
 
     if (refField) refField.hidden = isPump;
-    if (stockField) stockField.hidden = isPump;
     if (refInput) refInput.required = !isPump;
     if (brandInput) brandInput.required = !isPump;
     markers.forEach((m) => (m.hidden = isPump));
@@ -486,7 +480,6 @@
       document.getElementById("modal-f-model").value = "";
       document.getElementById("modal-f-price").value = "";
       document.getElementById("modal-f-vat").value = "20";
-      document.getElementById("modal-f-stock").value = "10";
       document.getElementById("modal-f-active").checked = true;
 
       renderTechFields("", {});
@@ -540,7 +533,6 @@
       vatVal = v <= 1 ? String(Math.round(v * 100)) : String(v);
     }
     document.getElementById("modal-f-vat").value = vatVal;
-    document.getElementById("modal-f-stock").value = prod.stock !== null && prod.stock !== undefined ? prod.stock : 0;
     document.getElementById("modal-f-active").checked = Boolean(prod.active);
 
     const specs = prod.form_specs || prod.technical_specs || {};

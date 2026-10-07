@@ -133,11 +133,6 @@
         {% if errors.get('vat_rate') %}<small class="field-error">{{ errors.get('vat_rate') }}</small>{% endif %}
       </label>
 
-      <label data-pump-stock-field {% if current_category == 'pumps' %}hidden{% endif %}>
-        Stock
-        <input type="number" step="1" min="0" name="stock" value="{{ product.get('stock', 0) if product else 0 }}">
-        {% if errors.get('stock') %}<small class="field-error">{{ errors.get('stock') }}</small>{% endif %}
-      </label>
     </div>
   </div>
 
@@ -158,5 +153,5 @@
 
 {% block page_scripts %}
 <script type="application/json" id="catalog-field-definitions">{{ technical_fields|tojson }}</script>
-<script src="{{ url_for('static', filename='js/catalog-form.js', v='power-sync-1') }}"></script>
+<script src="{{ url_for('static', filename='js/catalog-form.js', v='no-admin-stock-1') }}"></script>
 {% endblock %}
