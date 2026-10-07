@@ -16,3 +16,4 @@ _tmp_*.db
 .env
 .env.*
 !.env.example
+.tmp_*

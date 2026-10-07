@@ -1,72 +1,82 @@
 {% extends "admin/base.html" %}
 {% block title %}Catalogue - HeliAntha Admin{% endblock %}
 {% block page_title %}Catalogue{% endblock %}
+
 {% block content %}
 {% for message in get_flashed_messages(category_filter=['error']) %}
 <div class="admin-alert">{{ message }}</div>
 {% endfor %}
-<section class="learning-panel">
-  <h2>Catalogue produits</h2>
-  <p>Recherchez, filtrez et modifiez les equipements utilises par HeliAntha Smart Quote.</p>
-</section>
 
 {% if request.args.get("saved") %}
-<div class="admin-success">Produit enregistre : {{ request.args.get("saved") }}</div>
+<div class="admin-success">Produit enregistré avec succès : {{ request.args.get("saved") }}</div>
 {% endif %}
 
-<form class="filters catalog-filters catalog-filter-panel" method="get" data-live-catalog-filters>
-  <select name="category" aria-label="Categorie">
-    <option value="">Toutes categories</option>
-    {% for option in category_options %}
-    <option value="{{ option.value }}" {% if filters.get('category') == option.value %}selected{% endif %}>{{ option.label }}</option>
-    {% endfor %}
-  </select>
-
-  <input name="q" value="{{ filters.get('q', '') }}" placeholder="Recherche instantanee">
-
-  <input name="brand" value="{{ filters.get('brand', '') }}" placeholder="Marque">
-
-  <select name="active" aria-label="Statut">
-    <option value="">Actifs et inactifs</option>
-    <option value="1" {% if filters.get('active') == '1' %}selected{% endif %}>Actifs</option>
-    <option value="0" {% if filters.get('active') == '0' %}selected{% endif %}>Inactifs</option>
-  </select>
-
-  <select name="stock" data-stock-filter {% if filters.get('category') == 'pumps' %}hidden{% endif %}>
-    {% for option in stock_options %}
-    <option value="{{ option.value }}" {% if filters.get('stock') == option.value %}selected{% endif %}>{{ option.label }}</option>
-    {% endfor %}
-  </select>
-
-  <select name="sort">
-    {% for option in sort_options %}
-    <option value="{{ option.value }}" {% if filters.get('sort') == option.value %}selected{% endif %}>{{ option.label }}</option>
-    {% endfor %}
-  </select>
-
-  <a class="admin-button secondary" href="{{ url_for('main.admin_catalog_new') }}">Ajouter produit</a>
-</form>
-
-<section class="panel catalog-panel">
-  <div class="panel-head">
-    <div>
-      <h2>Produits catalogue</h2>
-      <p class="muted">Affichage simple par defaut. Les caracteristiques detaillees restent dans la fiche produit.</p>
+<!-- En-tête Unifié du Catalogue Pro -->
+<div class="cat-header-strip">
+  <div class="cat-header-info">
+    <div class="cat-title-row">
+      <h1 class="cat-title">Catalogue des Équipements</h1>
+      <span class="cat-counter-pill"><b data-live-catalog-count>{{ products|length }}</b> équipements</span>
     </div>
-    <span class="status"><span data-live-catalog-count>{{ products|length }}</span> produit(s)</span>
+    <p class="cat-subtitle">Gérez les panneaux photovoltaïques, onduleurs, batteries lithium, pompes et accessoires utilisés pour le dimensionnement et les devis.</p>
   </div>
+  <div class="cat-header-action">
+    <a class="cat-btn-primary" href="{{ url_for('main.admin_catalog_new') }}">
+      ➕ Ajouter un produit
+    </a>
+  </div>
+</div>
 
-  <div class="table-wrap catalog-table-wrap">
-    <table>
+<!-- Toolbar de Filtres & Recherche Instantanée -->
+<div class="cat-toolbar-card">
+  <form class="filters catalog-filters catalog-filter-panel cat-filter-form" method="get" data-live-catalog-filters>
+    <div class="cat-search-wrapper">
+      <span class="cat-search-icon" aria-hidden="true">🔍</span>
+      <input name="q" value="{{ filters.get('q', '') }}" placeholder="Recherche instantanée (modèle, réf, marque…)" aria-label="Recherche instantanée">
+    </div>
+
+    <select name="category" aria-label="Catégorie" class="cat-filter-select">
+      <option value="">Toutes catégories</option>
+      {% for option in category_options %}
+      <option value="{{ option.value }}" {% if filters.get('category') == option.value %}selected{% endif %}>{{ option.label }}</option>
+      {% endfor %}
+    </select>
+
+    <input name="brand" value="{{ filters.get('brand', '') }}" placeholder="Filtrer par marque" class="cat-filter-input-brand">
+
+    <select name="active" aria-label="Statut" class="cat-filter-select">
+      <option value="">Actifs et inactifs</option>
+      <option value="1" {% if filters.get('active') == '1' %}selected{% endif %}>Actifs uniquement</option>
+      <option value="0" {% if filters.get('active') == '0' %}selected{% endif %}>Inactifs uniquement</option>
+    </select>
+
+    <select name="stock" data-stock-filter class="cat-filter-select" {% if filters.get('category') == 'pumps' %}hidden{% endif %}>
+      {% for option in stock_options %}
+      <option value="{{ option.value }}" {% if filters.get('stock') == option.value %}selected{% endif %}>{{ option.label }}</option>
+      {% endfor %}
+    </select>
+
+    <select name="sort" aria-label="Tri" class="cat-filter-select">
+      {% for option in sort_options %}
+      <option value="{{ option.value }}" {% if filters.get('sort') == option.value %}selected{% endif %}>{{ option.label }}</option>
+      {% endfor %}
+    </select>
+  </form>
+</div>
+
+<!-- Tableau Haute Densité des Équipements -->
+<div class="panel catalog-panel cat-table-card">
+  <div class="table-wrap catalog-table-wrap cat-table-wrap">
+    <table class="cat-table">
       <thead>
         <tr>
-          <th data-pump-hidden-column>Reference</th>
-          <th>Produit</th>
-          <th>Categorie</th>
-          <th>Caracteristique principale</th>
-          <th>Prix catalogue</th>
-          <th data-pump-hidden-column>Stock</th>
-          <th>Actions</th>
+          <th data-pump-hidden-column class="cat-th-ref">Référence</th>
+          <th class="cat-th-prod">Produit & Modèle</th>
+          <th class="cat-th-cat">Catégorie</th>
+          <th class="cat-th-spec">Caractéristique</th>
+          <th class="cat-th-price">Prix catalogue</th>
+          <th data-pump-hidden-column class="cat-th-stock">Stock</th>
+          <th class="cat-th-actions">Actions</th>
         </tr>
       </thead>
       <tbody>
@@ -80,46 +90,85 @@
           data-price="{{ p.sale_price or 0 }}"
           data-updated="{{ p.updated_at or '' }}"
           data-search="{{ [('' if p.category == 'pumps' else p.reference), p.brand, p.model, p.description, p.category_label, p.main_characteristic]|select|join(' ')|lower }}"
+          class="cat-row {% if not p.active %}is-inactive{% endif %}"
         >
-          <td data-pump-hidden-column>
-            {% if p.category != 'pumps' %}<strong>{{ p.reference }}</strong>{% endif %}
-            {% if p.datasheet_available %}
-            <div><a href="{{ p.datasheet_url }}" target="_blank" rel="noopener">Fiche technique</a></div>
-            {% endif %}
-          </td>
-          <td>
-            <strong>{{ [p.brand, p.model]|select|join(' ') or "Produit catalogue" }}</strong>
-            {% if p.description %}
-            <div class="muted">{{ p.description }}</div>
-            {% endif %}
-          </td>
-          <td>{{ p.category_label }}</td>
-          <td>{{ p.main_characteristic }}</td>
-          <td>{{ (p.sale_price or 0)|format_currency(p.currency or 'DH') }}</td>
-          <td data-pump-hidden-column>
+          <td data-pump-hidden-column class="cat-cell-ref">
             {% if p.category != 'pumps' %}
-              <strong>{{ p.stock or 0 }}</strong>
-              <div class="muted">{{ p.stock_label }}</div>
+            <span class="cat-ref-code">{{ p.reference }}</span>
+            {% else %}
+            <span class="cat-muted-dash">-</span>
+            {% endif %}
+            {% if p.datasheet_available %}
+            <div class="cat-datasheet-wrap">
+              <a href="{{ p.datasheet_url }}" target="_blank" rel="noopener" class="cat-datasheet-btn" title="Consulter la fiche technique officielle">
+                📄 Fiche PDF
+              </a>
+            </div>
             {% endif %}
           </td>
-          <td class="row-actions">
-            <a href="{{ url_for('main.admin_catalog_edit', product_id=p.id) }}">Modifier</a>
-            <form method="post" action="{{ url_for('main.admin_catalog_toggle', product_id=p.id) }}">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
-              <button type="submit">{{ "Desactiver" if p.active else "Reactiver" }}</button>
-            </form>
+
+          <td class="cat-cell-prod">
+            <strong class="cat-prod-title">{{ [p.brand, p.model]|select|join(' ') or "Produit catalogue" }}</strong>
+            {% if p.description %}
+            <div class="cat-prod-desc">{{ p.description }}</div>
+            {% endif %}
+          </td>
+
+          <td class="cat-cell-cat">
+            <span class="cat-cat-tag cat-cat-{{ p.category or 'default' }}">{{ p.category_label }}</span>
+          </td>
+
+          <td class="cat-cell-spec">
+            <span class="cat-spec-badge">{{ p.main_characteristic or "-" }}</span>
+          </td>
+
+          <td class="cat-cell-price">
+            <strong class="cat-price-amount">{{ (p.sale_price or 0)|format_currency(p.currency or 'DH') }}</strong>
+          </td>
+
+          <td data-pump-hidden-column class="cat-cell-stock">
+            {% if p.category != 'pumps' %}
+              {% set st_val = p.stock|float if p.stock is not none else 0 %}
+              {% if st_val > 0 %}
+                <span class="cat-stock-pill in-stock" title="{{ p.stock }} unité(s) disponible(s)">
+                  🟢 {{ p.stock }} dispo
+                </span>
+              {% else %}
+                <span class="cat-stock-pill out-of-stock" title="Rupture de stock / À commander">
+                  🔴 Rupture
+                </span>
+              {% endif %}
+            {% else %}
+              <span class="cat-muted-dash">-</span>
+            {% endif %}
+          </td>
+
+          <td class="row-actions cat-cell-actions">
+            <div class="cat-actions-group">
+              <a href="{{ url_for('main.admin_catalog_edit', product_id=p.id) }}" class="cat-btn-edit">
+                ✏️ Modifier
+              </a>
+              <form method="post" action="{{ url_for('main.admin_catalog_toggle', product_id=p.id) }}" class="cat-action-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+                <button type="submit" class="cat-btn-toggle {% if p.active %}btn-deact{% else %}btn-react{% endif %}">
+                  {{ "⏸️ Désactiver" if p.active else "▶️ Réactiver" }}
+                </button>
+              </form>
+            </div>
           </td>
         </tr>
         {% else %}
         <tr data-catalog-empty>
-          <td colspan="9">Aucun produit ne correspond aux filtres actuels.</td>
+          <td colspan="7" class="cat-empty-cell">Aucun produit ne correspond aux critères sélectionnés.</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
-    <div class="catalog-no-results" data-live-catalog-empty hidden>Aucun produit ne correspond aux filtres.</div>
+    <div class="catalog-no-results cat-no-results" data-live-catalog-empty hidden>
+      🔍 Aucun produit ne correspond aux filtres de recherche.
+    </div>
   </div>
-</section>
+</div>
 {% endblock %}
 
 {% block page_scripts %}
