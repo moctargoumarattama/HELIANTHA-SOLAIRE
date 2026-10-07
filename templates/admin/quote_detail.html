@@ -1,83 +1,325 @@
 {% extends "admin/base.html" %}
 {% block title %}{{ quote.quote_number }} - HeliAntha Admin{% endblock %}
-{% block page_title %}Détail du devis{% endblock %}
+{% block page_title %}Devis {{ quote.quote_number }}{% endblock %}
 
 {% block content %}
 {% set bom_lines = display_equipment_lines %}
 
-<div class="detail-actions">
-  <a class="admin-button secondary" href="{{ url_for('main.admin_quotes') }}">Retour</a>
-  <a class="admin-button" href="{{ url_for('main.admin_quote_pdf', quote_id=quote.id) }}" target="_blank">Imprimer / PDF</a>
-  <form method="post" action="{{ url_for('main.admin_quote_status', quote_id=quote.id) }}">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
-    <select name="status" required aria-label="Statut du devis">
-      {% if quote.status not in statuses %}<option value="" selected disabled>Choisir un statut</option>{% endif %}
-      {% for status in statuses %}
-      <option value="{{ status }}" {% if quote.status == status %}selected{% endif %}>{{ status }}</option>
-      {% endfor %}
-    </select>
-    <button class="admin-button" type="submit">Modifier statut</button>
-  </form>
+<!-- Barre d'actions & En-tête Cockpit -->
+<div class="qc-topbar">
+  <div class="qc-topbar-left">
+    <a class="qc-btn-back" href="{{ url_for('main.admin_quotes') }}">← Retour devis</a>
+    <div class="qc-title-group">
+      <div class="qc-title-line">
+        <h1 class="qc-quote-num">{{ quote.quote_number }}</h1>
+        <span class="qc-badge qc-badge-project">{{ project_labels.get(quote.project, quote.project) }}</span>
+        <span class="qc-badge qc-badge-status status">{{ quote.display_status }}</span>
+      </div>
+      <div class="qc-meta-line">
+        {% if quote.created_at %}<span>📅 {{ quote.created_at }}</span><span class="qc-sep">•</span>{% endif %}
+        <span>Client : <strong>{{ quote.customer_name or "-" }}</strong></span>
+        {% if quote.location or quote.city %}<span class="qc-sep">•</span><span>Ville : <strong>{{ quote.location or quote.city }}</strong></span>{% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="qc-topbar-actions">
+    {% if wa_phone %}
+    <a class="qc-btn qc-btn-wa" href="https://wa.me/{{ wa_phone }}?text={{ wa_message|urlencode }}" target="_blank" rel="noopener" title="Échanger directement sur WhatsApp">
+      💬 WhatsApp Client
+    </a>
+    {% endif %}
+    <a class="qc-btn qc-btn-pdf" href="{{ url_for('main.admin_quote_pdf', quote_id=quote.id) }}" target="_blank" title="Imprimer ou exporter en PDF">
+      📄 Imprimer / PDF
+    </a>
+  </div>
 </div>
 
-<section class="panel quote-client-panel">
-  <h2>Client</h2>
-  <dl class="info-list">
-    <dt>N° devis</dt><dd>{{ quote.quote_number }}</dd>
-    <dt>Nom</dt><dd>{{ quote.customer_name or "-" }}</dd>
-    <dt>Téléphone</dt><dd>{{ quote.phone or "-" }}</dd>
-    <dt>Email</dt><dd>{{ quote.email or "-" }}</dd>
-    <dt>Ville</dt><dd>{{ quote.location or quote.city or "-" }}</dd>
-    <dt>Projet</dt><dd>{{ project_labels.get(quote.project, quote.project) }}</dd>
-    <dt>Statut</dt><dd><span class="status">{{ quote.display_status }}</span></dd>
-  </dl>
-</section>
+<!-- Cockpit Décisionnel 2 Colonnes -->
+<div class="qc-cockpit-grid">
 
-<section class="panel">
-  <div class="panel-head">
-    <div>
-      <h2>Éléments du devis</h2>
-      <p class="muted">Liste simple des éléments proposés.</p>
+  <!-- Colonne Principale Gauche (60%) : Synthèse Technique, Client, Équipements Majeurs -->
+  <div class="qc-col-main">
+
+    <!-- KPIs Techniques du Dimensionnement -->
+    {% if kpis %}
+    <div class="qc-kpi-grid">
+      {% for kpi in kpis %}
+      <div class="qc-kpi-card">
+        <div class="qc-kpi-icon">{{ kpi.icon }}</div>
+        <div class="qc-kpi-content">
+          <span class="qc-kpi-label">{{ kpi.label }}</span>
+          <strong class="qc-kpi-value">{{ kpi.value }}</strong>
+          <small class="qc-kpi-sub">{{ kpi.sub }}</small>
+        </div>
+      </div>
+      {% endfor %}
     </div>
-    <span class="status">{{ bom_lines|length }} ligne(s)</span>
+    {% endif %}
+
+    <!-- Fiche Client & Contact -->
+    <div class="qc-card qc-card-client">
+      <div class="qc-card-header">
+        <h2>👤 Client & Coordonnées</h2>
+      </div>
+      <div class="qc-client-row">
+        <div class="qc-client-avatar">
+          {{ (quote.customer_name or "C")[:1]|upper }}
+        </div>
+        <div class="qc-client-details">
+          <div class="qc-client-name">{{ quote.customer_name or "Client non renseigné" }}</div>
+          <div class="qc-client-chips">
+            <span class="qc-chip">
+              📞 {% if quote.phone %}<a href="tel:{{ quote.phone }}">{{ quote.phone }}</a>{% else %}<em>Non renseigné</em>{% endif %}
+            </span>
+            <span class="qc-chip">
+              📍 <strong>{{ quote.location or quote.city or "-" }}</strong>
+            </span>
+            <span class="qc-chip">
+              ✉️ {% if quote.email %}<a href="mailto:{{ quote.email }}">{{ quote.email }}</a>{% else %}<em>Non renseigné</em>{% endif %}
+            </span>
+            <span class="qc-chip">
+              🏷️ Réf : <strong>{{ quote.quote_number }}</strong>
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Aperçu des Équipements Majeurs & Accès Rapide BOM -->
+    <div class="qc-card qc-card-equipment">
+      <div class="qc-card-header">
+        <div>
+          <h2>⚡ Équipements Principaux</h2>
+          <p class="qc-muted">Composants clés du système solaire proposé.</p>
+        </div>
+        <span class="qc-pill-count">{{ bom_lines|length }} ligne(s)</span>
+      </div>
+
+      <div class="qc-overview-table-wrap">
+        <table class="qc-overview-table">
+          <thead>
+            <tr>
+              <th>Désignation</th>
+              <th class="qc-center">Qté</th>
+              <th class="qc-right">Total TTC</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in bom_lines[:4] %}
+            <tr>
+              <td>
+                <strong>{{ item.display_designation or item.description or item.role or "-" }}</strong>
+              </td>
+              <td class="qc-center">{{ item.quantity }}</td>
+              <td class="qc-right qc-amount-bold">{{ (item.display_total_ttc or 0)|format_currency(item.currency or 'DH') }}</td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="3" class="qc-empty-row">Aucun équipement enregistré.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Action unique vers la modale de nomenclature complète -->
+      <div class="qc-bom-banner" onclick="openQcModal('modal-bom')" role="button" tabindex="0" onkeypress="if(event.key==='Enter')openQcModal('modal-bom')">
+        <div class="qc-bom-banner-left">
+          <span class="qc-bom-icon">📋</span>
+          <div>
+            <strong>Nomenclature Complète & Tarifs HT (BOM)</strong>
+            <span>Consulter les {{ bom_lines|length }} lignes détaillées avec PU HT, TVA et pose</span>
+          </div>
+        </div>
+        <span class="qc-bom-banner-pill">Ouvrir le détail ↗</span>
+      </div>
+    </div>
+
   </div>
-  <div class="table-wrap quotes-table-wrap">
-    <table class="simple-quote-table">
-      <thead>
-        <tr>
-          <th>Élément</th>
-          <th>Quantité</th>
-          <th>PU HT</th>
-          <th>TVA</th>
-          <th>Total TTC</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for item in bom_lines %}
-        <tr>
-          <td data-label="Élément"><span>{{ item.display_designation or item.description or item.role or "-" }}</span></td>
-          <td data-label="Quantité"><span>{{ item.quantity }}</span></td>
-          <td data-label="PU HT" class="amount-ht"><span>{{ (item.display_unit_price_ht or 0)|format_currency(item.currency or 'DH') }}</span></td>
-          <td data-label="TVA" class="amount-vat"><span>{{ item.display_vat_rate }}<br>{{ (item.display_vat_amount or 0)|format_currency(item.currency or 'DH') }}</span></td>
-          <td data-label="Total TTC" class="amount-ttc"><strong>{{ (item.display_total_ttc or 0)|format_currency(item.currency or 'DH') }}</strong></td>
-        </tr>
-        {% else %}
-        <tr><td colspan="5">Aucun élément enregistré.</td></tr>
+
+  <!-- Colonne Latérale Droite (40%) : Totaux Financiers & Statut -->
+  <div class="qc-col-side">
+
+    <!-- Carte Hero Financière (Bleu Nuit Sombre & Or Solaire) -->
+    <div class="qc-card qc-finance-hero">
+      <div class="qc-finance-hero-glow"></div>
+      <div class="qc-finance-label">Net à Payer (Total TTC)</div>
+      <div class="qc-finance-total">{{ (financial_breakdown.total_ttc or quote.amount_ttc or 0)|format_currency }}</div>
+
+      <div class="qc-finance-breakdown">
+        {% for row in financial_summary_rows %}
+        {% if row.label != 'Net à payer' %}
+        <div class="qc-finance-row {% if row.emphasis %}is-total{% endif %}">
+          <span>{{ row.label }}</span>
+          <b>{{ (row.amount or 0)|format_currency }}</b>
+        </div>
+        {% endif %}
         {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</section>
+      </div>
 
-<section class="panel">
-  <h2>Montant du devis</h2>
-  <div class="finance-box compact quote-total-box">
-    {% for row in financial_summary_rows %}
-    <div class="{% if row.emphasis %}total{% endif %}">
-      <span>{{ row.label }}</span>
-      <b>{{ (row.amount or 0)|format_currency }}</b>
+      <!-- Lien vers la modale de décomposition TVA -->
+      <div class="qc-tva-action">
+        <button type="button" class="qc-btn-tva-modal" onclick="openQcModal('modal-tva')">
+          📊 Détail de la TVA par taux (10% & 20%) ↗
+        </button>
+      </div>
     </div>
-    {% endfor %}
+
+    <!-- Gestion du Statut du Devis -->
+    <div class="qc-card qc-status-card">
+      <div class="qc-card-header">
+        <h2>🎯 Statut du dossier</h2>
+      </div>
+      <form method="post" action="{{ url_for('main.admin_quote_status', quote_id=quote.id) }}" class="qc-status-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+        <label for="qc-status-select" class="qc-status-label">Étape actuelle du cycle commercial :</label>
+        <div class="qc-status-input-group">
+          <select id="qc-status-select" name="status" required aria-label="Statut du devis" class="qc-status-select">
+            {% if quote.status not in statuses %}<option value="" selected disabled>Choisir un statut</option>{% endif %}
+            {% for status in statuses %}
+            <option value="{{ status }}" {% if quote.status == status %}selected{% endif %}>{{ status }}</option>
+            {% endfor %}
+          </select>
+          <button class="qc-btn qc-btn-save-status" type="submit">Enregistrer</button>
+        </div>
+      </form>
+    </div>
+
   </div>
-</section>
+
+</div>
+
+<!-- ============================================================ -->
+<!-- MODALE 1 : Nomenclature Complète & Tarifs (BOM Déroulée)     -->
+<!-- ============================================================ -->
+<div id="modal-bom" class="qc-modal-overlay" onclick="closeQcModalOnBg(event, 'modal-bom')" aria-hidden="true">
+  <div class="qc-modal-dialog qc-modal-lg" role="dialog" aria-modal="true" aria-labelledby="modal-bom-title">
+    <div class="qc-modal-header">
+      <div>
+        <h3 id="modal-bom-title">📋 Nomenclature Complète & Tarifs (BOM)</h3>
+        <p class="qc-modal-desc">{{ bom_lines|length }} ligne(s) d'équipements, fournitures et prestations chiffrées.</p>
+      </div>
+      <button type="button" class="qc-modal-close" onclick="closeQcModal('modal-bom')" aria-label="Fermer la modale">✕</button>
+    </div>
+
+    <div class="qc-modal-body">
+      <div class="table-wrap quotes-table-wrap">
+        <table class="simple-quote-table">
+          <thead>
+            <tr>
+              <th>Élément</th>
+              <th>Quantité</th>
+              <th>PU HT</th>
+              <th>TVA</th>
+              <th>Total TTC</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in bom_lines %}
+            <tr>
+              <td data-label="Élément"><span>{{ item.display_designation or item.description or item.role or "-" }}</span></td>
+              <td data-label="Quantité"><span>{{ item.quantity }}</span></td>
+              <td data-label="PU HT" class="amount-ht"><span>{{ (item.display_unit_price_ht or 0)|format_currency(item.currency or 'DH') }}</span></td>
+              <td data-label="TVA" class="amount-vat"><span>{{ item.display_vat_rate }}<br>{{ (item.display_vat_amount or 0)|format_currency(item.currency or 'DH') }}</span></td>
+              <td data-label="Total TTC" class="amount-ttc"><strong>{{ (item.display_total_ttc or 0)|format_currency(item.currency or 'DH') }}</strong></td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5">Aucun élément enregistré.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- MODALE 2 : Décomposition de la TVA par Taux (10% vs 20%)    -->
+<!-- ============================================================ -->
+<div id="modal-tva" class="qc-modal-overlay" onclick="closeQcModalOnBg(event, 'modal-tva')" aria-hidden="true">
+  <div class="qc-modal-dialog qc-modal-md" role="dialog" aria-modal="true" aria-labelledby="modal-tva-title">
+    <div class="qc-modal-header">
+      <div>
+        <h3 id="modal-tva-title">📊 Décomposition de la TVA par Taux</h3>
+        <p class="qc-modal-desc">Ventilation conforme à la réglementation fiscale marocaine (CGI).</p>
+      </div>
+      <button type="button" class="qc-modal-close" onclick="closeQcModal('modal-tva')" aria-label="Fermer la modale">✕</button>
+    </div>
+
+    <div class="qc-modal-body">
+      <div class="qc-tva-table-wrap">
+        <table class="qc-tva-table">
+          <thead>
+            <tr>
+              <th>Taux appliqué & Éléments</th>
+              <th class="qc-right">Base HT</th>
+              <th class="qc-right">Montant TVA</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                <strong>Taux réduit 10%</strong>
+                <small class="qc-muted" style="display:block;">Panneaux photovoltaïques & pompage solaire</small>
+              </td>
+              <td class="qc-right">{{ vat_summary.vat_10_ht|format_currency }}</td>
+              <td class="qc-right qc-amount-bold">{{ vat_summary.vat_10_amount|format_currency }}</td>
+            </tr>
+            <tr>
+              <td>
+                <strong>Taux standard 20%</strong>
+                <small class="qc-muted" style="display:block;">Batteries lithium, onduleurs, coffrets, câbles & installation</small>
+              </td>
+              <td class="qc-right">{{ vat_summary.vat_20_ht|format_currency }}</td>
+              <td class="qc-right qc-amount-bold">{{ vat_summary.vat_20_amount|format_currency }}</td>
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr class="qc-tva-total-row">
+              <th>Total TVA consolidée</th>
+              <th class="qc-right">{{ vat_summary.total_ht|format_currency }}</th>
+              <th class="qc-right">{{ vat_summary.total_vat|format_currency }}</th>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <div class="qc-tva-callout">
+        <span>💡 <strong>Règle fiscale marocaine :</strong> Les équipements solaires photovoltaïques bénéficient d'un taux réduit de 10% selon les dispositions de la loi de finances marocaine, tandis que les accessoires et prestations de service relèvent du taux normal de 20%.</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Script léger pour l'ouverture / fermeture fluide des modales -->
+<script>
+  function openQcModal(id) {
+    const modal = document.getElementById(id);
+    if (modal) {
+      modal.classList.add('qc-modal-open');
+      document.body.style.overflow = 'hidden';
+    }
+  }
+
+  function closeQcModal(id) {
+    const modal = document.getElementById(id);
+    if (modal) {
+      modal.classList.remove('qc-modal-open');
+      document.body.style.overflow = '';
+    }
+  }
+
+  function closeQcModalOnBg(event, id) {
+    if (event.target && event.target.id === id) {
+      closeQcModal(id);
+    }
+  }
+
+  document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape') {
+      const openModals = document.querySelectorAll('.qc-modal-overlay.qc-modal-open');
+      openModals.forEach(modal => closeQcModal(modal.id));
+    }
+  });
+</script>
 {% endblock %}

@@ -3,6 +3,8 @@ from datetime import datetime
 from json import dumps as json_dumps
 from pathlib import Path
 from random import randint
+import re
+from urllib.parse import quote_plus
 from uuid import uuid4
 
 from flask import (
@@ -1316,6 +1318,136 @@ def admin_quotes():
     )
 
 
+def _clean_phone_for_whatsapp(phone: str) -> str:
+    if not phone:
+        return ""
+    digits = re.sub(r"\D", "", str(phone))
+    if not digits:
+        return ""
+    if digits.startswith("0") and len(digits) == 10:
+        return "212" + digits[1:]
+    if digits.startswith("212"):
+        return digits
+    if len(digits) == 9:
+        return "212" + digits
+    return digits
+
+
+def _extract_vat_summary(financial_breakdown: dict) -> dict:
+    fb = financial_breakdown or {}
+    vat_10_ht = 0.0
+    vat_10_amount = 0.0
+    vat_20_ht = 0.0
+    vat_20_amount = 0.0
+    for item in (fb.get("vat_breakdown") or []):
+        try:
+            rate = float(item.get("vat_rate") or 0)
+            ht = float(item.get("total_ht") or 0)
+            vat = float(item.get("vat") or 0)
+            if abs(rate - 0.10) < 0.01:
+                vat_10_ht += ht
+                vat_10_amount += vat
+            elif abs(rate - 0.20) < 0.01:
+                vat_20_ht += ht
+                vat_20_amount += vat
+        except (ValueError, TypeError):
+            continue
+    total_ht = float(fb.get("total_ht") or 0)
+    total_vat = float(fb.get("vat") or 0)
+    total_ttc = float(fb.get("total_ttc") or 0)
+    return {
+        "vat_10_ht": vat_10_ht,
+        "vat_10_amount": vat_10_amount,
+        "vat_20_ht": vat_20_ht,
+        "vat_20_amount": vat_20_amount,
+        "total_ht": total_ht,
+        "total_vat": total_vat,
+        "total_ttc": total_ttc,
+        "has_breakdown": (vat_10_amount > 0 or vat_20_amount > 0),
+    }
+
+
+def _extract_quote_kpis(quote: dict, calculation_detail: dict, bom_lines: list) -> list[dict]:
+    project = (quote.get("project") or "").lower()
+    final_results = (calculation_detail or {}).get("final_results") or {}
+    metrics_list = (quote.get("result") or {}).get("metrics") or []
+    metrics = {m.get("label"): m.get("value") for m in metrics_list if isinstance(m, dict)}
+
+    kpis = []
+
+    # 1. Puissance PV
+    pv_kwp = final_results.get("installed_power_kwp") or metrics.get("Puissance installee")
+    panel_count = final_results.get("panel_count")
+    panel_power_w = final_results.get("panel_power_w")
+
+    if not pv_kwp:
+        for line in (bom_lines or []):
+            desc = (line.get("display_designation") or line.get("description") or line.get("role") or "").lower()
+            if "panneau" in desc or "pv" in desc:
+                qty = line.get("quantity") or 1
+                pv_kwp = f"{qty} panneaux"
+                break
+
+    if pv_kwp:
+        try:
+            val_str = f"{float(pv_kwp):.2f} kWc"
+        except (ValueError, TypeError):
+            val_str = str(pv_kwp)
+        sub_str = f"{panel_count} × {panel_power_w} W" if panel_count and panel_power_w else "Générateur photovoltaïque"
+        kpis.append({"label": "Puissance Solaire", "value": val_str, "sub": sub_str, "icon": "☀️"})
+
+    # 2. Inverter / Drive / Coeur de conversion
+    inverter_kw = final_results.get("inverter_power_kw") or final_results.get("solar_drive_kw") or final_results.get("drive_power_kw")
+    inverter_brand = final_results.get("inverter_brand") or final_results.get("drive_brand") or ""
+
+    if inverter_kw:
+        brand_label = f"{inverter_brand} " if inverter_brand else ""
+        title = "Variateur Solaire" if "pump" in project else "Onduleur"
+        phase_label = final_results.get("phase", "")
+        kpis.append({
+            "label": title,
+            "value": f"{inverter_kw} kW",
+            "sub": f"{brand_label}{phase_label}".strip() or "Conversion optimisée",
+            "icon": "⚡",
+        })
+    elif metrics.get("Onduleur hybride"):
+        kpis.append({"label": "Onduleur Hybride", "value": str(metrics.get("Onduleur hybride")), "sub": "Gestion réseau & batterie", "icon": "⚡"})
+    elif metrics.get("Variateur de pompage"):
+        kpis.append({"label": "Variateur Solaire", "value": str(metrics.get("Variateur de pompage")), "sub": "MPPT intégré", "icon": "⚡"})
+
+    # 3. Third KPI (Batteries, Pump CV, or Consumption)
+    if "pump" in project:
+        pump_cv = final_results.get("pump_power_cv") or final_results.get("pump_cv")
+        flow = final_results.get("flow_m3_h")
+        hmt = final_results.get("hmt_m")
+        if pump_cv:
+            sub = f"Débit: {flow} m³/h | HMT: {hmt}m" if flow and hmt else "Au fil du soleil"
+            kpis.append({"label": "Pompe immergée", "value": f"{pump_cv} CV", "sub": sub, "icon": "💧"})
+        elif flow and hmt:
+            kpis.append({"label": "Débit & Hauteur", "value": f"{flow} m³/h", "sub": f"HMT: {hmt} mètres", "icon": "💧"})
+    elif "hybrid" in project or final_results.get("battery_count"):
+        bat_kwh = final_results.get("battery_total_capacity_kwh")
+        bat_count = final_results.get("battery_count")
+        unit_cap = final_results.get("battery_unit_capacity_kwh")
+        if bat_kwh:
+            sub = f"{bat_count} × {unit_cap} kWh LiFePO4" if bat_count and unit_cap else "Stockage lithium sécurisé"
+            kpis.append({"label": "Stockage Lithium", "value": f"{bat_kwh} kWh", "sub": sub, "icon": "🔋"})
+        elif metrics.get("Stockage Lithium"):
+            kpis.append({"label": "Stockage Lithium", "value": str(metrics.get("Stockage Lithium")), "sub": "Batteries solaires", "icon": "🔋"})
+    else:
+        conso = final_results.get("monthly_consumption_kwh")
+        bill = final_results.get("monthly_bill_dh")
+        if conso:
+            kpis.append({"label": "Consommation", "value": f"{int(conso)} kWh/mois", "sub": "Autoconsommation directe", "icon": "📉"})
+        elif bill:
+            kpis.append({"label": "Facture mensuelle", "value": f"{bill} DH/mois", "sub": "Cible d'effacement", "icon": "📉"})
+
+    if not kpis:
+        kpis.append({"label": "Installation", "value": quote.get("project", "Solaire").capitalize(), "sub": "Configuration validée", "icon": "⚡"})
+
+    return kpis[:3]
+
+
 @bp.get("/admin/devis/<int:quote_id>")
 def admin_quote_detail(quote_id):
     quote = get_quote(quote_id)
@@ -1324,8 +1456,17 @@ def admin_quote_detail(quote_id):
     calculation_detail = quote.get("calculation_detail") or {}
     bom = quote.get("bom") or calculation_detail.get("bom", {})
     bom_lines = _display_equipment_lines((bom or {}).get("lines") or quote.get("selected_equipment") or [])
-    financial_summary_rows = _financial_summary_rows(quote.get("financial_breakdown") or {})
+    financial_breakdown = quote.get("financial_breakdown") or {}
+    financial_summary_rows = _financial_summary_rows(financial_breakdown)
     quote["display_status"] = display_quote_status(quote.get("status"))
+
+    kpis = _extract_quote_kpis(quote, calculation_detail, bom_lines)
+    vat_summary = _extract_vat_summary(financial_breakdown)
+    wa_phone = _clean_phone_for_whatsapp(quote.get("phone"))
+    customer_name = quote.get("customer_name") or ""
+    quote_number = quote.get("quote_number") or f"HSQ-{quote_id}"
+    wa_message = f"Bonjour {customer_name}, suite à votre demande de devis {quote_number} pour votre installation solaire HeliAntha, nous restons à votre entière disposition pour tout échange technique ou commercial."
+
     return render_template(
         "admin/quote_detail.html",
         quote=quote,
@@ -1333,6 +1474,11 @@ def admin_quote_detail(quote_id):
         statuses=ADMIN_QUOTE_STATUSES,
         display_equipment_lines=bom_lines,
         financial_summary_rows=financial_summary_rows,
+        financial_breakdown=financial_breakdown,
+        kpis=kpis,
+        vat_summary=vat_summary,
+        wa_phone=wa_phone,
+        wa_message=wa_message,
     )
 
 
