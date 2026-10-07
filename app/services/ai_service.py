@@ -698,6 +698,459 @@ def _solar_panel_options(target_w: Decimal, panels: list[dict[str, Any]]) -> lis
     return lines
 
 
+# ==========================================================
+# 1. CATALOGUE PAR DÉFAUT & CONNEXION DYNAMIQUE SQLITE (RAG)
+# ==========================================================
+
+_DEFAULT_PANELS = [
+    {
+        "brand": "HeliAntha",
+        "category": "panels",
+        "currency": "DH",
+        "datasheet_url": "",
+        "description": "585 Wc",
+        "en_stock": True,
+        "id": 202227,
+        "model": "585 W bifacial",
+        "name": "HeliAntha 585 Wc bifacial - Panneau photovoltaïque hybride 585 Wc mono / bi-facial.",
+        "power_w": 585.0,
+        "price": 480.0,
+        "price_tax": "HT",
+        "reference": "HYB-PV-585",
+        "source": "local_sqlite",
+        "image_url": "/v1/products/341/image?image_id=582",
+    },
+    {
+        "brand": "HeliAntha",
+        "category": "panels",
+        "currency": "DH",
+        "datasheet_url": "",
+        "description": "725 Wc",
+        "en_stock": True,
+        "id": 202228,
+        "model": "725 W",
+        "name": "HeliAntha 725 Wc - Panneau photovoltaïque hybride 725 Wc.",
+        "power_w": 725.0,
+        "price": 600.0,
+        "price_tax": "HT",
+        "reference": "HYB-PV-725",
+        "source": "local_sqlite",
+        "image_url": "/v1/products/342/image?image_id=583",
+    },
+    {
+        "brand": "HeliAntha",
+        "category": "panels",
+        "currency": "DH",
+        "datasheet_url": "",
+        "description": "400 Wc",
+        "en_stock": True,
+        "id": 2037,
+        "model": "400 W",
+        "name": "HeliAntha 400 Wc - Panneau photovoltaïque On-Grid 400 Wc.",
+        "power_w": 400.0,
+        "price": 480.0,
+        "price_tax": "HT",
+        "reference": "ONGRID-PV-400",
+        "source": "local_sqlite",
+        "image_url": "/v1/products/310/image?image_id=510",
+    },
+]
+
+_DEFAULT_INVERTERS = [
+    {
+        "id": 202230,
+        "reference": "DEYE-SUN-6K-SG04LP1",
+        "name": "Deye Hybride 6kW Monophasé",
+        "brand": "Deye",
+        "model": "SUN-6K-SG04LP1-EU",
+        "category": "inverters",
+        "power_w": 6000.0,
+        "description": "Onduleur Hybride 6 kW monophasé MPPT",
+        "price": 14500.0,
+        "price_tax": "HT",
+        "currency": "DH",
+        "en_stock": True,
+        "datasheet_url": "",
+        "source": "local_sqlite",
+        "image_url": "/v1/products/331/image?image_id=552",
+    },
+    {
+        "id": 202231,
+        "reference": "DEYE-SUN-10K-SG04LP3",
+        "name": "Deye Hybride 10kW Triphasé",
+        "brand": "Deye",
+        "model": "SUN-10K-SG04LP3-EU",
+        "category": "inverters",
+        "power_w": 10000.0,
+        "description": "Onduleur Hybride 10 kW triphasé MPPT",
+        "price": 22000.0,
+        "price_tax": "HT",
+        "currency": "DH",
+        "en_stock": True,
+        "datasheet_url": "",
+        "source": "local_sqlite",
+        "image_url": "/v1/products/331/image?image_id=552",
+    },
+]
+
+_DEFAULT_BATTERIES = [
+    {
+        "id": 202232,
+        "reference": "DEYE-BOS-G-5.12",
+        "name": "Batterie Lithium LiFePO4 Deye 5.12 kWh",
+        "brand": "Deye",
+        "model": "SE-G5.1PRO-B",
+        "category": "batteries",
+        "power_w": 5120.0,
+        "description": "Batterie LiFePO4 5.12 kWh 51.2V 100Ah",
+        "price": 16000.0,
+        "price_tax": "HT",
+        "currency": "DH",
+        "en_stock": True,
+        "datasheet_url": "",
+        "source": "local_sqlite",
+        "image_url": "/v1/products/331/image?image_id=552",
+    },
+    {
+        "id": 202233,
+        "reference": "DEYE-RW-M6.1",
+        "name": "Batterie Lithium LiFePO4 Deye 10.24 kWh",
+        "brand": "Deye",
+        "model": "RW-M6.1-B",
+        "category": "batteries",
+        "power_w": 10240.0,
+        "description": "Pack Batterie LiFePO4 10 kWh",
+        "price": 29000.0,
+        "price_tax": "HT",
+        "currency": "DH",
+        "en_stock": True,
+        "datasheet_url": "",
+        "source": "local_sqlite",
+        "image_url": "/v1/products/331/image?image_id=552",
+    },
+]
+
+
+def get_dynamic_suggested_products(category: str = "panels", limit: int = 3) -> list[dict[str, Any]]:
+    """Récupère les produits réels en stock depuis SQLite avec repli sécurisé."""
+    products = None
+    try:
+        from app.services.catalog_service import get_all_products
+        products = get_all_products()
+    except Exception:
+        pass
+
+    if not products and has_app_context():
+        try:
+            from ..db import list_products
+            products = list_products(category=category, active="1", stock="available")
+            if not products:
+                products = list_products(category=category, active="1")
+        except Exception:
+            try:
+                from app.db import list_products
+                products = list_products(category=category, active="1", stock="available")
+                if not products:
+                    products = list_products(category=category, active="1")
+            except Exception:
+                pass
+
+    if products and isinstance(products, list):
+        matched = [
+            p for p in products 
+            if p.get("category") == category and p.get("en_stock", True)
+        ]
+        if not matched:
+            matched = [p for p in products if p.get("category") == category]
+        
+        if matched:
+            formatted = []
+            for p in matched[:limit]:
+                item = dict(p)
+                item["currency"] = "DH"
+                item["price_tax"] = item.get("price_tax") or "HT"
+                if not item.get("image_url"):
+                    item["image_url"] = _catalog_product_image_url(item)
+                formatted.append(item)
+            return formatted
+
+    # Repli de secours garanti avec images propres
+    if category == "inverters":
+        fallback = [dict(p) for p in _DEFAULT_INVERTERS]
+    elif category == "batteries":
+        fallback = [dict(p) for p in _DEFAULT_BATTERIES]
+    else:
+        fallback = [dict(p) for p in _DEFAULT_PANELS]
+    for p in fallback:
+        if not p.get("image_url"):
+            p["image_url"] = _catalog_product_image_url(p)
+    return fallback[:limit]
+
+
+# ==========================================================
+# 2. INTENT DARIJA & PHONÉTIQUE MAROCAINE
+# ==========================================================
+
+DARIJA_PATTERNS = {
+    "facture": [
+        r"\b(fakhtor[a-z]*|faktora|factora|kandfe3|khlass)\b",
+        r"\b(do|dwa|d\\'o)\b",                          # le courant / l'électricité
+        r"\b(n9es|n9ess|n9so|habat)\b",                  # baisser / réduire
+    ],
+    "panneaux": [
+        r"\b(chm[s|c]iya|chamsiya|chmichia)\b",         # solaire
+        r"\b(lwah|louh|plak[a-z]*|panowat|panoyat)\b",  # panneaux / plaques
+    ],
+    "pompage": [
+        r"\b(bir|lbir|lbiir)\b",                        # le puits
+        r"\b(pomp[a-z]*|pompa)\b",                      # la pompe
+        r"\b(sa9i|fella[h|a]|filaha|bassin)\b",         # irrigation / agriculture
+    ],
+    "batteries": [
+        r"\b(batri|batriyat|batteriat)\b",              # batteries
+        r"\b(t9te3|mcha|makaynch)\s*(do|dwa)?\b",       # coupure d'électricité
+        r"\b(lil|fllil)\b",                             # la nuit
+    ],
+    "prix_devis": [
+        r"\b(chhal|bchhal|ch7al|bch7al)\b",             # combien
+        r"\b(taman|tamanha|prix|devis)\b",              # le prix
+        r"\b(bghit|khassni|3afak|3tini)\b",             # je veux / il me faut
+    ],
+}
+
+
+def match_darija(text: str, intent_key: str) -> bool:
+    q = (text or "").lower()
+    patterns = DARIJA_PATTERNS.get(intent_key, [])
+    return any(re.search(p, q) for p in patterns)
+
+
+# ==========================================================
+# 3. MOTEUR COMMERCIAL, CTA ACTION & DÉTECTION AVANCÉE
+# ==========================================================
+
+def _detect_bill_and_build_cta(query: str) -> dict[str, Any] | None:
+    """Détecte un montant de facture ou une puissance et génère le CTA du devis."""
+    q = (query or "").lower().strip()
+    
+    # 1. Détection de facture en Dirhams (ex: 1500 dh, 800 dirhams, 2000dh/mois)
+    # Ne pas confondre avec de l'énergie en kWh
+    if not re.search(r"\b\d+\s*(?:kwh|wh)\b", q):
+        bill_match = re.search(r"\b(\d{3,5})\s*(?:dh|dirham|dhs|درهم)\b", q)
+        if not bill_match and any(w in q for w in ["facture", "kandfe3", "fakhtor", "faktora", "khlass"]):
+            bill_match = re.search(r"\b(\d{3,5})\b", q)
+        elif not bill_match and any(w in q for w in ["par mois", "/mois", "f chhar"]):
+            bill_match = re.search(r"\b(\d{3,5})\b", q)
+
+        if bill_match:
+            bill = float(bill_match.group(1))
+            estimated_kwc = max(1.5, round(bill / 320, 1))
+            return {
+                "type": "open_quote_wizard",
+                "bill_dh": bill,
+                "estimated_kwc": estimated_kwc,
+                "category": "residential",
+                "label": f"Générer mon devis sur-mesure ({estimated_kwc} kWc)",
+                "button_text": f"Générer mon devis sur-mesure ({estimated_kwc} kWc)",
+            }
+
+    # 2. Détection de puissance directe (ex: 5 kw, 6kwc)
+    kw_match = re.search(r"\b(\d+(?:\.\d+)?)\s*(?:kw|kwc|kilo)\b", q)
+    if kw_match:
+        kw = float(kw_match.group(1))
+        if 1 <= kw <= 100:
+            return {
+                "type": "open_quote_wizard",
+                "estimated_kwc": kw,
+                "category": "residential" if kw <= 15 else "commercial",
+                "label": f"Configurer mon installation de {kw:g} kWc",
+                "button_text": f"Configurer mon installation de {kw:g} kWc",
+            }
+            
+    return None
+
+
+def _sanitize_ai_response(text: str, user_count: int = 1) -> str:
+    if not isinstance(text, str):
+        return text
+
+    cleaned = text.strip()
+
+    # 1. Bannissement absolu des introductions de politesse répétées
+    if user_count > 1:
+        patterns = [
+            r"^(Bonjour|Bonsoir|Salut)\s*[!,.]?\s*",
+            r"^(Je suis\s+)?(ravi|heureux|enchante)\s+d['’](entendre|apprendre|accueillir)[^\n.!?]*[.!?:]*\s*",
+            r"^(Je suis\s+)?(ravi|heureux|enchante)\s+de\s+vous\s+aider[^\n.!?]*[.!?:]*\s*",
+            r"^C['’]est un plaisir de vous aider[^\n.!?]*[.!?:]*\s*",
+            r"^Bonjour\s*!\s*Je suis votre conseiller[^\n.!?]*[.!?:]*\s*",
+            r"^(En tant que conseiller|Bienvenue chez HeliAntha)[^\n.!?]*[.!?:]*\s*",
+        ]
+        for _ in range(2):
+            for p in patterns:
+                cleaned = re.sub(p, "", cleaned, flags=re.IGNORECASE).strip()
+
+    # 2. Éradication des hallucinations ("solaires à pile", "piles")
+    cleaned = re.sub(r"solaires?\s+[aà]\s+pile[s]?", "panneaux photovoltaïques", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"panneaux?\s+[aà]\s+pile[s]?", "panneaux solaires", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\bpile[s]?\b", "batteries", cleaned, flags=re.IGNORECASE)
+
+    # 3. Neutralité stricte du réseau électrique (remplacement des régies et compagnies)
+    cleaned = re.sub(r"\b(facture\s+)?ONEE\b", "facture d'électricité", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\b(facture\s+)?(Lydec|Redal|Amendis)\b", "facture d'électricité", cleaned, flags=re.IGNORECASE)
+
+    # 4. Bannissement des devises étrangères (€ -> DH)
+    cleaned = cleaned.replace("€/W", "DH/Wc").replace("€/w", "DH/Wc").replace("€", " DH").replace("euros", "DH").replace("euro", "DH").replace("EUR", "DH")
+
+    # 5. Ne garder qu'une seule question maximum
+    q_indices = [m.start() for m in re.finditer(r"\?", cleaned)]
+    if len(q_indices) > 1:
+        cleaned = cleaned[:q_indices[0] + 1].strip()
+
+    if not cleaned:
+        cleaned = "Voici nos équipements solaires HeliAntha certifiés Tier-1. Quel est le montant moyen de votre facture d'électricité mensuelle (en DH) ?"
+
+    return cleaned
+
+
+def _get_commercial_direct_answer(query: str) -> dict[str, Any] | None:
+    """Fast-Path intelligent tolérant au Darija, français et phonétique."""
+    q = (query or "").lower().strip()
+    if not q:
+        return None
+
+    # Si la question est technique pointue, laisser passer vers Ollama ou le calculateur
+    if any(term in q for term in ["mppt", "pwm", "micro-onduleur", "microonduleur", "optimiseur", "cos phi", "section de cable"]):
+        return None
+
+    cta = _detect_bill_and_build_cta(query)
+
+    # Cas 1 : Facture mentionnée (ex: "ma facture est de 1500 DH" ou "kandfe3 1500 dh f do")
+    if cta and "bill_dh" in cta:
+        bill = int(cta["bill_dh"])
+        kw = cta["estimated_kwc"]
+        panels_count = max(4, int(kw * 1000 / 585))
+        content = (
+            f"Pour une facture d'électricité de **{bill} DH/mois**, nous préconisons une installation d'environ **{kw} kWc** "
+            f"(soit environ {panels_count} panneaux de 585 Wc).\n\n"
+            f"Cela vous permet d'effacer jusqu'à 70% de votre facture dès le premier mois. Cliquez ci-dessous pour voir le devis complet chiffré."
+        )
+        return {
+            "content": content,
+            "products": get_dynamic_suggested_products("panels", 3),
+            "action": cta,
+        }
+
+    # Cas 2 : Demande de panneaux / matériel (français ou Darija : chmsiya, lwah, plakat)
+    if any(w in q for w in ["panen", "pannea", "panno", "materiel", "catalogue", "suggestion des pan"]) or match_darija(q, "panneaux"):
+        content = (
+            "Voici nos panneaux solaires HeliAntha certifiés Tier-1 disponibles immédiatement en stock (garantie 25 ans).\n\n"
+            "Pour estimer le dimensionnement idéal : quel est votre objectif principal (réduire votre facture d'électricité, maison autonome avec batteries, ou pompage agricole) ?"
+        )
+        return {
+            "content": content,
+            "products": get_dynamic_suggested_products("panels", 3),
+            "action": None,
+        }
+
+    # Cas 3 : Pompage agricole / puits (français ou Darija : bir, pompa, fellaha)
+    if (any(w in q for w in ["pomp", "puits", "bassin", "agricole", "variateur"]) or match_darija(q, "pompage")) and not re.search(r"\b\d+\s*(?:m3|hmt|cv|ch|hp)\b", q):
+        content = (
+            "Notre solution de pompage solaire au fil du soleil alimente directement votre pompe immergée via un variateur MPPT, sans gasoil ni recours au réseau.\n\n"
+            "Quelle est la puissance de votre pompe actuelle (en CV ou en kW) ?"
+        )
+        pump_prods = get_dynamic_suggested_products("inverters", 2) or get_dynamic_suggested_products("panels", 3)
+        return {
+            "content": content,
+            "products": pump_prods,
+            "action": {
+                "type": "open_pumping_calculator",
+                "label": "Calculer mon pompage solaire",
+                "button_text": "Calculer mon pompage solaire",
+            },
+        }
+
+    # Cas 4 : Batteries & coupures de courant (français ou Darija : batri, t9te3 do)
+    if (any(w in q for w in ["batterie", "hybride", "coupure", "stockage"]) or match_darija(q, "batteries")) and not re.search(r"\b\d+\s*kwh\b", q):
+        content = (
+            "Nos systèmes hybrides avec batteries Lithium LiFePO4 stockent le surplus de production le jour "
+            "pour alimenter automatiquement vos appareils la nuit ou en cas de coupure du réseau électrique.\n\n"
+            "Souhaitez-vous sécuriser l'ensemble de votre maison ou uniquement les équipements essentiels (frigo, éclairage, Wi-Fi) ?"
+        )
+        return {
+            "content": content,
+            "products": get_dynamic_suggested_products("batteries", 2) or get_dynamic_suggested_products("panels", 3),
+            "action": None,
+        }
+
+    # Cas 5 : Puissance maison repères
+    if any(w in q for w in ["combien de panneau pour une maison", "puissance pour une maison", "combien de kw pour une maison", "puissance maison"]):
+        content = (
+            "Pour équiper une maison au Maroc, voici les repères standards :\n"
+            "• **Maison standard (sans clim)** : **3 kWc** (environ 5 panneaux de 585 Wc) pour frigo, TV et éclairage.\n"
+            "• **Maison familiale / Villa** : **5 à 6 kWc** (8 à 10 panneaux) avec climatiseurs et chauffe-eau.\n"
+            "• **Grande villa (avec piscine)** : **8 à 10 kWc** pour effacer jusqu'à 70% de votre facture d'électricité.\n\n"
+            "Tous nos tarifs sont en **Dirhams (DH HT)** avec du matériel garanti 25 ans."
+        )
+        return {
+            "content": content,
+            "products": get_dynamic_suggested_products("panels", 3),
+            "action": {
+                "type": "open_quote_wizard",
+                "estimated_kwc": 5.0,
+                "category": "residential",
+                "label": "Configurer mon devis maison",
+                "button_text": "Configurer mon devis maison",
+            },
+        }
+
+    # Cas 6 : Orientation & inclinaison
+    if any(w in q for w in ["orient", "inclinaison", "pente", "vers ou", "direction"]):
+        content = (
+            "Au Maroc, la règle pour tirer le maximum d'énergie de vos panneaux est très simple :\n"
+            "• **Orientation** : Plein Sud pour capter le soleil toute la journée.\n"
+            "• **Inclinaison** : Entre 25° et 30° (sur toiture ou terrasse avec support).\n\n"
+            "Cette position garantit la meilleure production et réduit directement votre facture d'électricité !"
+        )
+        return {
+            "content": content,
+            "products": get_dynamic_suggested_products("panels", 3),
+            "action": None,
+        }
+
+    # Cas 7 : Hybride vs Réseau (sans micro-onduleur)
+    if (("hybride" in q and any(w in q for w in ["on-grid", "on grid", "reseau", "classique"])) or 
+        ("difference" in q and any(w in q for w in ["hybride", "batterie", "on-grid"]))):
+        content = (
+            "Voici la différence en toute simplicité :\n"
+            "• **Solaire classique (Réseau / On-Grid)** : Le plus économique. Les panneaux injectent le jour pour réduire directement votre facture d'électricité.\n"
+            "• **Solaire hybride (avec Batteries)** : L'énergie est stockée dans des batteries LiFePO4 pour alimenter la maison la nuit ou lors des coupures."
+        )
+        return {
+            "content": content,
+            "products": get_dynamic_suggested_products("panels", 3),
+            "action": None,
+        }
+
+    # Cas 8 : Devis / Prix / Demande d'estimation (français ou Darija : chhal, taman, bghit devis)
+    if any(w in q for w in ["devis", "prix", "cout", "combien coute", "tarif", "estimation"]) or match_darija(q, "prix_devis"):
+        content = (
+            "Nos études et devis sont 100% gratuits et personnalisés sur-mesure.\n\n"
+            "Pour vous donner un chiffrage immédiat : quel est le montant moyen de votre facture d'électricité par mois en Dirhams ?"
+        )
+        return {
+            "content": content,
+            "products": get_dynamic_suggested_products("panels", 3),
+            "action": {
+                "type": "open_quote_wizard",
+                "label": "Lancer le simulateur de devis",
+                "button_text": "Lancer le simulateur de devis",
+            },
+        }
+
+    return None
+
+
 def quick_solar_power_response(messages: list[dict], products: list[dict] | None = None) -> dict | None:
     """Deterministic arithmetic with explicit units and real, available catalogue panels."""
     request = _solar_power_request(messages)
@@ -737,6 +1190,15 @@ def quick_solar_power_response(messages: list[dict], products: list[dict] | None
         lines = [f"Pour atteindre une puissance cible de {_solar_number(target_w / 1000)} kWc ({_solar_number(target_w)} Wc) :"]
         lines.extend(_solar_panel_options(target_w, selected))
         lines.append("Ce calcul porte sur la puissance crête des panneaux. Le câblage, l'onduleur et l'installation doivent être validés dans le devis officiel.")
+        target_kw = float(target_w / 1000)
+        action = {
+            "type": "open_quote_wizard",
+            "estimated_kwc": target_kw,
+            "category": "residential" if target_kw <= 15 else "commercial",
+            "label": f"Configurer mon installation de {target_kw:g} kWc",
+            "button_text": f"Configurer mon installation de {target_kw:g} kWc",
+        }
+        return {"role": "assistant", "content": "\n".join(lines), "suggested_products": selected, "action": action}
     else:
         value = request["value"]
         monthly_value = value * (30 if request["period"] == "day" else 1)
@@ -778,7 +1240,29 @@ def quick_solar_power_response(messages: list[dict], products: list[dict] | None
             "Ces hypothèses ne tiennent pas compte des pertes, de l'ombrage ni du profil horaire de consommation. "
             "Le dimensionnement et les références doivent être validés par le calculateur du devis officiel."
         )
-    return {"role": "assistant", "content": "\n".join(lines), "suggested_products": selected}
+        action = None
+        if request["unit"] == "dh":
+            action = {
+                "type": "open_quote_wizard",
+                "bill_dh": float(monthly_value),
+                "estimated_kwc": float(recommended_kw),
+                "category": "residential",
+                "label": f"Générer mon devis sur-mesure ({_solar_number(recommended_kw)} kWc)",
+                "button_text": f"Générer mon devis sur-mesure ({_solar_number(recommended_kw)} kWc)",
+            }
+        elif recommended_kw:
+            target_kw = float(recommended_kw)
+            action = {
+                "type": "open_quote_wizard",
+                "estimated_kwc": target_kw,
+                "category": "residential" if target_kw <= 15 else "commercial",
+                "label": f"Configurer mon installation de {_solar_number(recommended_kw)} kWc",
+                "button_text": f"Configurer mon installation de {_solar_number(recommended_kw)} kWc",
+            }
+        result = {"role": "assistant", "content": "\n".join(lines), "suggested_products": selected}
+        if action:
+            result["action"] = action
+        return result
 
 def quick_assistant_response(messages: list[dict[str, str]]) -> dict[str, str] | None:
     """Return only high-confidence local answers; None always means delegate to Ollama."""
@@ -825,6 +1309,16 @@ def quick_assistant_response(messages: list[dict[str, str]]) -> dict[str, str] |
                 "pompage solaire, reduction de facture, site isole, batteries ou recharge electrique. "
                 "Quel projet souhaitez-vous estimer ?"
             ),
+        }
+
+    # Fast-Path Commercial avec RAG, Darija et Action CTA
+    _fast_res = _get_commercial_direct_answer(latest)
+    if _fast_res:
+        return {
+            "role": "assistant",
+            "content": _fast_res["content"],
+            "suggested_products": _fast_res.get("products") or [],
+            "action": _fast_res.get("action"),
         }
 
     if has_any("pompage", "pompe", "forage", "irrigation", "debit", "hmt") and not has_digits:
@@ -925,171 +1419,6 @@ def _catalog_facts_response(products: list[dict[str, Any]]) -> str:
         )
     lines.append("Retrouvez ces references dans l'onglet Catalogue.")
     return "\n".join(lines)
-
-
-_DEFAULT_PANELS = [
-    {
-        "brand": "HeliAntha",
-        "category": "panels",
-        "currency": "DH",
-        "datasheet_url": "",
-        "description": "585 Wc",
-        "en_stock": True,
-        "id": 202227,
-        "model": "585 W bifacial",
-        "name": "HeliAntha 585 Wc bifacial - Panneau photovoltaïque hybride 585 Wc mono / bi-facial.",
-        "power_w": 585.0,
-        "price": 480.0,
-        "price_tax": "HT",
-        "reference": "HYB-PV-585",
-        "source": "local_sqlite",
-        "image_url": "/v1/products/341/image?image_id=582",
-    },
-    {
-        "brand": "HeliAntha",
-        "category": "panels",
-        "currency": "DH",
-        "datasheet_url": "",
-        "description": "725 Wc",
-        "en_stock": True,
-        "id": 202228,
-        "model": "725 W",
-        "name": "HeliAntha 725 Wc - Panneau photovoltaïque hybride 725 Wc.",
-        "power_w": 725.0,
-        "price": 600.0,
-        "price_tax": "HT",
-        "reference": "HYB-PV-725",
-        "source": "local_sqlite",
-        "image_url": "/v1/products/342/image?image_id=583",
-    },
-    {
-        "brand": "HeliAntha",
-        "category": "panels",
-        "currency": "DH",
-        "datasheet_url": "",
-        "description": "400 Wc",
-        "en_stock": True,
-        "id": 2037,
-        "model": "400 W",
-        "name": "HeliAntha 400 Wc - Panneau photovoltaïque On-Grid 400 Wc.",
-        "power_w": 400.0,
-        "price": 480.0,
-        "price_tax": "HT",
-        "reference": "ONGRID-PV-400",
-        "source": "local_sqlite",
-        "image_url": "/v1/products/310/image?image_id=510",
-    },
-]
-
-
-def _sanitize_ai_response(text: str, user_count: int = 1) -> str:
-    if not isinstance(text, str):
-        return text
-
-    cleaned = text.strip()
-
-    # 1. Bannissement absolu des introductions de politesse répétées
-    if user_count > 1:
-        patterns = [
-            r"^(Bonjour|Bonsoir|Salut)\s*[!,.]?\s*",
-            r"^(Je suis\s+)?(ravi|heureux|enchante)\s+d['’](entendre|apprendre|accueillir)[^\n.!?]*[.!?:]*\s*",
-            r"^(Je suis\s+)?(ravi|heureux|enchante)\s+de\s+vous\s+aider[^\n.!?]*[.!?:]*\s*",
-            r"^C['’]est un plaisir de vous aider[^\n.!?]*[.!?:]*\s*",
-            r"^Bonjour\s*!\s*Je suis votre conseiller[^\n.!?]*[.!?:]*\s*",
-            r"^(En tant que conseiller|Bienvenue chez HeliAntha)[^\n.!?]*[.!?:]*\s*",
-        ]
-        for _ in range(2):
-            for p in patterns:
-                cleaned = re.sub(p, "", cleaned, flags=re.IGNORECASE).strip()
-
-    # 2. Éradication des hallucinations ("solaires à pile", "piles")
-    cleaned = re.sub(r"solaires?\s+[aà]\s+pile[s]?", "panneaux photovoltaïques", cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r"panneaux?\s+[aà]\s+pile[s]?", "panneaux solaires", cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r"\bpile[s]?\b", "batteries", cleaned, flags=re.IGNORECASE)
-
-    # 3. Neutralité stricte du réseau électrique (remplacement des régies et compagnies)
-    cleaned = re.sub(r"\b(facture\s+)?ONEE\b", "facture d'électricité", cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r"\b(facture\s+)?(Lydec|Redal|Amendis)\b", "facture d'électricité", cleaned, flags=re.IGNORECASE)
-
-    # 4. Bannissement des devises étrangères (€ -> DH)
-    cleaned = cleaned.replace("€/W", "DH/Wc").replace("€/w", "DH/Wc").replace("€", " DH").replace("euros", "DH").replace("euro", "DH").replace("EUR", "DH")
-
-    # 5. Ne garder qu'une seule question maximum
-    q_indices = [m.start() for m in re.finditer(r"\?", cleaned)]
-    if len(q_indices) > 1:
-        cleaned = cleaned[:q_indices[0] + 1].strip()
-
-    if not cleaned:
-        cleaned = "Voici nos équipements solaires HeliAntha certifiés Tier-1. Quel est le montant moyen de votre facture d'électricité mensuelle (en DH) ?"
-
-    return cleaned
-
-
-def _get_commercial_direct_answer(query: str) -> str | None:
-    q = (query or "").lower().strip()
-    if not q:
-        return None
-
-    # Si la question est technique spécialisée ou contient des dimensions précises, laisser passer vers Ollama ou le calculateur
-    if any(term in q for term in ["mppt", "pwm", "micro-onduleur", "microonduleur", "optimiseur", "cos phi", "section de cable"]):
-        return None
-
-    # Si c'est une demande de dimensionnement chiffrée (ex: 12 m3/h 80m, 500 kwh, etc.), laisser le calculateur dédié
-    if re.search(r"\b\d+\s*(?:m3|hmt|kwh|kw|wc|cv|ch|hp)\b", q):
-        return None
-
-    # Panneaux / Catalogue / Suggestions directes
-    if any(w in q for w in ["panen", "pannea", "panno", "suggestion des pan", "catalogue", "materiel"]) and not any(w in q for w in ["combien de kw", "quelle puissance"]):
-        return (
-            "Voici nos panneaux solaires HeliAntha haute performance certifiés Tier-1 (garantie constructeur 25 ans).\n\n"
-            "Pour estimer le nombre idéal pour votre installation : quel est votre objectif principal (réduire votre facture d'électricité, maison autonome avec batteries, ou pompage agricole) ?"
-        )
-
-    # Devis / Prix / Chiffrage général (sans chiffres déjà fournis)
-    if any(w in q for w in ["devis", "prix", "cout", "combien coute", "tarif", "estimation"]) and not re.search(r"\d+", q):
-        return (
-            "Nos devis sont 100% gratuits et personnalisés.\n\n"
-            "Pour dimensionner votre système : quel est le montant moyen de votre facture d'électricité mensuelle (en DH) ?"
-        )
-
-    # Puissance maison / kW
-    if any(w in q for w in ["combien de panneau pour une maison", "puissance pour une maison", "combien de kw pour une maison", "puissance maison"]):
-        return (
-            "Pour équiper une maison au Maroc, voici les repères standards :\n"
-            "• **Maison standard (sans clim)** : **3 kWc** (environ 5 panneaux de 585 Wc) pour frigo, TV et éclairage.\n"
-            "• **Maison familiale / Villa** : **5 à 6 kWc** (8 à 10 panneaux) avec climatiseurs et chauffe-eau.\n"
-            "• **Grande villa (avec piscine)** : **8 à 10 kWc** pour effacer jusqu'à 70% de votre facture d'électricité.\n\n"
-            "Tous nos tarifs sont en **Dirhams (DH HT)** avec du matériel garanti 25 ans."
-        )
-
-    # Orientation
-    if any(w in q for w in ["orient", "inclinaison", "pente", "vers ou", "direction"]):
-        return (
-            "Au Maroc, la règle pour tirer le maximum d'énergie de vos panneaux est très simple :\n"
-            "• **Orientation** : Plein Sud pour capter le soleil toute la journée.\n"
-            "• **Inclinaison** : Entre 25° et 30° (sur toiture ou terrasse avec support).\n\n"
-            "Cette position garantit la meilleure production et réduit directement votre facture d'électricité !"
-        )
-
-    # Hybride vs Réseau (comparaison ciblée)
-    if ("hybride" in q and ("on-grid" in q or "on grid" in q or "reseau" in q or "classique" in q)) or \
-       ("difference" in q and ("hybride" in q or "batterie" in q or "on-grid" in q)):
-        return (
-            "Voici la différence en toute simplicité :\n"
-            "• **Solaire classique (Réseau / On-Grid)** : Le plus économique. Les panneaux injectent le jour pour réduire directement votre facture d'électricité.\n"
-            "• **Solaire hybride (avec Batteries)** : L'énergie est stockée dans des batteries LiFePO4 pour alimenter la maison la nuit ou lors des coupures."
-        )
-
-    # Pompage agricole général (sans chiffres déjà fournis)
-    if any(w in q for w in ["pomp", "puits", "bassin", "agricole"]) and not re.search(r"\d+", q):
-        return (
-            "Le pompage solaire fonctionne au fil du soleil, sans gasoil ni facture d'électricité :\n"
-            "• Les panneaux alimentent directement un variateur relié à votre pompe immergée.\n"
-            "• Dès le lever du soleil, la pompe démarre automatiquement pour irriguer ou remplir votre bassin.\n\n"
-            "Quelle est la puissance de votre pompe (en CV ou kW) ?"
-        )
-
-    return None
 
 
 def _guard_technical_content(
@@ -1267,6 +1596,13 @@ def offline_fallback_response(
 
     direct = _get_commercial_direct_answer(latest)
     if direct:
+        if isinstance(direct, dict):
+            return {
+                "role": "assistant",
+                "content": direct["content"],
+                "suggested_products": direct.get("products") or products or [],
+                "action": direct.get("action"),
+            }
         return {"role": "assistant", "content": direct}
 
     if is_catalog_query(messages) and products:
