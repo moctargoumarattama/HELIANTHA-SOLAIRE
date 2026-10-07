@@ -1,103 +1,618 @@
 {% extends "admin/base.html" %}
-{% block title %}Regles On-Grid - HELIANTHA{% endblock %}
-{% block page_title %}Regles On-Grid{% endblock %}
+{% block title %}Règles On-Grid - HELIANTHA Admin{% endblock %}
+{% block page_title %}Règles On-Grid{% endblock %}
 
 {% block content %}
   {% for category, message in get_flashed_messages(with_categories=True) %}
     <div class="{{ 'admin-success' if category == 'success' else 'admin-alert' }}" role="alert">{{ message }}</div>
   {% endfor %}
   {% if saved %}
-    <div class="admin-success">Regles On-Grid enregistrees.</div>
+    <div class="admin-success og-success-banner">
+      <span class="og-success-icon">✅</span>
+      <div>
+        <strong>Regles On-Grid enregistrees.</strong>
+        <p>Les nouveaux forfaits et paramètres sont appliqués immédiatement aux prochains devis solaires raccordés au réseau.</p>
+      </div>
+    </div>
   {% endif %}
 
-  <form method="post" class="catalog-form">
+  <!-- ========================================================== -->
+  <!-- 1. EN-TÊTE HERO COCKPIT & EXPLICATIONS DU PIPELINE ON-GRID -->
+  <!-- ========================================================== -->
+  <section class="panel og-hero-panel">
+    <div class="og-hero-header">
+      <div class="og-hero-title-group">
+        <div class="og-title-badge-row">
+          <span class="og-live-badge"><span class="og-live-dot"></span> Paramètres Actifs</span>
+          <span class="source-badge">Moteur HeliAntha On-Grid</span>
+        </div>
+        <h2>Règles &amp; Tarification On-Grid</h2>
+        <p class="og-hero-desc">
+          Cette page configure les forfaits techniques et barèmes appliqués automatiquement lors de la génération
+          des devis d'autoconsommation raccordée au réseau (« Réduire ma facture »).
+          Les formules sont automatiques : vous ajustez ici les montants unitaires facturés au client.
+        </p>
+      </div>
+      <div class="og-hero-actions">
+        <a class="og-link-tva" href="{{ url_for('main.admin_tva') }}">
+          <span>📊 Gérer la TVA &amp; Transport</span>
+          <span class="og-link-arrow">➔</span>
+        </a>
+      </div>
+    </div>
+
+    <!-- Frise explicative des 3 piliers On-Grid -->
+    <div class="og-pillars-bar">
+      <div class="og-pillar-item">
+        <div class="og-pillar-badge">1</div>
+        <div class="og-pillar-info">
+          <strong>📦 Forfaits par Panneau</strong>
+          <span>Protection, Câblage et Pose unitaire</span>
+        </div>
+      </div>
+      <div class="og-pillar-sep" aria-hidden="true">➔</div>
+      <div class="og-pillar-item">
+        <div class="og-pillar-badge">2</div>
+        <div class="og-pillar-info">
+          <strong>🔌 Limiteur d'Injection</strong>
+          <span>Forfaits Réseau Mono &amp; Triphasé</span>
+        </div>
+      </div>
+      <div class="og-pillar-sep" aria-hidden="true">➔</div>
+      <div class="og-pillar-item">
+        <div class="og-pillar-badge">3</div>
+        <div class="og-pillar-info">
+          <strong>☀️ Hypothèse PSH</strong>
+          <span>Ensoleillement fixe de référence</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========================================================== -->
+  <!-- 2. SYNTHÈSE DES CHIFFRES CLÉS EN DIRECT (KPI CARDS)         -->
+  <!-- ========================================================== -->
+  <section class="og-kpi-grid">
+    <article class="og-kpi-card">
+      <div class="og-kpi-icon">🛡️</div>
+      <div class="og-kpi-content">
+        <small>Total variable par panneau</small>
+        <b><span id="kpi-total-per-panel">410</span> DH</b>
+        <span class="og-kpi-note">Protection + Câblage + Pose</span>
+      </div>
+    </article>
+
+    <article class="og-kpi-card">
+      <div class="og-kpi-icon">🔌</div>
+      <div class="og-kpi-content">
+        <small>Limiteur Monophasé</small>
+        <b><span id="kpi-limit-mono">2 000</span> DH</b>
+        <span class="og-kpi-note">Forfait fixe (réseau 230V)</span>
+      </div>
+    </article>
+
+    <article class="og-kpi-card">
+      <div class="og-kpi-icon">🏢</div>
+      <div class="og-kpi-content">
+        <small>Limiteur Triphasé</small>
+        <b>Seuil <span id="kpi-limit-tri-thresh">20</span> kW</b>
+        <span class="og-kpi-note">≤ seuil: <span id="kpi-limit-tri-low">3 000</span> DH | > seuil: <span id="kpi-limit-tri-high">7 000</span> DH</span>
+      </div>
+    </article>
+
+    <article class="og-kpi-card">
+      <div class="og-kpi-icon">☀️</div>
+      <div class="og-kpi-content">
+        <small>Ensoleillement de base (PSH)</small>
+        <b><span id="kpi-psh">5.00</span> h / jour</b>
+        <span class="og-kpi-note">Fixe national (sans ville ni météo)</span>
+      </div>
+    </article>
+  </section>
+
+  <!-- ========================================================== -->
+  <!-- 3. FORMULAIRE PRINCIPAL DE CONFIGURATION                   -->
+  <!-- ========================================================== -->
+  <form method="post" class="og-main-form" id="og-rules-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
-    <div class="learning-panel">
-      <h2>Reglages On-Grid</h2>
-      <p>
-        Cette page sert a modifier les prix utilises dans le devis
-        "Reduire ma consommation". Les formules restent automatiques :
-        vous changez seulement les montants appliques au devis.
-      </p>
-      <p><a class="text-button" href="{{ url_for('main.admin_tva') }}">Gérer la TVA et les tarifs de transport</a></p>
-      <div class="legend-row">
-        <span>Exemple : 14 panneaux x pose par panneau</span>
-        <span>Pris en compte immediatement</span>
-        <span>Aucune ville ni meteo utilisee</span>
-      </div>
-    </div>
 
-    <div class="status-row">
+    <!-- Barre d'action et d'enregistrement supérieure -->
+    <div class="og-form-top-bar">
       <div>
-        <h2>Valeurs utilisees dans les prochains devis</h2>
-        <p class="muted">Modifiez les cases puis cliquez sur Enregistrer.</p>
+        <h3 class="og-form-title">Paramètres tarifaires des prochains devis</h3>
+        <p class="muted">Ajustez les montants puis cliquez sur Enregistrer pour synchroniser le moteur de calcul.</p>
       </div>
-      <button class="admin-button" type="submit">Enregistrer</button>
+      <button class="admin-button og-btn-save" type="submit">💾 Enregistrer les modifications</button>
     </div>
 
-    {% for group in groups %}
-      <section class="form-section">
-        <h3>{{ group.title }}</h3>
-        <p class="muted">{{ group.intro }}</p>
-        {% if group.key == "injection" %}
-          <div class="config-section-grid">
-            <article class="config-section-card">
-              <h3>Monophasé</h3>
-              {% set item = parameters.get("injection_limit_mono") %}
-              {% if item %}
-                <label>
-                  {{ item.label }}
-                  <div class="input-with-unit">
-                    <input type="number" name="value_{{ item.key }}" value="{{ item.value }}" step="0.01" min="0" required>
-                    <small>{{ item.suffix or item.unit }}</small>
-                  </div>
-                  <small>{{ item.help }}</small>
-                  <small class="muted">{{ item.formula }}</small>
-                </label>
-              {% endif %}
-            </article>
+    <!-- SECTION 1 : PRIX AJOUTÉS POUR CHAQUE PANNEAU -->
+    <section class="panel og-section-card">
+      <div class="og-sec-head">
+        <div class="og-sec-title-group">
+          <div class="og-sec-badge-row">
+            <span class="og-badge-pill og-pill-blue">Postes variables</span>
+            <span class="og-badge-counter">× Nombre de panneaux</span>
+          </div>
+          <h3>Prix ajoutés pour chaque panneau</h3>
+          <p class="muted">
+            Ces montants se multiplient automatiquement par le nombre de panneaux déterminé lors du dimensionnement On-Grid.
+          </p>
+        </div>
+      </div>
 
-            <article class="config-section-card">
-              <h3>Triphasé</h3>
-              <div class="form-grid">
-                {% for key in ["injection_limit_tri_threshold", "injection_limit_tri_low", "injection_limit_tri_high"] %}
-                  {% set item = parameters.get(key) %}
-                  {% if item %}
-                    <label>
-                      {{ item.label }}
-                      <div class="input-with-unit">
-                        <input type="number" name="value_{{ item.key }}" value="{{ item.value }}" step="0.01" min="0" required>
-                        <small>{{ item.suffix or item.unit }}</small>
-                      </div>
-                      <small>{{ item.help }}</small>
-                      <small class="muted">{{ item.formula }}</small>
-                    </label>
-                  {% endif %}
-                {% endfor %}
+      <div class="og-fields-grid three">
+        <!-- 1. Protection AC/DC -->
+        {% set p_prot = parameters.get("protection_acdc_per_pv") %}
+        <article class="og-field-box">
+          <div class="og-field-box-header">
+            <span class="og-box-icon">🛡️</span>
+            <div>
+              <strong class="og-box-title">{{ p_prot.label }}</strong>
+              <small class="og-box-key">{{ p_prot.key }}</small>
+            </div>
+          </div>
+          <div class="og-input-group">
+            <input type="number" name="value_{{ p_prot.key }}" id="input-{{ p_prot.key }}"
+                   value="{{ p_prot.value }}" step="0.01" min="0" required class="og-num-input"
+                   data-og-target="kpi-prot">
+            <span class="og-input-unit">{{ p_prot.suffix or p_prot.unit or 'DH / panneau' }}</span>
+          </div>
+          <div class="og-field-descriptions">
+            <p class="og-field-help">{{ p_prot.help }}</p>
+            <small class="og-field-formula">{{ p_prot.formula }}</small>
+          </div>
+        </article>
+
+        <!-- 2. Câbles AC/DC -->
+        {% set p_cab = parameters.get("cablage_acdc_per_pv") %}
+        <article class="og-field-box">
+          <div class="og-field-box-header">
+            <span class="og-box-icon">⚡</span>
+            <div>
+              <strong class="og-box-title">{{ p_cab.label }}</strong>
+              <small class="og-box-key">{{ p_cab.key }}</small>
+            </div>
+          </div>
+          <div class="og-input-group">
+            <input type="number" name="value_{{ p_cab.key }}" id="input-{{ p_cab.key }}"
+                   value="{{ p_cab.value }}" step="0.01" min="0" required class="og-num-input"
+                   data-og-target="kpi-cab">
+            <span class="og-input-unit">{{ p_cab.suffix or p_cab.unit or 'DH / panneau' }}</span>
+          </div>
+          <div class="og-field-descriptions">
+            <p class="og-field-help">{{ p_cab.help }}</p>
+            <small class="og-field-formula">{{ p_cab.formula }}</small>
+          </div>
+        </article>
+
+        <!-- 3. Installation / Pose -->
+        {% set p_inst = parameters.get("installation_per_pv") %}
+        <article class="og-field-box">
+          <div class="og-field-box-header">
+            <span class="og-box-icon">🛠️</span>
+            <div>
+              <strong class="og-box-title">{{ p_inst.label }}</strong>
+              <small class="og-box-key">{{ p_inst.key }}</small>
+            </div>
+          </div>
+          <div class="og-input-group">
+            <input type="number" name="value_{{ p_inst.key }}" id="input-{{ p_inst.key }}"
+                   value="{{ p_inst.value }}" step="0.01" min="0" required class="og-num-input"
+                   data-og-target="kpi-inst">
+            <span class="og-input-unit">{{ p_inst.suffix or p_inst.unit or 'DH / panneau' }}</span>
+          </div>
+          <div class="og-field-descriptions">
+            <p class="og-field-help">{{ p_inst.help }}</p>
+            <small class="og-field-formula">{{ p_inst.formula }}</small>
+          </div>
+        </article>
+      </div>
+
+      <!-- Bandeau Totalisateur de section -->
+      <div class="og-subtotal-bar">
+        <div class="og-subtotal-info">
+          <span>Total des 3 postes unitaires :</span>
+          <strong id="og-subtotal-panel-val">410.00 DH</strong>
+          <small class="muted">facturé par panneau solaire sur le devis client</small>
+        </div>
+        <div class="og-subtotal-example">
+          <span>Exemple pour un devis standard 14 panneaux :</span>
+          <b id="og-subtotal-14-val">5 740 DH HT</b>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 2 : LIMITEUR D'INJECTION RÉSEAU (MONO & TRIPHASÉ) -->
+    <section class="panel og-section-card">
+      <div class="og-sec-head">
+        <div class="og-sec-title-group">
+          <div class="og-sec-badge-row">
+            <span class="og-badge-pill og-pill-emerald">Zéro Injection</span>
+            <span class="og-badge-counter">Smart Meter / Régulation réseau</span>
+          </div>
+          <h3>Limiteur d'injection</h3>
+          <p class="muted">
+            Boîtier intelligent de mesure et de régulation bridant l'injection vers le réseau électrique.
+            Le montant appliqué dépend du type de raccordement (Monophasé ou Triphasé) et de la puissance totale.
+          </p>
+        </div>
+      </div>
+
+      <div class="og-injection-grid two">
+        <!-- Carte Monophasé -->
+        <article class="og-sub-card og-card-mono">
+          <div class="og-sub-card-header">
+            <div class="og-phase-badge og-badge-mono">1 Phase · 230 V</div>
+            <h4>Compteur Monophasé</h4>
+            <p class="og-sub-card-desc">Forfait unique appliqué à toute installation résidentielle monophasée.</p>
+          </div>
+
+          {% set p_mono = parameters.get("injection_limit_mono") %}
+          <div class="og-single-field">
+            <label class="og-field-label" for="input-{{ p_mono.key }}">
+              <span>{{ p_mono.label }}</span>
+              <div class="og-input-group">
+                <input type="number" name="value_{{ p_mono.key }}" id="input-{{ p_mono.key }}"
+                       value="{{ p_mono.value }}" step="0.01" min="0" required class="og-num-input"
+                       data-og-target="kpi-limit-mono">
+                <span class="og-input-unit">{{ p_mono.suffix or 'DH' }}</span>
               </div>
-            </article>
+              <small class="og-field-help">{{ p_mono.help }}</small>
+              <small class="og-field-formula">{{ p_mono.formula }}</small>
+            </label>
           </div>
-        {% else %}
-          <div class="form-grid">
-            {% for key in group["keys"] %}
-              {% set item = parameters.get(key) %}
-              {% if item %}
-                <label>
-                  {{ item.label }}
-                  <div class="input-with-unit">
-                    <input type="number" name="value_{{ item.key }}" value="{{ item.value }}" step="0.01" min="0" required>
-                    <small>{{ item.suffix or item.unit }}</small>
-                  </div>
-                  <small>{{ item.help }}</small>
-                  {% if item.formula %}
-                    <small class="muted">{{ item.formula }}</small>
-                  {% endif %}
-                </label>
-              {% endif %}
-            {% endfor %}
+        </article>
+
+        <!-- Carte Triphasé -->
+        <article class="og-sub-card og-card-tri">
+          <div class="og-sub-card-header">
+            <div class="og-phase-badge og-badge-tri">3 Phases · 400 V</div>
+            <h4>Compteur Triphasé</h4>
+            <p class="og-sub-card-desc">Forfait par palier séparant les moyennes installations des grandes puissances.</p>
           </div>
-        {% endif %}
-      </section>
-    {% endfor %}
+
+          <div class="og-tri-fields">
+            <!-- Seuil -->
+            {% set p_thresh = parameters.get("injection_limit_tri_threshold") %}
+            <label class="og-field-label og-thresh-field" for="input-{{ p_thresh.key }}">
+              <div class="og-field-top">
+                <span>{{ p_thresh.label }}</span>
+                <span class="og-tag-seuil">Palier de bascule</span>
+              </div>
+              <div class="og-input-group">
+                <input type="number" name="value_{{ p_thresh.key }}" id="input-{{ p_thresh.key }}"
+                       value="{{ p_thresh.value }}" step="0.01" min="0" required class="og-num-input"
+                       data-og-target="kpi-limit-tri-thresh">
+                <span class="og-input-unit">{{ p_thresh.suffix or 'kW' }}</span>
+              </div>
+              <small class="og-field-help">{{ p_thresh.help }}</small>
+            </label>
+
+            <!-- Forfait Bas & Haut côte-à-côte -->
+            <div class="og-tri-tiers-row">
+              {% set p_low = parameters.get("injection_limit_tri_low") %}
+              <label class="og-field-label" for="input-{{ p_low.key }}">
+                <div class="og-tier-header">
+                  <span class="og-tier-badge og-tier-low">≤ Seuil</span>
+                  <span>{{ p_low.label }}</span>
+                </div>
+                <div class="og-input-group">
+                  <input type="number" name="value_{{ p_low.key }}" id="input-{{ p_low.key }}"
+                         value="{{ p_low.value }}" step="0.01" min="0" required class="og-num-input"
+                         data-og-target="kpi-limit-tri-low">
+                  <span class="og-input-unit">{{ p_low.suffix or 'DH' }}</span>
+                </div>
+                <small class="og-field-formula">{{ p_low.formula }}</small>
+              </label>
+
+              {% set p_high = parameters.get("injection_limit_tri_high") %}
+              <label class="og-field-label" for="input-{{ p_high.key }}">
+                <div class="og-tier-header">
+                  <span class="og-tier-badge og-tier-high">&gt; Seuil</span>
+                  <span>{{ p_high.label }}</span>
+                </div>
+                <div class="og-input-group">
+                  <input type="number" name="value_{{ p_high.key }}" id="input-{{ p_high.key }}"
+                         value="{{ p_high.value }}" step="0.01" min="0" required class="og-num-input"
+                         data-og-target="kpi-limit-tri-high">
+                  <span class="og-input-unit">{{ p_high.suffix or 'DH' }}</span>
+                </div>
+                <small class="og-field-formula">{{ p_high.formula }}</small>
+              </label>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- SECTION 3 : ENSEILLEMENT PSH DE RÉFÉRENCE -->
+    <section class="panel og-section-card">
+      <div class="og-sec-head">
+        <div class="og-sec-title-group">
+          <div class="og-sec-badge-row">
+            <span class="og-badge-pill og-pill-amber">Gisement solaire</span>
+            <span class="og-badge-counter">Base de calcul globale</span>
+          </div>
+          <h3>Soleil utilisé pour l'estimation</h3>
+          <p class="muted">
+            Le soleil utilisé ici est une valeur fixe de référence nationale pour calibrer la puissance cible (kWc).
+            Les taux de TVA et le transport sont gérés dans <a href="{{ url_for('main.admin_tva') }}">TVA &amp; Transport</a>.
+          </p>
+        </div>
+      </div>
+
+      {% set p_psh = parameters.get("psh_hours") %}
+      <div class="og-psh-box">
+        <div class="og-psh-input-col">
+          <label class="og-field-label" for="input-{{ p_psh.key }}">
+            <strong>{{ p_psh.label }}</strong>
+            <div class="og-input-group og-psh-input-group">
+              <input type="number" name="value_{{ p_psh.key }}" id="input-{{ p_psh.key }}"
+                     value="{{ p_psh.value }}" step="0.01" min="0.1" required class="og-num-input"
+                     data-og-target="kpi-psh">
+              <span class="og-input-unit">{{ p_psh.suffix or 'heures / jour' }}</span>
+            </div>
+            <small class="og-field-help">{{ p_psh.help }}</small>
+          </label>
+        </div>
+        <div class="og-psh-formula-col">
+          <span class="og-math-badge">📐 Formule de dimensionnement</span>
+          <div class="og-math-box">
+            $$\text{Puissance crête cible (kWc)} = \frac{\text{Consommation mensuelle (kWh)}}{30 \times \text{PSH}}$$
+          </div>
+          <p class="og-psh-math-note">
+            Exemple : 1 000 kWh/mois ÷ (30 × 5,00 h) = <strong>6,67 kWc cible</strong>.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================== -->
+    <!-- 4. MINI-SIMULATEUR INTERACTIF EN DIRECT                    -->
+    <!-- ========================================================== -->
+    <section class="panel og-simulator-panel">
+      <div class="og-sim-header">
+        <div class="og-sim-title-group">
+          <div class="og-title-badge-row">
+            <span class="pm-box-badge pm-box-badge-gold">🧪 Banc de Test Interactif</span>
+            <span class="source-badge">Calcul temps réel en direct</span>
+          </div>
+          <h3>Simulateur d'impact sur un devis On-Grid</h3>
+          <p class="muted">
+            Testez instantanément l'impact de vos barèmes sur une configuration type.
+            Toute modification ci-dessus actualise ce devis en temps réel.
+          </p>
+        </div>
+      </div>
+
+      <div class="og-sim-body">
+        <!-- Contrôles du simulateur -->
+        <div class="og-sim-controls">
+          <div class="og-sim-ctrl-group">
+            <label class="og-sim-label">Nombre de panneaux du projet :</label>
+            <div class="og-sim-pills-row">
+              <button type="button" class="og-sim-pill" data-sim-panels="6">6 panneaux</button>
+              <button type="button" class="og-sim-pill" data-sim-panels="10">10 panneaux</button>
+              <button type="button" class="og-sim-pill active" data-sim-panels="14">14 panneaux (Réf)</button>
+              <button type="button" class="og-sim-pill" data-sim-panels="20">20 panneaux</button>
+              <button type="button" class="og-sim-pill" data-sim-panels="32">32 panneaux</button>
+              <input type="number" id="sim-custom-panels" value="14" min="1" max="500" class="og-sim-custom-input" title="Nombre personnalisé de panneaux">
+            </div>
+          </div>
+
+          <div class="og-sim-ctrl-group">
+            <label class="og-sim-label">Raccordement réseau :</label>
+            <div class="og-sim-radio-row">
+              <label class="og-sim-radio-label">
+                <input type="radio" name="sim_phase" value="monophase" checked id="sim-radio-mono">
+                <span>Monophasé</span>
+              </label>
+              <label class="og-sim-radio-label">
+                <input type="radio" name="sim_phase" value="triphase" id="sim-radio-tri">
+                <span>Triphasé</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Décomposition instantanée du devis On-Grid -->
+        <div class="og-sim-results-grid">
+          <div class="og-sim-breakdown-card">
+            <h4>Détail des postes variables &amp; forfaits On-Grid</h4>
+            <table class="og-sim-table">
+              <tbody>
+                <tr>
+                  <td>🛡️ Protection électrique AC/DC</td>
+                  <td class="og-td-calc"><span id="sim-row-panels-1">14</span> × <span id="sim-row-prot-rate">130</span> DH</td>
+                  <td class="og-td-amount"><b id="sim-row-prot-tot">1 820</b> DH HT</td>
+                </tr>
+                <tr>
+                  <td>⚡ Câblage &amp; Accessoires AC/DC</td>
+                  <td class="og-td-calc"><span id="sim-row-panels-2">14</span> × <span id="sim-row-cab-rate">80</span> DH</td>
+                  <td class="og-td-amount"><b id="sim-row-cab-tot">1 120</b> DH HT</td>
+                </tr>
+                <tr>
+                  <td>🛠️ Pose, Raccordement &amp; Mise en service</td>
+                  <td class="og-td-calc"><span id="sim-row-panels-3">14</span> × <span id="sim-row-inst-rate">200</span> DH</td>
+                  <td class="og-td-amount"><b id="sim-row-inst-tot">2 800</b> DH HT</td>
+                </tr>
+                <tr>
+                  <td>🔌 Limiteur d'injection réseau</td>
+                  <td class="og-td-calc"><span id="sim-row-limit-label">Forfait monophasé</span></td>
+                  <td class="og-td-amount"><b id="sim-row-limit-tot">2 000</b> DH HT</td>
+                </tr>
+              </tbody>
+              <tfoot>
+                <tr class="og-sim-total-row">
+                  <td colspan="2"><strong>Total des postes On-Grid paramétrés ici</strong></td>
+                  <td class="og-td-amount"><strong class="og-sim-grand-total" id="sim-grand-total">7 740 DH HT</strong></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Barre d'action inférieure de sauvegarde -->
+    <div class="og-form-bottom-bar">
+      <div class="og-bottom-info">
+        <span class="og-info-icon">💡</span>
+        <span>Toute modification enregistrée met à jour immédiatement le moteur de devis public et interne.</span>
+      </div>
+      <button class="admin-button og-btn-save" type="submit">💾 Enregistrer les modifications</button>
+    </div>
   </form>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+(() => {
+  const getVal = (id, def = 0) => {
+    const el = document.getElementById(id);
+    if (!el) return def;
+    const v = parseFloat(el.value);
+    return isNaN(v) ? def : v;
+  };
+
+  const fmt = (num) => {
+    return Math.round(num).toLocaleString('fr-FR');
+  };
+
+  const fmtDec = (num, dec = 2) => {
+    return num.toLocaleString('fr-FR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+  };
+
+  const updateCalculations = () => {
+    const prot = getVal('input-protection_acdc_per_pv', 130);
+    const cab = getVal('input-cablage_acdc_per_pv', 80);
+    const inst = getVal('input-installation_per_pv', 200);
+    const totalPerPanel = prot + cab + inst;
+
+    const limitMono = getVal('input-injection_limit_mono', 2000);
+    const triThresh = getVal('input-injection_limit_tri_threshold', 20);
+    const triLow = getVal('input-injection_limit_tri_low', 3000);
+    const triHigh = getVal('input-injection_limit_tri_high', 7000);
+    const psh = getVal('input-psh_hours', 5);
+
+    // Mettre à jour les KPIs
+    const kpiPanel = document.getElementById('kpi-total-per-panel');
+    if (kpiPanel) kpiPanel.textContent = fmt(totalPerPanel);
+
+    const kpiMono = document.getElementById('kpi-limit-mono');
+    if (kpiMono) kpiMono.textContent = fmt(limitMono);
+
+    const kpiTriThresh = document.getElementById('kpi-limit-tri-thresh');
+    if (kpiTriThresh) kpiTriThresh.textContent = fmtDec(triThresh, 0);
+
+    const kpiTriLow = document.getElementById('kpi-limit-tri-low');
+    if (kpiTriLow) kpiTriLow.textContent = fmt(triLow);
+
+    const kpiTriHigh = document.getElementById('kpi-limit-tri-high');
+    if (kpiTriHigh) kpiTriHigh.textContent = fmt(triHigh);
+
+    const kpiPsh = document.getElementById('kpi-psh');
+    if (kpiPsh) kpiPsh.textContent = fmtDec(psh, 2);
+
+    // Mettre à jour le sous-total de section
+    const subVal = document.getElementById('og-subtotal-panel-val');
+    if (subVal) subVal.textContent = fmt(totalPerPanel) + ' DH';
+
+    const sub14 = document.getElementById('og-subtotal-14-val');
+    if (sub14) sub14.textContent = fmt(14 * totalPerPanel) + ' DH HT';
+
+    // Mettre à jour le simulateur
+    const simInput = document.getElementById('sim-custom-panels');
+    const panelCount = simInput ? (parseInt(simInput.value, 10) || 14) : 14;
+    const isMono = document.getElementById('sim-radio-mono')?.checked ?? true;
+
+    // Lignes de calcul
+    ['1', '2', '3'].forEach(id => {
+      const el = document.getElementById('sim-row-panels-' + id);
+      if (el) el.textContent = panelCount;
+    });
+
+    const elProtRate = document.getElementById('sim-row-prot-rate');
+    if (elProtRate) elProtRate.textContent = fmt(prot);
+    const elProtTot = document.getElementById('sim-row-prot-tot');
+    if (elProtTot) elProtTot.textContent = fmt(panelCount * prot);
+
+    const elCabRate = document.getElementById('sim-row-cab-rate');
+    if (elCabRate) elCabRate.textContent = fmt(cab);
+    const elCabTot = document.getElementById('sim-row-cab-tot');
+    if (elCabTot) elCabTot.textContent = fmt(panelCount * cab);
+
+    const elInstRate = document.getElementById('sim-row-inst-rate');
+    if (elInstRate) elInstRate.textContent = fmt(inst);
+    const elInstTot = document.getElementById('sim-row-inst-tot');
+    if (elInstTot) elInstTot.textContent = fmt(panelCount * inst);
+
+    // Limiteur
+    let limitCost = limitMono;
+    let limitLabel = 'Forfait monophasé';
+    if (!isMono) {
+      // Puissance estimée avec des panneaux standards 590W
+      const approxKwp = (panelCount * 0.590);
+      if (approxKwp <= triThresh) {
+        limitCost = triLow;
+        limitLabel = `Triphasé (≤ ${triThresh} kW : ~${fmtDec(approxKwp, 1)} kWc)`;
+      } else {
+        limitCost = triHigh;
+        limitLabel = `Triphasé (> ${triThresh} kW : ~${fmtDec(approxKwp, 1)} kWc)`;
+      }
+    }
+
+    const elLimitLabel = document.getElementById('sim-row-limit-label');
+    if (elLimitLabel) elLimitLabel.textContent = limitLabel;
+    const elLimitTot = document.getElementById('sim-row-limit-tot');
+    if (elLimitTot) elLimitTot.textContent = fmt(limitCost);
+
+    const grandTotal = (panelCount * totalPerPanel) + limitCost;
+    const elGrandTotal = document.getElementById('sim-grand-total');
+    if (elGrandTotal) elGrandTotal.textContent = fmt(grandTotal) + ' DH HT';
+  };
+
+  // Écouter toutes les modifications dans les inputs
+  const inputs = document.querySelectorAll('.og-num-input');
+  inputs.forEach(input => {
+    input.addEventListener('input', updateCalculations);
+  });
+
+  // Boutons pilules de panneaux
+  const pills = document.querySelectorAll('.og-sim-pill');
+  const customInput = document.getElementById('sim-custom-panels');
+  pills.forEach(pill => {
+    pill.addEventListener('click', () => {
+      pills.forEach(p => p.classList.remove('active'));
+      pill.classList.add('active');
+      if (customInput) {
+        customInput.value = pill.dataset.simPanels;
+      }
+      updateCalculations();
+    });
+  });
+
+  if (customInput) {
+    customInput.addEventListener('input', () => {
+      pills.forEach(p => {
+        if (p.dataset.simPanels === customInput.value) {
+          p.classList.add('active');
+        } else {
+          p.classList.remove('active');
+        }
+      });
+      updateCalculations();
+    });
+  }
+
+  // Radios de phase
+  const radioMono = document.getElementById('sim-radio-mono');
+  const radioTri = document.getElementById('sim-radio-tri');
+  if (radioMono) radioMono.addEventListener('change', updateCalculations);
+  if (radioTri) radioTri.addEventListener('change', updateCalculations);
+
+  // Initialisation au chargement
+  updateCalculations();
+})();
+</script>
 {% endblock %}
