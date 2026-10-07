@@ -1563,6 +1563,15 @@ def _catalog_is_ajax():
     )
 
 
+def _catalog_submitted_fields():
+    if request.is_json:
+        fields = request.get_json(silent=True)
+        if not isinstance(fields, dict):
+            return None
+        return fields
+    return request.form
+
+
 def _catalog_counts():
     row = get_db().execute(
         """SELECT COUNT(*) AS total, COALESCE(SUM(active = 1), 0) AS active,
@@ -1638,9 +1647,12 @@ def admin_catalog_new():
     errors = {}
     is_ajax = _catalog_is_ajax()
     if request.method == "POST":
-        product = _product_from_form(request.form)
+        fields = _catalog_submitted_fields()
+        if fields is None:
+            return jsonify(success=False, errors={"form": "Les données du produit sont invalides."}), 400
+        product = _product_from_form(fields)
         try:
-            product_id = save_product(product, submitted_fields=request.form)
+            product_id = save_product(product, submitted_fields=fields)
         except ProductValidationError as exc:
             errors = exc.errors
             if is_ajax:
@@ -1678,9 +1690,12 @@ def admin_catalog_edit(product_id):
             "product": _catalog_product_json(product),
         })
     if request.method == "POST":
-        product = _product_from_form(request.form, existing_product=product)
+        fields = _catalog_submitted_fields()
+        if fields is None:
+            return jsonify(success=False, errors={"form": "Les données du produit sont invalides."}), 400
+        product = _product_from_form(fields, existing_product=product)
         try:
-            save_product(product, product_id=product_id, submitted_fields=request.form)
+            save_product(product, product_id=product_id, submitted_fields=fields)
         except ProductValidationError as exc:
             errors = exc.errors
             if is_ajax:
@@ -2081,21 +2096,27 @@ def admin_users():
             user_id = request.form.get("user_id", type=int)
             email = request.form.get("email", "").strip().lower()
             password = request.form.get("password", "").strip()
+            display_name = request.form.get("display_name", "").strip()
+            role_input = request.form.get("role", "").strip()
             existing_user = get_user(user_id) if user_id else None
-            role = (existing_user or {}).get("role") if existing_user else "Commercial"
+
+            if role_input in {"Direction", "Commercial"}:
+                role = role_input
+            else:
+                role = (existing_user or {}).get("role") if existing_user else "Commercial"
             if role not in {"Direction", "Commercial"}:
                 role = "Commercial"
 
             if not email:
-                error = "L'email est obligatoire."
+                error = "L'adresse email est obligatoire."
             elif not user_id and not password:
-                error = "Le mot de passe est obligatoire pour un nouveau compte."
+                error = "Le mot de passe est obligatoire pour créer un nouveau compte."
             else:
                 try:
                     save_user(
                         user_id=user_id,
                         username=email,
-                        display_name=email,
+                        display_name=display_name or email,
                         role=role,
                         active=True,
                         password=password,
@@ -2106,7 +2127,7 @@ def admin_users():
             editing_user = {
                 "id": user_id,
                 "username": email,
-                "display_name": email,
+                "display_name": display_name or email,
                 "role": role,
                 "active": 1,
             }
@@ -2128,10 +2149,12 @@ def admin_users():
                 except Exception:
                     error = "Impossible de supprimer cet utilisateur."
 
+    current_username = session.get("admin_user", "")
     return render_template(
         "admin/users.html",
         users=list_users(),
         editing_user=editing_user,
+        current_username=current_username,
         error=error,
     )
 
@@ -2156,9 +2179,9 @@ def _product_from_form(form, existing_product=None):
     # Absent fields are not edits. Technical JSON is merged/validated by save_product.
     for key in ("reference", "category", "brand", "model", "sale_price", "currency", "power_w"):
         if key in form:
-            product[key] = form.get(key, "").strip()
+            product[key] = str(form.get(key) or "").strip()
     if "power_w" not in form and "spec_power_w" in form:
-        product["power_w"] = form.get("spec_power_w", "").strip()
+        product["power_w"] = str(form.get("spec_power_w") or "").strip()
     if "active" in form:
         product["active"] = form.get("active")
     elif "active_submitted" in form or not existing_product:
@@ -2167,7 +2190,7 @@ def _product_from_form(form, existing_product=None):
     for field in technical_fields_by_category().get(product.get("category"), []):
         key = f"spec_{field['key']}"
         if key in form:
-            specs[field["key"]] = form.get(key, "")
+            specs[field["key"]] = str(form.get(key) or "")
     product["technical_specs"] = specs
     return product
 

@@ -1,82 +1,327 @@
 {% extends "admin/base.html" %}
-{% block title %}Comptes - HeliAntha Admin{% endblock %}
-{% block page_title %}Comptes{% endblock %}
+{% block title %}Comptes Utilisateurs - HeliAntha Admin{% endblock %}
+{% block page_title %}Utilisateurs{% endblock %}
+
 {% block content %}
-<section class="panel">
-  <div class="panel-head">
-    <div>
-      <h2>{% if editing_user %}Modifier un compte{% else %}Créer un compte{% endif %}</h2>
-      <p class="muted">Un compte principal Direction et des comptes Commercial.</p>
-    </div>
-  </div>
+{% set direction_count = users|selectattr('role', 'equalto', 'Direction')|list|length %}
+{% set commercial_count = users|selectattr('role', 'equalto', 'Commercial')|list|length %}
 
-  {% if error %}
-  <div class="admin-alert">{{ error }}</div>
-  {% endif %}
-
-  <form method="post" class="admin-form">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
-    <input type="hidden" name="action" value="save">
-    <input type="hidden" name="user_id" value="{{ editing_user.id if editing_user else '' }}">
-    <label>
-      <span>Email</span>
-      <input type="email" name="email" value="{{ editing_user.username if editing_user else '' }}" placeholder="direction@heliantha.ma" required>
-    </label>
-    <label>
-      <span>Mot de passe</span>
-      <input type="password" name="password" placeholder="{% if editing_user %}Laisser vide pour conserver{% else %}Mot de passe{% endif %}" {% if not editing_user %}required{% endif %}>
-    </label>
-    <div class="admin-note">
-      Les comptes créés ici sont des comptes Commercial. Le compte Direction reste réservé.
+<div class="users-cockpit" id="users-cockpit">
+  <!-- ========================================================== -->
+  <!-- 1. BARRE DE COMMANDE & RÉCAPITULATIF DES COMPTES          -->
+  <!-- ========================================================== -->
+  <header class="users-cockpit-bar">
+    <div class="users-cockpit-left">
+      <div class="users-title-wrap">
+        <span class="users-app-icon">👥</span>
+        <div>
+          <h2 class="users-cockpit-heading">Gestion des Utilisateurs &amp; Rôles</h2>
+          <span class="users-status-text-sub">Contrôle des accès Direction et Commerciaux pour l'application</span>
+        </div>
+      </div>
     </div>
-    <div class="form-actions">
-      <button class="admin-button" type="submit">{% if editing_user %}Enregistrer{% else %}Créer{% endif %}</button>
-      {% if editing_user %}
-      <a class="ghost-button" href="{{ url_for('main.admin_users') }}">Annuler</a>
+
+    <div class="users-cockpit-chips">
+      <div class="users-chip" title="Nombre total de comptes enregistrés">
+        <span class="users-chip-label">Total :</span>
+        <strong>{{ users|length }} compte(s)</strong>
+      </div>
+      <div class="users-chip users-chip-admin" title="Comptes avec tous les droits d'administration">
+        <span class="users-chip-label">👑 Direction :</span>
+        <strong>{{ direction_count }}</strong>
+      </div>
+      <div class="users-chip users-chip-commercial" title="Comptes commerciaux pour la réalisation des devis">
+        <span class="users-chip-label">💼 Commercial :</span>
+        <strong>{{ commercial_count }}</strong>
+      </div>
+      {% if current_username %}
+      <div class="users-chip users-chip-session" title="Compte actuellement connecté à cette session">
+        <span class="users-chip-label">🟢 Session :</span>
+        <strong>{{ current_username }}</strong>
+      </div>
       {% endif %}
     </div>
-  </form>
-</section>
+  </header>
 
-<section class="panel">
-  <div class="panel-head">
-    <div>
-      <h2>Comptes existants</h2>
-      <p class="muted">{{ users|length }} compte(s)</p>
+  <!-- ========================================================== -->
+  <!-- 2. GRILLE COCKPIT 2 COLONNES (RESPONSIVE)                   -->
+  <!-- ========================================================== -->
+  <div class="users-cockpit-grid">
+    <!-- COLONNE GAUCHE : Formulaire de Création / Modification -->
+    <div class="users-left-col">
+      <article class="panel users-card users-form-card">
+        <div class="panel-head users-card-head">
+          <div class="users-card-head-title">
+            <span class="users-head-icon">{{ '✏️' if editing_user else '✨' }}</span>
+            <div>
+              <h2 class="users-card-title">{{ 'Modifier le compte' if editing_user else 'Créer un compte' }}</h2>
+              <small class="muted">{{ 'Mise à jour des identifiants et permissions' if editing_user else 'Ajoutez un nouveau collaborateur' }}</small>
+            </div>
+          </div>
+          {% if editing_user %}
+          <a href="{{ url_for('main.admin_users') }}" class="users-btn-cancel-top" title="Annuler la modification et créer un nouveau compte">
+            ✕ Nouveau
+          </a>
+          {% endif %}
+        </div>
+
+        {% if error %}
+        <div class="admin-alert users-alert-error">
+          <span class="users-alert-icon">⚠️</span>
+          <span>{{ error }}</span>
+        </div>
+        {% endif %}
+
+        <form method="post" class="users-form" id="users-form" autocomplete="off">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+          <input type="hidden" name="action" value="save">
+          <input type="hidden" name="user_id" value="{{ editing_user.id if editing_user else '' }}">
+
+          <!-- Champ Email -->
+          <div class="users-form-group">
+            <label class="users-label" for="users-input-email">
+              <span class="users-label-text">
+                <span class="users-field-icon">✉️</span> Adresse email (Identifiant de connexion) <strong class="req">*</strong>
+              </span>
+              <input type="email" id="users-input-email" name="email"
+                     value="{{ editing_user.username if editing_user else '' }}"
+                     placeholder="ex: commercial@heliantha.ma"
+                     class="users-input" required autofocus>
+            </label>
+          </div>
+
+          <!-- Champ Nom complet -->
+          <div class="users-form-group">
+            <label class="users-label" for="users-input-name">
+              <span class="users-label-text">
+                <span class="users-field-icon">🏷️</span> Nom complet ou Libellé <small class="opt">(optionnel)</small>
+              </span>
+              <input type="text" id="users-input-name" name="display_name"
+                     value="{{ editing_user.display_name if editing_user and editing_user.display_name != editing_user.username else '' }}"
+                     placeholder="ex: Karim Alami"
+                     class="users-input">
+            </label>
+          </div>
+
+          <!-- Rôle / Niveau d'accès -->
+          <div class="users-form-group">
+            <span class="users-label-text">
+              <span class="users-field-icon">🛡️</span> Rôle &amp; Niveau d'accès <strong class="req">*</strong>
+            </span>
+            {% set active_role = editing_user.role if editing_user else 'Commercial' %}
+            <div class="users-role-selector">
+              <label class="users-role-card {{ 'selected' if active_role == 'Commercial' else '' }}">
+                <input type="radio" name="role" value="Commercial" {{ 'checked' if active_role == 'Commercial' else '' }}>
+                <div class="users-role-content">
+                  <span class="users-role-icon">💼</span>
+                  <div>
+                    <strong>Commercial</strong>
+                    <p>Accès devis, consultation du catalogue et exports PDF clients.</p>
+                  </div>
+                </div>
+              </label>
+
+              <label class="users-role-card {{ 'selected' if active_role == 'Direction' else '' }}">
+                <input type="radio" name="role" value="Direction" {{ 'checked' if active_role == 'Direction' else '' }}>
+                <div class="users-role-content">
+                  <span class="users-role-icon">👑</span>
+                  <div>
+                    <strong>Direction</strong>
+                    <p>Accès complet : marges, règles de calcul, utilisateurs, WhatsApp.</p>
+                  </div>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <!-- Champ Mot de passe -->
+          <div class="users-form-group">
+            <label class="users-label" for="users-input-password">
+              <span class="users-label-text">
+                <span class="users-field-icon">🔑</span> Mot de passe
+                {% if editing_user %}
+                  <small class="opt">(laisser vide pour conserver)</small>
+                {% else %}
+                  <strong class="req">*</strong>
+                {% endif %}
+              </span>
+              <div class="users-password-wrap">
+                <input type="password" id="users-input-password" name="password"
+                       placeholder="{% if editing_user %}Laisser vide pour ne pas modifier{% else %}Définir un mot de passe sécurisé{% endif %}"
+                       class="users-input users-input-pwd" {% if not editing_user %}required{% endif %}>
+                <button type="button" class="users-btn-toggle-pwd" id="users-toggle-pwd" title="Afficher / Masquer le mot de passe">
+                  👁️
+                </button>
+              </div>
+            </label>
+          </div>
+
+          <!-- Actions formulaire -->
+          <div class="users-form-actions">
+            <button class="admin-button users-btn-submit" type="submit">
+              {% if editing_user %}
+                <span>💾 Enregistrer les modifications</span>
+              {% else %}
+                <span>✨ Créer le compte</span>
+              {% endif %}
+            </button>
+            {% if editing_user %}
+            <a class="ghost-button users-btn-cancel" href="{{ url_for('main.admin_users') }}">
+              Annuler
+            </a>
+            {% endif %}
+          </div>
+        </form>
+      </article>
+    </div>
+
+    <!-- COLONNE DROITE : Tableau des Utilisateurs & Sécurité -->
+    <div class="users-right-col">
+      <article class="panel users-card users-table-card">
+        <div class="panel-head users-card-head">
+          <div class="users-card-head-title">
+            <span class="users-head-icon">📋</span>
+            <div>
+              <h2 class="users-card-title">Comptes enregistrés</h2>
+              <small class="muted">Liste des collaborateurs disposant d'un identifiant sur HeliAntha Smart Quote</small>
+            </div>
+          </div>
+          <span class="badge users-count-badge">{{ users|length }} compte(s)</span>
+        </div>
+
+        <div class="table-wrap users-table-wrap">
+          <table class="users-table">
+            <thead>
+              <tr>
+                <th>Utilisateur</th>
+                <th style="width: 140px;">Rôle &amp; Accès</th>
+                <th style="width: 120px;">Date création</th>
+                <th style="width: 130px; text-align: center;">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for user in users %}
+              {% set is_current = (current_username and user.username == current_username) %}
+              {% set is_last_admin = (user.role == 'Direction' and direction_count <= 1) %}
+              <tr class="{{ 'users-row-editing' if editing_user and editing_user.id == user.id else '' }}">
+                <td class="users-td-profile">
+                  <div class="users-profile-wrap">
+                    <div class="users-avatar {{ 'users-avatar-admin' if user.role == 'Direction' else 'users-avatar-commercial' }}">
+                      {{ '👑' if user.role == 'Direction' else user.username[:1]|upper }}
+                    </div>
+                    <div class="users-profile-info">
+                      <div class="users-name-line">
+                        <strong class="users-display-name">{{ user.display_name or user.username }}</strong>
+                        {% if is_current %}
+                          <span class="users-tag-current" title="Votre session active">🟢 Vous</span>
+                        {% endif %}
+                      </div>
+                      <span class="users-email-sub">{{ user.username }}</span>
+                    </div>
+                  </div>
+                </td>
+                <td>
+                  {% if user.role == "Direction" %}
+                    <span class="users-badge-role users-badge-direction">
+                      👑 Direction
+                    </span>
+                  {% else %}
+                    <span class="users-badge-role users-badge-commercial">
+                      💼 Commercial
+                    </span>
+                  {% endif %}
+                </td>
+                <td class="users-td-date">
+                  <span class="users-date-val">📅 {{ user.created_at[:10] if user.created_at else '-' }}</span>
+                </td>
+                <td class="users-td-actions">
+                  <div class="users-row-actions">
+                    <a href="{{ url_for('main.admin_users', edit_id=user.id) }}"
+                       class="users-btn-action-edit {{ 'active' if editing_user and editing_user.id == user.id else '' }}"
+                       title="Modifier ce compte">
+                      ✏️ Modifier
+                    </a>
+
+                    {% if is_current %}
+                      <span class="users-btn-action-locked" title="Vous ne pouvez pas supprimer votre propre session">
+                        🔒 Actif
+                      </span>
+                    {% elif is_last_admin %}
+                      <span class="users-btn-action-locked" title="Dernier compte Direction obligatoire">
+                        🔒 Protégé
+                      </span>
+                    {% else %}
+                      <form method="post" action="{{ url_for('main.admin_users') }}"
+                            onsubmit="return confirm('Confirmer la suppression définitive du compte {{ user.username }} ?');"
+                            style="display: inline;">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+                        <input type="hidden" name="action" value="delete">
+                        <input type="hidden" name="user_id" value="{{ user.id }}">
+                        <button type="submit" class="users-btn-action-delete" title="Supprimer ce compte">
+                          🗑️
+                        </button>
+                      </form>
+                    {% endif %}
+                  </div>
+                </td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="4" class="users-empty-td">
+                  <div class="users-empty-state">
+                    <span class="users-empty-icon">📭</span>
+                    <strong>Aucun utilisateur trouvé</strong>
+                    <p class="muted">Utilisez le formulaire pour enregistrer un premier compte.</p>
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="users-security-note">
+          <span class="users-sec-icon">🛡️</span>
+          <div>
+            <strong>Politique de sécurité &amp; Droits d'accès :</strong>
+            <span>Au moins un compte <b>Direction</b> doit rester actif pour administrer les tarifs, les règles de calcul et la passerelle WhatsApp. Les mots de passe sont hachés de manière sécurisée en base de données.</span>
+          </div>
+        </div>
+      </article>
     </div>
   </div>
-
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>Email</th>
-          <th>Type</th>
-          <th>Créé le</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for user in users %}
-        <tr>
-          <td><strong>{{ user.username }}</strong></td>
-          <td>{{ user.role }}</td>
-          <td>{{ user.created_at }}</td>
-          <td class="row-actions">
-            <a href="{{ url_for('main.admin_users', edit_id=user.id) }}">Modifier</a>
-            <form method="post" action="{{ url_for('main.admin_users') }}" onsubmit="return confirm('Supprimer ce compte ?');">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
-              <input type="hidden" name="action" value="delete">
-              <input type="hidden" name="user_id" value="{{ user.id }}">
-              <button type="submit">Supprimer</button>
-            </form>
-          </td>
-        </tr>
-        {% else %}
-        <tr><td colspan="4">Aucun compte trouvé.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</section>
+</div>
 {% endblock %}
+
+{% block page_scripts %}
+<script>
+(() => {
+  // Toggle affichage mot de passe
+  const pwdInput = document.getElementById("users-input-password");
+  const toggleBtn = document.getElementById("users-toggle-pwd");
+  if (pwdInput && toggleBtn) {
+    toggleBtn.addEventListener("click", () => {
+      const isPassword = pwdInput.getAttribute("type") === "password";
+      pwdInput.setAttribute("type", isPassword ? "text" : "password");
+      toggleBtn.textContent = isPassword ? "🙈" : "👁️";
+    });
+  }
+
+  // Sélection visuelle des cartes de rôles
+  const roleCards = document.querySelectorAll(".users-role-card");
+  roleCards.forEach(card => {
+    const radio = card.querySelector('input[type="radio"]');
+    if (!radio) return;
+    card.addEventListener("click", () => {
+      roleCards.forEach(c => c.classList.remove("selected"));
+      card.classList.add("selected");
+    });
+    radio.addEventListener("change", () => {
+      roleCards.forEach(c => c.classList.remove("selected"));
+      if (radio.checked) card.classList.add("selected");
+    });
+  });
+})();
+</script>
+{% endblock %}
+
