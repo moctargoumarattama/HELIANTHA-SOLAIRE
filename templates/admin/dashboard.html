@@ -7,7 +7,6 @@
   <article><small>Nouveaux aujourd'hui</small><b>{{ stats.new_today }}</b></article>
   <article><small>Simulations</small><b>{{ stats.simulations }}</b></article>
   <article><small>Devis générés</small><b>{{ stats.quotes_generated }}</b></article>
-  <article><small>Demandes visite</small><b>{{ stats.visit_requests }}</b></article>
   <article><small>En attente</small><b>{{ stats.pending_quotes }}</b></article>
   <article><small>Acceptés</small><b>{{ stats.accepted_quotes }}</b></article>
   <article><small>Refusés</small><b>{{ stats.refused_quotes }}</b></article>
@@ -37,7 +36,7 @@
           <td>{{ q.customer_name or "-" }}</td>
           <td>{{ project_labels.get(q.project, q.project) }}</td>
           <td>{{ "{:,.0f}".format(q.amount_ttc or 0).replace(",", " ") }} DH</td>
-          <td><span class="status">{{ q.status }}</span></td>
+          <td><span class="status">{{ display_quote_status(q.status) }}</span></td>
         </tr>
         {% else %}<tr><td colspan="5">Aucun devis enregistré.</td></tr>{% endfor %}
       </tbody>

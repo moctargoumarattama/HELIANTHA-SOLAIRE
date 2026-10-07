@@ -11,7 +11,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <link rel="icon" href="{{ url_for('main.brand_image') }}" type="image/jpeg">
   <link rel="apple-touch-icon" href="{{ url_for('main.brand_image') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}?v=20260927-7">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}?v=20261007-quotes">
 </head>
 <body class="admin-app">
   <div class="admin-backdrop" id="admin-backdrop" aria-hidden="true"></div>
@@ -22,8 +22,7 @@
     </a>
     <nav>
       <a class="admin-nav-link{% if request.endpoint == 'main.admin_dashboard' %} active{% endif %}" href="{{ url_for('main.admin_dashboard') }}">Tableau de bord</a>
-      <a class="admin-nav-link{% if request.endpoint == 'main.admin_prospects' %} active{% endif %}" href="{{ url_for('main.admin_prospects') }}">Clients / prospects</a>
-      <a class="admin-nav-link{% if request.endpoint == 'main.admin_quotes' %} active{% endif %}" href="{{ url_for('main.admin_quotes') }}">Devis</a>
+      <a class="admin-nav-link{% if request.endpoint in ('main.admin_quotes', 'main.admin_quote_detail', 'main.admin_quote_pdf') %} active{% endif %}" href="{{ url_for('main.admin_quotes') }}">Devis</a>
       <a class="admin-nav-link{% if request.endpoint == 'main.admin_catalog' %} active{% endif %}" href="{{ url_for('main.admin_catalog') }}">Catalogue</a>
       <a class="admin-nav-link{% if request.endpoint == 'main.admin_pumping_method' %} active{% endif %}" href="{{ url_for('main.admin_pumping_method') }}">Méthode Pompage</a>
       <a class="admin-nav-link{% if request.endpoint == 'main.admin_pumping_rules' %} active{% endif %}" href="{{ url_for('main.admin_pumping_rules') }}">Règles Pompage solaire</a>

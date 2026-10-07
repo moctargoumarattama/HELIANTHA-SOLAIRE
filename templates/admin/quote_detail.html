@@ -9,7 +9,8 @@
   <a class="admin-button secondary" href="{{ url_for('main.admin_quotes') }}">Retour</a>
   <a class="admin-button" href="{{ url_for('main.admin_quote_pdf', quote_id=quote.id) }}" target="_blank">Imprimer / PDF</a>
   <form method="post" action="{{ url_for('main.admin_quote_status', quote_id=quote.id) }}">
-    <select name="status">
+    <select name="status" required aria-label="Statut du devis">
+      {% if quote.status not in statuses %}<option value="" selected disabled>Choisir un statut</option>{% endif %}
       {% for status in statuses %}
       <option value="{{ status }}" {% if quote.status == status %}selected{% endif %}>{{ status }}</option>
       {% endfor %}
@@ -27,55 +28,9 @@
     <dt>Email</dt><dd>{{ quote.email or "-" }}</dd>
     <dt>Ville</dt><dd>{{ quote.location or quote.city or "-" }}</dd>
     <dt>Projet</dt><dd>{{ project_labels.get(quote.project, quote.project) }}</dd>
-    <dt>Statut</dt><dd><span class="status">{{ quote.status }}</span></dd>
+    <dt>Statut</dt><dd><span class="status">{{ quote.display_status }}</span></dd>
   </dl>
 </section>
-
-{% if quote.visit_requests %}
-<section class="panel" id="visite-technique">
-  <div class="panel-head">
-    <div>
-      <h2>Visite demandée</h2>
-      <p class="muted">Une seule fiche claire, sans répétition.</p>
-    </div>
-    <span class="status">{{ visit_summary.total }} demande(s) reçue(s)</span>
-  </div>
-
-  {% set latest_visit = visit_summary.latest %}
-  {% set latest_group = visit_summary.latest_group %}
-  <article class="visit-summary-card">
-    <div>
-      <small>Créneau souhaité</small>
-      <h3>{{ latest_visit.preferred_date or "Date à confirmer" }}{% if latest_visit.time_slot %} · {{ latest_visit.time_slot }}{% endif %}</h3>
-      {% if latest_group.count > 1 %}
-      <p class="muted">Cette même demande a été envoyée {{ latest_group.count }} fois.</p>
-      {% endif %}
-    </div>
-    <dl class="info-list visit-info-list">
-      <dt>Adresse</dt><dd>{{ latest_visit.address or "-" }}</dd>
-      <dt>Téléphone</dt><dd>{{ latest_visit.phone or "-" }}</dd>
-      <dt>Message</dt><dd>{{ latest_visit.comment or "-" }}</dd>
-      <dt>Suivi</dt><dd><span class="status">{{ latest_visit.status or "Nouveau" }}</span></dd>
-    </dl>
-  </article>
-
-  {% if visit_summary.other_groups %}
-  <details class="visit-history-details">
-    <summary>Autres demandes différentes</summary>
-    <div class="visit-other-list">
-      {% for group in visit_summary.other_groups %}
-      {% set visit = group.visit %}
-      <article>
-        <b>{{ visit.preferred_date or "Date à confirmer" }}{% if visit.time_slot %} · {{ visit.time_slot }}{% endif %}</b>
-        <span>{{ visit.address or "-" }}</span>
-        {% if group.count > 1 %}<small>{{ group.count }} envois identiques</small>{% endif %}
-      </article>
-      {% endfor %}
-    </div>
-  </details>
-  {% endif %}
-</section>
-{% endif %}
 
 <section class="panel">
   <div class="panel-head">

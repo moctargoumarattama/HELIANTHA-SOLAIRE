@@ -1158,8 +1158,10 @@ def list_quotes(search="", project="", status="", limit=200):
     sql = "SELECT * FROM quote_requests"
     if where:
         sql += " WHERE " + " AND ".join(where)
-    sql += " ORDER BY id DESC LIMIT ?"
-    values.append(limit)
+    sql += " ORDER BY id DESC"
+    if limit is not None:
+        sql += " LIMIT ?"
+        values.append(limit)
     return [dict(row) for row in db.execute(sql, values).fetchall()]
 
 

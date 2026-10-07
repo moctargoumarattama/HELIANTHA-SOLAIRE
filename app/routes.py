@@ -56,7 +56,8 @@ from .db import (
     update_quote_status,
     update_vat_rates,
 )
-from .defaults import PROJECT_LABELS, PUBLIC_PROJECTS, QUOTE_STATUSES
+from .defaults import PROJECT_LABELS, PUBLIC_PROJECTS
+from .admin_quotes import ADMIN_QUOTE_STATUSES, display_quote_status, group_quotes_by_client
 from .tax import (
     VAT_FIELDS,
     VAT_PROFILES,
@@ -934,7 +935,7 @@ def admin_dashboard():
         "admin/dashboard.html",
         stats=dashboard_stats(),
         project_labels=PROJECT_LABELS,
-        statuses=QUOTE_STATUSES,
+        display_quote_status=display_quote_status,
     )
 
 
@@ -1300,67 +1301,16 @@ def admin_pumping_method():
     return render_template("admin/pumping_method.html", **view)
 
 
-def _visit_request_signature(visit):
-    return tuple(
-        str(visit.get(key) or "").strip().lower()
-        for key in ("preferred_date", "time_slot", "address", "phone", "comment", "status")
-    )
-
-
-def _visit_request_display_summary(visits):
-    visits = [dict(visit) for visit in visits or []]
-    if not visits:
-        return {"latest": None, "groups": [], "total": 0, "unique_count": 0, "duplicate_count": 0}
-    groups_by_signature = {}
-    groups = []
-    for visit in visits:
-        signature = _visit_request_signature(visit)
-        group = groups_by_signature.get(signature)
-        if not group:
-            group = {
-                "visit": visit,
-                "count": 0,
-                "created_at_values": [],
-            }
-            groups_by_signature[signature] = group
-            groups.append(group)
-        group["count"] += 1
-        if visit.get("created_at"):
-            group["created_at_values"].append(visit.get("created_at"))
-
-    latest = visits[0]
-    for group in groups:
-        created_values = group["created_at_values"]
-        group["first_created_at"] = created_values[-1] if created_values else ""
-        group["last_created_at"] = created_values[0] if created_values else ""
-        group["duplicate_label"] = (
-            f"{group['count']} demandes identiques"
-            if group["count"] > 1
-            else "1 demande"
-        )
-    latest_signature = _visit_request_signature(latest)
-    latest_group = groups_by_signature.get(latest_signature) or groups[0]
-    other_groups = [group for group in groups if group is not latest_group]
-    return {
-        "latest": latest,
-        "latest_group": latest_group,
-        "groups": groups,
-        "other_groups": other_groups,
-        "total": len(visits),
-        "unique_count": len(groups),
-        "duplicate_count": len(visits) - len(groups),
-    }
-
-
 @bp.get("/admin/devis")
 def admin_quotes():
-    quotes = list_quotes()
+    groups = group_quotes_by_client(list_quotes(limit=None))
     return render_template(
         "admin/quotes.html",
-        quotes=quotes,
+        client_groups=groups,
+        quote_count=sum(len(group["quotes"]) for group in groups),
         project_labels=PROJECT_LABELS,
         public_projects=PUBLIC_PROJECTS,
-        statuses=QUOTE_STATUSES,
+        statuses=ADMIN_QUOTE_STATUSES,
         filters=request.args,
     )
 
@@ -1374,15 +1324,14 @@ def admin_quote_detail(quote_id):
     bom = quote.get("bom") or calculation_detail.get("bom", {})
     bom_lines = _display_equipment_lines((bom or {}).get("lines") or quote.get("selected_equipment") or [])
     financial_summary_rows = _financial_summary_rows(quote.get("financial_breakdown") or {})
-    visit_summary = _visit_request_display_summary(quote.get("visit_requests") or [])
+    quote["display_status"] = display_quote_status(quote.get("status"))
     return render_template(
         "admin/quote_detail.html",
         quote=quote,
         project_labels=PROJECT_LABELS,
-        statuses=QUOTE_STATUSES,
+        statuses=ADMIN_QUOTE_STATUSES,
         display_equipment_lines=bom_lines,
         financial_summary_rows=financial_summary_rows,
-        visit_summary=visit_summary,
     )
 
 
@@ -1396,21 +1345,17 @@ def admin_quote_pdf(quote_id):
 
 @bp.post("/admin/devis/<int:quote_id>/status")
 def admin_quote_status(quote_id):
-    update_quote_status(quote_id, request.form.get("status", "Nouveau"), session.get("admin_user", "admin"))
+    status = request.form.get("status", "Nouveau")
+    if status not in ADMIN_QUOTE_STATUSES:
+        abort(400)
+    update_quote_status(quote_id, status, session.get("admin_user", "admin"))
     return redirect(url_for("main.admin_quote_detail", quote_id=quote_id))
 
 
 @bp.get("/admin/prospects")
 def admin_prospects():
-    quotes = list_quotes()
-    return render_template(
-        "admin/prospects.html",
-        quotes=quotes,
-        project_labels=PROJECT_LABELS,
-        public_projects=PUBLIC_PROJECTS,
-        statuses=QUOTE_STATUSES,
-        filters=request.args,
-    )
+    filters = {key: request.args[key] for key in ("q", "project", "status") if key in request.args}
+    return redirect(url_for("main.admin_quotes", **filters))
 
 
 @bp.get("/admin/catalogue")
