@@ -103,8 +103,6 @@
   const requiredMarkers = form.querySelectorAll("[data-non-pump-required-marker]");
   const priceLabel = form.querySelector("[data-current-price-label]");
   const priceNote = form.querySelector("[data-pump-price-note]");
-  const vatLabel = form.querySelector("[data-vat-label]");
-  const vatInput = form.querySelector("input[name='vat_rate']");
 
   const syncPumpCommercialFields = (category) => {
     const isPump = category === "pumps";
@@ -116,15 +114,6 @@
     });
     if (priceLabel) priceLabel.textContent = isPump ? "Prix interne PT *" : "Prix HT *";
     if (priceNote) priceNote.hidden = !isPump;
-    if (vatLabel) vatLabel.textContent = isPump ? "TVA pompe dans Regles Pompage" : "TVA *";
-    if (vatInput) {
-      vatInput.required = !isPump;
-      if (isPump && vatInput.dataset.vatExplicit !== "1") {
-        vatInput.value = "";
-      } else if (!isPump && !vatInput.value && vatInput.dataset.vatExplicit !== "1") {
-        vatInput.value = "20";
-      }
-    }
   };
 
   const currentSection = document.getElementById("catalog-tech-section");

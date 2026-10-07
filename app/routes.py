@@ -1139,6 +1139,14 @@ def _method_solar_config(rule):
 
 def _method_decision(selection, candidates, rule):
     if not selection:
+        for candidate in candidates:
+            candidate["is_selected"] = False
+            if candidate.get("status") == "Insuffisant":
+                candidate["filter_type"] = "insufficient"
+            elif candidate.get("status") == "Hors courbe":
+                candidate["filter_type"] = "out_of_curve"
+            else:
+                candidate["filter_type"] = "compatible_eliminated"
         return {
             "status": "no_standard_pump",
             "title": "Aucune pompe standard ne couvre ce besoin.",
@@ -1202,6 +1210,36 @@ def _method_decision(selection, candidates, rule):
     else:
         lines.append("Le CV retenu est envoyé vers la règle solaire HeliAntha active.")
     lines.append(f"→ {format_cv(selected_cv)} retenu.")
+
+    for candidate in candidates:
+        is_sel = bool(
+            selected_candidate
+            and (
+                candidate is selected_candidate
+                or (
+                    candidate.get("product_id")
+                    and candidate.get("product_id") == selected_candidate.get("product_id")
+                    and candidate.get("variant_index") == selected_candidate.get("variant_index")
+                )
+            )
+        )
+        candidate["is_selected"] = is_sel
+        if is_sel:
+            candidate["filter_type"] = "selected"
+            candidate["reason"] = f"Solution retenue : plus petite puissance ({candidate['cv_label']}) couvrant le besoin au meilleur PT interne ({candidate['internal_pt_label']})."
+        elif candidate.get("compatible"):
+            candidate["filter_type"] = "compatible_eliminated"
+            if abs(candidate["cv"] - selected_cv) <= 1e-9:
+                candidate["reason"] = f"Couvre le besoin en {candidate['cv_label']}, mais PT interne ({candidate['internal_pt_label']}) supérieur à la variante retenue ({selected_candidate['internal_pt_label'] if selected_candidate else ''})."
+            elif candidate["cv"] > selected_cv:
+                candidate["reason"] = f"Couvre le besoin, mais puissance plus élevée ({candidate['cv_label']} vs {selected_candidate['cv_label'] if selected_candidate else format_cv(selected_cv)} retenu)."
+            else:
+                candidate["reason"] = "Couvre le débit et la HMT demandés."
+        elif candidate.get("status") == "Insuffisant":
+            candidate["filter_type"] = "insufficient"
+        else:
+            candidate["filter_type"] = "out_of_curve"
+
     return {
         "status": "selected",
         "title": f"{format_cv(selected_cv)} retenu",
@@ -1265,13 +1303,22 @@ def _pumping_method_view(flow_value="", hmt_value=""):
             selected_cv = float(selection["selected_pump_cv"]) if selection else None
             rule = _method_rule_for_cv(context, selected_cv) if selected_cv else None
             selected_duty = selection.get("duty") if selection else None
+            decision = _method_decision(selection, candidates, rule)
+            counts = {
+                "total": len(candidates),
+                "selected": sum(1 for c in candidates if c.get("is_selected")),
+                "compatible_eliminated": sum(1 for c in candidates if c.get("filter_type") == "compatible_eliminated"),
+                "insufficient": sum(1 for c in candidates if c.get("filter_type") == "insufficient"),
+                "out_of_curve": sum(1 for c in candidates if c.get("filter_type") == "out_of_curve"),
+            }
             analysis = {
                 "flow_label": f"{_method_decimal(flow, 1)} m³/h",
                 "hmt_label": f"{_method_decimal(hmt, 1)} m",
                 "interval_label": _method_interval_label(selected_duty),
                 "policy_label": _method_policy_label((selected_duty or {}).get("policy")),
                 "candidates": candidates,
-                "decision": _method_decision(selection, candidates, rule),
+                "counts": counts,
+                "decision": decision,
                 "solar_config": _method_solar_config(rule),
             }
     return {
@@ -2009,7 +2056,6 @@ def _catalog_form_defaults():
         "brand": "",
         "model": "",
         "sale_price": "",
-        "vat_rate": None,
         "currency": "DH",
         "active": 1,
         "technical_specs": {},
@@ -2021,7 +2067,7 @@ def _product_from_form(form, existing_product=None):
     if existing_product:
         product.update(dict(existing_product))
     # Absent fields are not edits. Technical JSON is merged/validated by save_product.
-    for key in ("reference", "category", "brand", "model", "sale_price", "vat_rate", "currency", "power_w"):
+    for key in ("reference", "category", "brand", "model", "sale_price", "currency", "power_w"):
         if key in form:
             product[key] = form.get(key, "").strip()
     if "power_w" not in form and "spec_power_w" in form:
@@ -2044,6 +2090,7 @@ def _catalog_form_view_product(product: dict | None) -> dict:
     # Inventory is not editable or sent to the administration's forms.
     view.pop("stock", None)
     view.pop("stock_label", None)
+    view.pop("vat_rate", None)
     specs = dict(view.get("technical_specs") or {})
     for key in ("power_w", "power_kw", "capacity_kwh", "capacity_l", "voltage", "current_amp"):
         if view.get(key) not in (None, "") and (key == "power_w" or key not in specs):

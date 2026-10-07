@@ -120,18 +120,7 @@
         {% if errors.get('sale_price') %}<small class="field-error">{{ errors.get('sale_price') }}</small>{% endif %}
       </label>
 
-      <label>
-        <span data-vat-label>{{ "TVA pompe dans Règles Pompage" if current_category == "pumps" else "TVA *" }}</span>
-        <input
-          type="number"
-          step="any"
-          name="vat_rate"
-          value="{% if product and product.get('vat_rate') is not none %}{{ product.get('vat_rate') * 100 }}{% elif current_category != 'pumps' %}20{% endif %}"
-          data-vat-explicit="{{ 1 if product and product.get('id') and product.get('vat_rate') is not none else 0 }}"
-          {% if current_category != 'pumps' %}required{% endif %}
-        >
-        {% if errors.get('vat_rate') %}<small class="field-error">{{ errors.get('vat_rate') }}</small>{% endif %}
-      </label>
+      <p class="muted">Les taux de TVA sont gérés dans <a href="{{ url_for('main.admin_tva') }}">TVA &amp; Transport</a>.</p>
 
     </div>
   </div>
@@ -153,5 +142,5 @@
 
 {% block page_scripts %}
 <script type="application/json" id="catalog-field-definitions">{{ technical_fields|tojson }}</script>
-<script src="{{ url_for('static', filename='js/catalog-form.js', v='no-admin-stock-1') }}"></script>
+<script src="{{ url_for('static', filename='js/catalog-form.js', v='central-vat-1') }}"></script>
 {% endblock %}

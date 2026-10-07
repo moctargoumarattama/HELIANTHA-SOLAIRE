@@ -228,10 +228,7 @@
               <small class="cat-m-hint" data-pump-price-note hidden>Prix interne catalogue pompe. Calcul client dans Règles Pompage.</small>
             </label>
 
-            <label class="cat-m-field">
-              <span class="cat-m-label" data-vat-label>TVA (%) <span class="cat-m-req">*</span></span>
-              <input type="number" step="any" name="vat_rate" id="modal-f-vat" value="20" required>
-            </label>
+            <p class="cat-m-hint">Les taux de TVA sont gérés dans <a href="{{ url_for('main.admin_tva') }}">TVA &amp; Transport</a>.</p>
 
           </div>
         </div>
@@ -417,8 +414,6 @@
     const brandInput = document.getElementById("modal-f-brand");
     const priceLabel = modalForm.querySelector("[data-current-price-label]");
     const priceNote = modalForm.querySelector("[data-pump-price-note]");
-    const vatLabel = modalForm.querySelector("[data-vat-label]");
-    const vatInput = document.getElementById("modal-f-vat");
     const markers = modalForm.querySelectorAll("[data-non-pump-required-marker]");
 
     if (refField) refField.hidden = isPump;
@@ -428,12 +423,6 @@
 
     if (priceLabel) priceLabel.textContent = isPump ? "Prix interne PT (DH) *" : "Prix HT (DH) *";
     if (priceNote) priceNote.hidden = !isPump;
-    if (vatLabel) vatLabel.textContent = isPump ? "TVA pompe (Règles Pompage)" : "TVA (%) *";
-    if (vatInput) {
-      vatInput.required = !isPump;
-      if (isPump) vatInput.value = "";
-      else if (!vatInput.value) vatInput.value = "20";
-    }
   };
 
   const showModalErrors = (errors, message) => {
@@ -479,7 +468,6 @@
       document.getElementById("modal-f-brand").value = "";
       document.getElementById("modal-f-model").value = "";
       document.getElementById("modal-f-price").value = "";
-      document.getElementById("modal-f-vat").value = "20";
       document.getElementById("modal-f-active").checked = true;
 
       renderTechFields("", {});
@@ -527,12 +515,6 @@
     document.getElementById("modal-f-model").value = prod.model || "";
     document.getElementById("modal-f-price").value = prod.sale_price !== null && prod.sale_price !== undefined ? prod.sale_price : "";
 
-    let vatVal = "20";
-    if (prod.vat_rate !== null && prod.vat_rate !== undefined) {
-      const v = Number.parseFloat(prod.vat_rate);
-      vatVal = v <= 1 ? String(Math.round(v * 100)) : String(v);
-    }
-    document.getElementById("modal-f-vat").value = vatVal;
     document.getElementById("modal-f-active").checked = Boolean(prod.active);
 
     const specs = prod.form_specs || prod.technical_specs || {};

@@ -122,6 +122,9 @@ def test_admin_post_refreshes_sql_json_cache_and_ongrid_calculation(application)
         assert row["power_w"] == 700
         assert json.loads(row["technical_specs_json"])["power_w"] == 700
         context = load_calculation_context()
+        # Legacy catalogue VAT must not override the central tax profile.
+        for product in context["products"]:
+            product["vat_rate"] = 0.30
         result = CalculationEngine().calculate("photovoltaic", {
             "phase": "monophase", "meter_type": "numerique", "monthly_consumption_kwh": 1000,
         }, context=context)
@@ -129,6 +132,7 @@ def test_admin_post_refreshes_sql_json_cache_and_ongrid_calculation(application)
         selected = next(item for item in result["selected_equipment"] if item["component"] == "panel")
         assert selected["product_id"] == product_id
         assert selected["power_w"] == final["panel_power_w"] == 700
+        assert selected["vat_rate"] == 0.10
         assert final["installed_power_kwp"] == pytest.approx(final["panel_count"] * 0.7)
         assert final["raw_panel_count"] == pytest.approx(9.52)
         assert final["inverter_power_kw"] >= final["installed_power_kwp"]
@@ -143,16 +147,18 @@ def test_admin_partial_post_preserves_hidden_json_and_sql_fields(application):
                       "description": "Description conservée", "voltage": 48,
                       "technology": "TOPCon", "supplier": "Fournisseur", "warranty": "25 ans"}, product_id)
         before = get_product(product_id)
-    # A stale form must no longer modify inventory through the administration.
-    assert client.post(f"/admin/catalogue/{product_id}/edit", data={"sale_price": "1350", "model": "Nouveau nom", "stock": "999"}).status_code == 302
+    # A stale form must no longer modify inventory or VAT through the catalogue.
+    assert client.post(f"/admin/catalogue/{product_id}/edit", data={"sale_price": "1350", "model": "Nouveau nom", "stock": "999", "vat_rate": "30"}).status_code == 302
     with app.app_context():
         after = get_product(product_id)
     assert after["technical_specs"] == before["technical_specs"]
     for key in ("reference", "category", "brand", "description", "voltage", "efficiency", "technology", "supplier", "warranty", "unit", "subcategory", "stock", "active"):
         assert after[key] == before[key]
     assert after["sale_price"] == 1350
+    assert after["vat_rate"] == before["vat_rate"]
     editor_data = client.get(f"/admin/catalogue/{product_id}/edit?format=json").get_json()["product"]
     assert "stock" not in editor_data and "stock_label" not in editor_data
+    assert "vat_rate" not in editor_data
 
 
 def test_rejected_admin_posts_leave_database_intact_and_report_errors(application):
@@ -210,7 +216,11 @@ def test_editor_uses_shared_power_metadata(application):
         assert 'name="stock"' not in page
         assert 'modal-f-stock' not in page
         assert '"stock":' not in page
+        assert 'name="vat_rate"' not in page
+        assert 'modal-f-vat' not in page
+        assert '"vat_rate":' not in page
     assert 'name="stock"' not in html
+    assert 'name="vat_rate"' not in html
 
 
 def test_ongrid_fractional_power_uses_exact_rating_without_truncation():

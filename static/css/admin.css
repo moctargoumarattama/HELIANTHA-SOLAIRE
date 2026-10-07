@@ -5597,3 +5597,398 @@ tbody tr:hover{
 }
 
 
+
+/* ==========================================================================
+   MODE FOCUS POMPAGE (Plan 2 : Simulation Active)
+   ========================================================================== */
+
+.pm-focus-cockpit {
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%) !important;
+  border-left: 5px solid #0d9488 !important;
+  margin-bottom: 22px !important;
+  box-shadow: 0 4px 18px rgba(13, 148, 136, 0.08) !important;
+}
+
+.pm-focus-cockpit-head {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: flex-start !important;
+  flex-wrap: wrap !important;
+  gap: 14px !important;
+  margin-bottom: 16px !important;
+}
+
+.pm-focus-title-group h2 {
+  font-size: 21px !important;
+  font-weight: 800 !important;
+  color: #0f172a !important;
+  margin: 4px 0 2px !important;
+}
+
+.pm-focus-live-badge {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  background: #ecfdf5 !important;
+  color: #059669 !important;
+  border: 1px solid #a7f3d0 !important;
+  padding: 3px 10px !important;
+  border-radius: 999px !important;
+  font-size: 11.5px !important;
+  font-weight: 700 !important;
+}
+
+.pm-live-dot {
+  width: 7px !important;
+  height: 7px !important;
+  background: #10b981 !important;
+  border-radius: 50% !important;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.3) !important;
+}
+
+.pm-btn-reset-sim {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  background: #f1f5f9 !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #475569 !important;
+  padding: 8px 14px !important;
+  border-radius: 8px !important;
+  font-size: 12.5px !important;
+  font-weight: 700 !important;
+  text-decoration: none !important;
+  transition: all 0.15s ease !important;
+}
+
+.pm-btn-reset-sim:hover {
+  background: #e2e8f0 !important;
+  color: #0f172a !important;
+  border-color: #94a3b8 !important;
+}
+
+/* Formulaire Compact Mode Focus */
+.pm-focus-form {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 12px !important;
+  padding: 12px 16px !important;
+  margin-bottom: 14px !important;
+}
+
+.pm-focus-form-grid {
+  display: flex !important;
+  align-items: flex-end !important;
+  gap: 14px !important;
+  flex-wrap: wrap !important;
+}
+
+.pm-focus-field {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 4px !important;
+  flex: 1 1 200px !important;
+}
+
+.pm-focus-label {
+  font-size: 11.5px !important;
+  font-weight: 700 !important;
+  color: #475569 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.04em !important;
+}
+
+.pm-focus-field .pm-input-wrapper {
+  position: relative !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+.pm-focus-field input {
+  width: 100% !important;
+  padding: 8px 56px 8px 12px !important;
+  border: 1.5px solid #cbd5e1 !important;
+  border-radius: 8px !important;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  color: #0f172a !important;
+  transition: border-color 0.15s !important;
+}
+
+.pm-focus-field input:focus {
+  border-color: #0d9488 !important;
+  outline: none !important;
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.15) !important;
+}
+
+.pm-focus-btn-wrap {
+  display: flex !important;
+  align-items: flex-end !important;
+}
+
+.pm-btn-focus-calc {
+  white-space: nowrap !important;
+  padding: 9px 20px !important;
+  border-radius: 8px !important;
+  font-size: 13.5px !important;
+}
+
+.pm-duty-tags-focus {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)) !important;
+  gap: 10px !important;
+}
+
+.pm-tag-card-policy {
+  grid-column: span 1 !important;
+}
+
+/* Barre de Filtres Diagnostiques des Candidats */
+.pm-candidates-panel {
+  margin-bottom: 24px !important;
+}
+
+.pm-candidates-header {
+  margin-bottom: 14px !important;
+}
+
+.pm-cand-title-line {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  margin-bottom: 4px !important;
+  flex-wrap: wrap !important;
+}
+
+.pm-cand-title-line h2 {
+  font-size: 19px !important;
+  font-weight: 800 !important;
+  color: #0f172a !important;
+  margin: 0 !important;
+}
+
+.pm-cand-filters-bar {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  background: #f8fafc !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 10px !important;
+  padding: 8px 12px !important;
+  margin-bottom: 14px !important;
+  overflow-x: auto !important;
+}
+
+.pm-cand-filter-lbl {
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  color: #475569 !important;
+  white-space: nowrap !important;
+}
+
+.pm-cand-filters-list {
+  display: flex !important;
+  gap: 8px !important;
+  align-items: center !important;
+  flex-wrap: wrap !important;
+}
+
+.pm-cand-filter-btn {
+  background: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #334155 !important;
+  padding: 5px 12px !important;
+  border-radius: 7px !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  cursor: pointer !important;
+  white-space: nowrap !important;
+  transition: all 0.15s ease !important;
+}
+
+.pm-cand-filter-btn:hover {
+  background: #f1f5f9 !important;
+  border-color: #94a3b8 !important;
+}
+
+.pm-cand-filter-btn.active {
+  background: #0f172a !important;
+  border-color: #0f172a !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.25) !important;
+}
+
+.pm-cand-filter-btn.active .pm-chip-count {
+  color: #94a3b8 !important;
+}
+
+.pm-chip-count {
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  color: #64748b !important;
+  margin-left: 2px !important;
+}
+
+.pm-cand-filter-btn.pm-fbtn-win.active {
+  background: #d97706 !important;
+  border-color: #d97706 !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(217, 119, 6, 0.3) !important;
+}
+
+.pm-cand-filter-btn.pm-fbtn-comp.active {
+  background: #16a34a !important;
+  border-color: #16a34a !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(22, 163, 74, 0.3) !important;
+}
+
+.pm-cand-filter-btn.pm-fbtn-bad.active {
+  background: #dc2626 !important;
+  border-color: #dc2626 !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.3) !important;
+}
+
+.pm-cand-filter-btn.pm-fbtn-mute.active {
+  background: #64748b !important;
+  border-color: #64748b !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(100, 116, 139, 0.3) !important;
+}
+
+/* Scroll wrapper propre pour la table des candidats */
+.pm-cand-scroll-wrap {
+  max-height: 520px !important;
+  overflow-y: auto !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 10px !important;
+}
+
+.pm-cand-scroll-wrap thead th {
+  position: sticky !important;
+  top: 0 !important;
+  background: #f8fafc !important;
+  z-index: 2 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+}
+
+/* Ligne Gagnante */
+.pm-cand-winner-row {
+  background: #fefce8 !important;
+  border-left: 4px solid #eab308 !important;
+}
+
+.pm-cand-winner-row:hover {
+  background: #fef9c3 !important;
+}
+
+.pm-cand-cv {
+  font-size: 13.5px !important;
+}
+
+.pm-win-badge {
+  display: inline-block !important;
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%) !important;
+  color: #ffffff !important;
+  padding: 2px 6px !important;
+  border-radius: 4px !important;
+  font-size: 10.5px !important;
+  font-weight: 800 !important;
+  margin-left: 6px !important;
+  box-shadow: 0 1px 4px rgba(217, 119, 6, 0.3) !important;
+}
+
+/* Badges explicatifs dans Lecture Métier */
+.pm-reason-text {
+  display: inline-block !important;
+  font-size: 12px !important;
+  line-height: 1.4 !important;
+}
+
+.pm-reason-win {
+  color: #854d0e !important;
+  font-weight: 700 !important;
+}
+
+.pm-reason-comp {
+  color: #166534 !important;
+  font-weight: 600 !important;
+}
+
+.pm-reason-bad {
+  color: #991b1b !important;
+}
+
+.pm-reason-mute {
+  color: #64748b !important;
+}
+
+/* Tiroir Bibliothèque Brute */
+.pm-raw-library-drawer {
+  background: #ffffff !important;
+  border: 1.5px dashed #cbd5e1 !important;
+  border-radius: 12px !important;
+  margin-top: 24px !important;
+  overflow: hidden !important;
+  transition: all 0.2s ease !important;
+}
+
+.pm-raw-library-drawer:hover {
+  border-color: #94a3b8 !important;
+}
+
+.pm-raw-library-summary {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: 14px 18px !important;
+  cursor: pointer !important;
+  background: #f8fafc !important;
+  user-select: none !important;
+  list-style: none !important;
+}
+
+.pm-raw-library-summary::-webkit-details-marker {
+  display: none !important;
+}
+
+.pm-raw-summary-left {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+}
+
+.pm-raw-summary-icon {
+  font-size: 22px !important;
+}
+
+.pm-raw-summary-titles {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 2px !important;
+}
+
+.pm-raw-summary-titles strong {
+  font-size: 14px !important;
+  color: #1e293b !important;
+}
+
+.pm-raw-library-drawer[open] .pm-raw-library-summary {
+  border-bottom: 1px solid #e2e8f0 !important;
+  background: #f1f5f9 !important;
+}
+
+.pm-raw-library-body {
+  padding: 20px 18px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 24px !important;
+}
+
+.pm-raw-inner-sec {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 10px !important;
+  padding: 16px !important;
+}
