@@ -1,0 +1,46 @@
+<tr
+  data-catalog-row
+  data-product-id="{{ p.id }}"
+  data-category="{{ p.category or '' }}"
+  data-brand="{{ p.brand or '' }}"
+  data-active="{{ 1 if p.active else 0 }}"
+  data-price="{{ p.sale_price or 0 }}"
+  data-updated="{{ p.updated_at or '' }}"
+  data-search="{{ [('' if p.category == 'pumps' else p.reference), p.brand, p.model, p.description, p.category_label, p.main_characteristic]|select|join(' ')|lower }}"
+  class="cat-row {% if not p.active %}is-inactive{% endif %}"
+>
+  <td data-pump-hidden-column class="cat-cell-ref">
+    {% if p.category != 'pumps' %}
+    <span class="cat-ref-code">{{ p.reference }}</span>
+    {% else %}
+    <span class="cat-muted-dash">-</span>
+    {% endif %}
+    {% if p.datasheet_available %}
+    <div class="cat-datasheet-wrap">
+      <a href="{{ p.datasheet_url }}" target="_blank" rel="noopener" class="cat-datasheet-btn" title="Consulter la fiche technique officielle">📄 Fiche PDF</a>
+    </div>
+    {% endif %}
+  </td>
+  <td class="cat-cell-prod">
+    <strong class="cat-prod-title">{{ [p.brand, p.model]|select|join(' ') or "Produit catalogue" }}</strong>
+    {% if p.description %}<div class="cat-prod-desc">{{ p.description }}</div>{% endif %}
+  </td>
+  <td class="cat-cell-cat">
+    <span class="cat-cat-tag cat-cat-{{ p.category or 'default' }}">{{ p.category_label }}</span>
+  </td>
+  <td class="cat-cell-spec">
+    <span class="cat-spec-badge">{{ p.main_characteristic or "-" }}</span>
+  </td>
+  <td class="cat-cell-price">
+    <strong class="cat-price-amount">{{ (p.sale_price or 0)|format_currency(p.currency or 'DH') }}</strong>
+  </td>
+  <td class="row-actions cat-cell-actions">
+    <div class="cat-actions-group">
+      <a href="{{ url_for('main.admin_catalog_edit', product_id=p.id) }}" class="cat-btn-edit" onclick="openProductModal('edit', event, {{ p.id }})">✏️ Modifier</a>
+      <form method="post" action="{{ url_for('main.admin_catalog_toggle', product_id=p.id) }}" class="cat-action-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+        {% include "admin/_catalog_toggle.html" %}
+      </form>
+    </div>
+  </td>
+</tr>
