@@ -9,6 +9,7 @@ from typing import Any
 
 from app.defaults import ONGRID_PARAMETER_DEFAULTS
 from app.tax import money, vat_rate_for_component
+from app.transport import TRANSPORT_DESCRIPTION, transport_rate
 
 
 MONEY = Decimal("0.01")
@@ -42,6 +43,7 @@ def parameters_from_context(context: dict[str, Any] | None) -> dict[str, Decimal
     for key, row in rows.items():
         if key in params:
             params[key] = _decimal(row.get("value"), params[key])
+    params["transport_per_pv"] = transport_rate(context, "photovoltaic")
     for key, component in {
         "vat_pv_rate": "panel",
         "vat_standard_rate": "inverter",
@@ -321,7 +323,7 @@ def calculate_ongrid(data: dict[str, Any], context: dict[str, Any] | None) -> di
         _service_line("cabling_acdc", "cables", "Câblage AC/DC", panel_count, params["cablage_acdc_per_pv"], vat_rate_for_component(context, "photovoltaic", "cabling_acdc"), "cabling"),
         _service_line("injection_limiter", "accessories", "Limiteur d'injection", Decimal("1"), injection_limit, vat_rate_for_component(context, "photovoltaic", "injection_limiter"), "accessories"),
         _service_line("installation", "services", "Installation et mise en service", panel_count, params["installation_per_pv"], vat_rate_for_component(context, "photovoltaic", "installation"), "installation"),
-        _service_line("transport", "transport", "Transport", panel_count, params["transport_per_pv"], vat_rate_for_component(context, "photovoltaic", "transport"), "transport"),
+        _service_line("transport", "transport", TRANSPORT_DESCRIPTION, panel_count, params["transport_per_pv"], vat_rate_for_component(context, "photovoltaic", "transport"), "transport"),
     ]
 
     return {

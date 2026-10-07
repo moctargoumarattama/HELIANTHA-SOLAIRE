@@ -51,7 +51,7 @@ from .db import (
     create_pumping_solar_rule,
     delete_user,
     set_product_active,
-    update_company_setting,
+    update_company_settings,
     update_ongrid_parameters,
     update_pumping_solar_rule,
     update_quote_selected_offer,
@@ -107,6 +107,7 @@ from .services.whatsapp_service import (
     send_whatsapp_raw,
 )
 from .wizard_projects import engine_project_for, normalize_wizard_project
+from .transport import TRANSPORT_DESCRIPTION, TransportValidationError
 
 
 bp = Blueprint("main", __name__)
@@ -188,6 +189,9 @@ def _display_equipment_lines(lines):
         component = str(row.get("component") or "").strip().lower()
         category = str(row.get("category") or "").strip().lower()
         role = str(row.get("role") or "").strip().lower()
+
+        if component == "transport" or category == "transport":
+            return TRANSPORT_DESCRIPTION
 
         power_cv = row.get("power_cv") or specs.get("power_hp")
         if category == "pumps":
@@ -271,7 +275,8 @@ def _financial_summary_rows(financial_breakdown: dict) -> list[dict]:
 
     return [
         {"label": "Matériel", "amount": total("principal_equipment")},
-        {"label": "Compléments", "amount": total("accessories", "protections", "cabling", "structure", "transport")},
+        {"label": "Compléments", "amount": total("accessories", "protections", "cabling", "structure")},
+        {"label": "Transport", "amount": total("transport")},
         {"label": "Pose", "amount": total("installation", "labor")},
         {"label": "Total HT", "amount": float(financial_breakdown.get("total_ht") or 0), "emphasis": True},
         {"label": "TVA", "amount": float(financial_breakdown.get("vat") or 0)},
@@ -1679,7 +1684,7 @@ def admin_ongrid_rules():
         }
         try:
             update_ongrid_parameters(values, changed_by=session.get("admin_user", "HeliAntha"))
-        except TaxValidationError as exc:
+        except (TaxValidationError, TransportValidationError) as exc:
             flash(str(exc), "error")
             return redirect(url_for("main.admin_ongrid_rules"))
         return redirect(url_for("main.admin_ongrid_rules", saved=1))
@@ -1689,7 +1694,7 @@ def admin_ongrid_rules():
             "key": "per_panel",
             "title": "Prix ajoutés pour chaque panneau",
             "intro": "Ces montants se multiplient automatiquement par le nombre de panneaux du devis.",
-            "keys": ["protection_acdc_per_pv", "cablage_acdc_per_pv", "installation_per_pv", "transport_per_pv"],
+            "keys": ["protection_acdc_per_pv", "cablage_acdc_per_pv", "installation_per_pv"],
         },
         {
             "key": "injection",
@@ -1828,8 +1833,17 @@ def admin_settings():
         if setting.get("key") not in HIDDEN_COMPANY_SETTING_KEYS
     ]
     if request.method == "POST":
-        for setting in settings:
-            update_company_setting(setting["id"], request.form.get(f"value_{setting['id']}", setting["value"]))
+        submitted = {
+            setting["key"]: request.form[f"value_{setting['id']}"]
+            for setting in settings if f"value_{setting['id']}" in request.form
+        }
+        try:
+            update_company_settings(submitted)
+        except TransportValidationError as exc:
+            flash(str(exc), "error")
+            settings = [{**setting, "value": submitted.get(setting["key"], setting["value"])} for setting in settings]
+            return render_template("admin/settings.html", settings=settings), 400
+        flash("Paramètres et tarifs de transport enregistrés avec succès.", "success")
         return redirect(url_for("main.admin_settings"))
     return render_template("admin/settings.html", settings=settings)
 

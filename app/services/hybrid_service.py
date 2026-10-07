@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.transport import TRANSPORT_DESCRIPTION
+
 from copy import deepcopy
 from decimal import Decimal, ROUND_HALF_EVEN
 from typing import Any
@@ -158,7 +160,7 @@ def calculate_hybrid(data: dict[str, Any], context: dict[str, Any] | None) -> di
         _service_line("protection_acdc", "protections", "Protection AC/DC", panel_count, params["protection_acdc_per_pv"], vat_rate_for_component(context, "hybrid", "protection_acdc"), "protections"),
         _service_line("cabling_acdc", "cables", "Câblage AC/DC", panel_count, params["cablage_acdc_per_pv"], vat_rate_for_component(context, "hybrid", "cabling_acdc"), "cabling"),
         _service_line("installation", "services", "Installation et mise en service", panel_count, params["installation_per_pv"], vat_rate_for_component(context, "hybrid", "installation"), "installation"),
-        _service_line("transport", "transport", "Transport", panel_count, params["transport_per_pv"], vat_rate_for_component(context, "hybrid", "transport"), "transport"),
+        _service_line("transport", "transport", TRANSPORT_DESCRIPTION, panel_count, params["transport_per_pv"], vat_rate_for_component(context, "hybrid", "transport"), "transport"),
     ]
 
     return {

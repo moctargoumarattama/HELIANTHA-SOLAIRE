@@ -1,65 +1,113 @@
 {% extends "admin/base.html" %}
 {% block title %}Devis - HeliAntha Admin{% endblock %}
 {% block page_title %}Devis{% endblock %}
+
 {% block content %}
-<form class="filters quote-filters quote-filter-panel" method="get" data-live-quote-filters>
-  <input name="q" value="{{ filters.get('q', '') }}" placeholder="Client, téléphone, référence…" aria-label="Rechercher un client ou un devis">
+<!-- Barre d'outils CRM haute densité : Filtres + Compteurs -->
+<div class="crm-toolbar-wrap">
+  <form class="filters quote-filters quote-filter-panel crm-filter-bar" method="get" data-live-quote-filters>
+    <div class="crm-search-box">
+      <span class="crm-search-icon" aria-hidden="true">🔍</span>
+      <input name="q" value="{{ filters.get('q', '') }}" placeholder="Client, téléphone, référence…" aria-label="Rechercher un client ou un devis">
+    </div>
 
-  <select name="project" aria-label="Projet">
-    <option value="">Tous projets</option>
-    {% for key in public_projects %}
-    <option value="{{ key }}" {% if filters.get('project') == key %}selected{% endif %}>{{ project_labels.get(key) }}</option>
-    {% endfor %}
-  </select>
+    <select name="project" aria-label="Projet" class="crm-filter-select">
+      <option value="">Tous projets</option>
+      {% for key in public_projects %}
+      <option value="{{ key }}" {% if filters.get('project') == key %}selected{% endif %}>{{ project_labels.get(key) }}</option>
+      {% endfor %}
+    </select>
 
-  <select name="status" aria-label="Statut">
-    <option value="">Tous statuts</option>
-    {% for status in statuses %}
-    <option value="{{ status }}" {% if filters.get('status') == status %}selected{% endif %}>{{ status }}</option>
-    {% endfor %}
-  </select>
-</form>
+    <select name="status" aria-label="Statut" class="crm-filter-select">
+      <option value="">Tous statuts</option>
+      {% for status in statuses %}
+      <option value="{{ status }}" {% if filters.get('status') == status %}selected{% endif %}>{{ status }}</option>
+      {% endfor %}
+    </select>
+  </form>
 
-<div class="detail-actions" aria-live="polite">
-  <span class="status"><span data-live-client-count>{{ client_groups|length }}</span>&nbsp;client(s)</span>
-  <span class="status"><span data-live-quote-count>{{ quote_count }}</span>&nbsp;devis</span>
+  <div class="crm-live-counters" aria-live="polite">
+    <span class="status crm-counter-pill"><span data-live-client-count>{{ client_groups|length }}</span>&nbsp;client(s)</span>
+    <span class="status crm-counter-pill crm-counter-accent"><span data-live-quote-count>{{ quote_count }}</span>&nbsp;devis</span>
+  </div>
 </div>
 
-{% for client in client_groups %}
-<article class="panel quotes-panel" data-client-group>
-  <div class="panel-head">
-    <div>
-      <h2>{{ client.customer_name or "Client sans nom" }}</h2>
-      {% if client.company or client.city %}<p class="muted">{{ [client.company, client.city]|select|join(' · ') }}</p>{% endif %}
+<!-- Liste CRM Consolidée Haute Densité -->
+<div class="crm-quotes-list">
+  {% for client in client_groups %}
+  <article class="panel quotes-panel crm-client-card" data-client-group>
+    <div class="panel-head crm-client-head">
+      <div class="crm-client-identity">
+        <span class="crm-avatar">{{ (client.customer_name or "C")[:1]|upper }}</span>
+        <div class="crm-name-group">
+          <h2>{{ client.customer_name or "Client sans nom" }}</h2>
+          {% if client.company or client.city %}
+          <span class="crm-meta-chip">📍 {{ [client.company, client.city]|select|join(' · ') }}</span>
+          {% endif %}
+        </div>
+        <span class="crm-badge-quote-count">{{ client.quotes|length }} devis</span>
+      </div>
+
+      <div class="detail-actions crm-client-actions">
+        {% if client.phone %}
+        <a class="text-button crm-action-chip" href="tel:{{ client.phone }}" title="Appeler le client">📞 {{ client.phone }}</a>
+        {% endif %}
+        {% if client.email %}
+        <a class="text-button crm-action-chip" href="mailto:{{ client.email }}" title="Envoyer un email">✉️ {{ client.email }}</a>
+        {% endif %}
+      </div>
     </div>
-    <div class="detail-actions">
-      {% if client.phone %}<a class="text-button" href="tel:{{ client.phone }}">{{ client.phone }}</a>{% endif %}
-      {% if client.email %}<a class="text-button" href="mailto:{{ client.email }}">{{ client.email }}</a>{% endif %}
+
+    <div class="table-wrap quotes-table-wrap crm-table-wrap">
+      <table class="crm-table">
+        <thead>
+          <tr>
+            <th>Numéro</th>
+            <th>Date</th>
+            <th>Projet</th>
+            <th>Solution</th>
+            <th>Total HT</th>
+            <th>TVA</th>
+            <th>Total TTC</th>
+            <th>Statut</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for q in client.quotes %}
+          {% set st = (q.display_status or q.status or 'Nouveau')|lower %}
+          <tr data-quote-row data-project="{{ q.project or '' }}" data-status="{{ q.status or '' }}"
+              data-search="{{ [client.customer_name, client.phone, client.email, client.company, client.city, q.quote_number, q.customer_name, q.phone, q.email, q.company, q.location, q.city, project_labels.get(q.project, q.project), q.solution_name, q.display_status]|select|join(' ') }}"
+              class="crm-row">
+            <td data-label="Numéro">
+              <a href="{{ url_for('main.admin_quote_detail', quote_id=q.id) }}" class="crm-link-num">
+                {{ q.quote_number }}
+              </a>
+            </td>
+            <td data-label="Date" class="crm-cell-date">{{ q.created_at }}</td>
+            <td data-label="Projet">
+              <span class="crm-project-tag crm-proj-{{ q.project or 'default' }}">{{ project_labels.get(q.project, q.project) }}</span>
+            </td>
+            <td data-label="Solution" class="crm-cell-solution">{{ q.solution_name or "-" }}</td>
+            <td data-label="Total HT" class="amount-ht"><span>{{ (q.amount_ht or 0)|format_currency }}</span></td>
+            <td data-label="TVA" class="amount-vat"><span>{{ (q.amount_vat or 0)|format_currency }}</span></td>
+            <td data-label="Total TTC" class="amount-ttc"><strong>{{ (q.amount_ttc or 0)|format_currency }}</strong></td>
+            <td data-label="Statut">
+              <span class="status crm-status-badge {% if 'valid' in st or 'confirm' in st %}crm-st-success{% elif 'cours' in st or 'traitement' in st %}crm-st-info{% elif 'perdu' in st or 'annul' in st %}crm-st-danger{% else %}crm-st-warning{% endif %}">
+                {{ q.display_status or "Nouveau" }}
+              </span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
-  </div>
-  <div class="table-wrap quotes-table-wrap">
-    <table>
-      <thead><tr><th>Numéro</th><th>Date</th><th>Projet</th><th>Solution</th><th>Total HT</th><th>TVA</th><th>Total TTC</th><th>Statut</th></tr></thead>
-      <tbody>
-        {% for q in client.quotes %}
-        <tr data-quote-row data-project="{{ q.project or '' }}" data-status="{{ q.status or '' }}"
-            data-search="{{ [client.customer_name, client.phone, client.email, client.company, client.city, q.quote_number, q.customer_name, q.phone, q.email, q.company, q.location, q.city, project_labels.get(q.project, q.project), q.solution_name, q.display_status]|select|join(' ') }}">
-          <td data-label="Numéro"><a href="{{ url_for('main.admin_quote_detail', quote_id=q.id) }}">{{ q.quote_number }}</a></td>
-          <td data-label="Date">{{ q.created_at }}</td>
-          <td data-label="Projet">{{ project_labels.get(q.project, q.project) }}</td>
-          <td data-label="Solution">{{ q.solution_name or "-" }}</td>
-          <td data-label="Total HT" class="amount-ht"><span>{{ (q.amount_ht or 0)|format_currency }}</span></td>
-          <td data-label="TVA" class="amount-vat"><span>{{ (q.amount_vat or 0)|format_currency }}</span></td>
-          <td data-label="Total TTC" class="amount-ttc"><strong>{{ (q.amount_ttc or 0)|format_currency }}</strong></td>
-          <td data-label="Statut"><span class="status">{{ q.display_status or "Nouveau" }}</span></td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</article>
-{% endfor %}
-<div class="quote-no-results" data-live-quote-empty {% if client_groups %}hidden{% endif %}>Aucun devis ne correspond aux filtres.</div>
+  </article>
+  {% endfor %}
+</div>
+
+<div class="quote-no-results" data-live-quote-empty {% if client_groups %}hidden{% endif %}>
+  🔍 Aucun devis ne correspond aux critères de recherche.
+</div>
 {% endblock %}
 
 {% block page_scripts %}

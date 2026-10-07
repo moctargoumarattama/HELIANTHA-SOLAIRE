@@ -3809,3 +3809,321 @@ body.admin-menu-open{
   color: #134e4a;
   line-height: 1.5;
 }
+
+/* ============================================================ */
+/* ESPACE CRM DEVIS HAUTE DENSITÉ (OPTION 1 HELIANTHA)          */
+/* ============================================================ */
+
+.crm-toolbar-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.crm-filter-bar {
+  display: flex !important;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  margin-bottom: 0 !important;
+  min-width: 280px;
+}
+
+.crm-search-box {
+  display: flex;
+  align-items: center;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 12px;
+  height: 40px;
+  flex: 1;
+  max-width: 440px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.crm-search-box:focus-within {
+  border-color: #0f766e;
+  box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.12);
+}
+
+.crm-search-icon {
+  font-size: 13px;
+  margin-right: 8px;
+  opacity: 0.6;
+}
+
+.crm-search-box input {
+  border: 0 !important;
+  outline: none;
+  padding: 0 !important;
+  width: 100%;
+  font-size: 13px;
+  background: transparent;
+  color: var(--ink);
+}
+
+.crm-filter-select {
+  height: 40px !important;
+  border: 1px solid var(--line) !important;
+  border-radius: 8px !important;
+  padding: 0 12px !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  background: white !important;
+  color: var(--ink) !important;
+  cursor: pointer;
+}
+
+.crm-live-counters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.crm-counter-pill {
+  background: white;
+  border: 1px solid var(--line);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 999px;
+  color: var(--muted);
+}
+
+.crm-counter-accent {
+  color: #0f766e;
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+/* Cartes Clients CRM Compactes */
+.crm-client-card {
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 3px rgba(16, 38, 56, 0.03);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.crm-client-card:hover {
+  box-shadow: 0 4px 14px rgba(16, 38, 56, 0.07);
+}
+
+.crm-client-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #f1f5f9;
+  flex-wrap: wrap;
+}
+
+.crm-client-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.crm-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #0f766e, #2563eb);
+  color: white;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.crm-name-group {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.crm-name-group h2 {
+  font-size: 15px;
+  font-weight: 800;
+  margin: 0;
+  color: var(--ink);
+  display: inline;
+}
+
+.crm-meta-chip {
+  font-size: 12px;
+  color: var(--muted);
+  background: #f1f5f9;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.crm-badge-quote-count {
+  font-size: 11px;
+  font-weight: 700;
+  color: #475569;
+  background: #e2e8f0;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.crm-client-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 !important;
+}
+
+.crm-action-chip {
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  padding: 4px 10px !important;
+  border-radius: 6px !important;
+  background: #f8fafc !important;
+  border: 1px solid var(--line) !important;
+  color: var(--ink) !important;
+  text-decoration: none !important;
+  transition: background 0.15s;
+}
+
+.crm-action-chip:hover {
+  background: #e2e8f0 !important;
+  color: #0f766e !important;
+}
+
+/* Tableau CRM Déroulé Haute Densité */
+.crm-table-wrap {
+  border: 1px solid #edf2f7;
+  border-radius: 8px;
+  overflow: hidden;
+  background: white;
+}
+
+.crm-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.crm-table th {
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 10px;
+  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 7px 12px;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+}
+
+.crm-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: middle;
+}
+
+.crm-row {
+  transition: background 0.12s;
+}
+
+.crm-row:hover {
+  background: #f8fafc;
+}
+
+.crm-link-num {
+  font-weight: 700;
+  color: #0f766e;
+  text-decoration: none;
+  font-family: monospace, sans-serif;
+  font-size: 13px;
+}
+
+.crm-link-num:hover {
+  text-decoration: underline;
+  color: #115e59;
+}
+
+.crm-cell-date {
+  color: #64748b;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.crm-cell-solution {
+  color: #334155;
+  font-size: 12px;
+}
+
+/* Badges Projets */
+.crm-project-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.crm-proj-hybrid {
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.crm-proj-pumping {
+  background: #ecfeff;
+  color: #155e75;
+}
+
+.crm-proj-photovoltaic {
+  background: #fefce8;
+  color: #854d0e;
+}
+
+.crm-proj-default {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+/* Badges Statuts */
+.crm-status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.crm-st-success {
+  background: #dcfce7 !important;
+  color: #15803d !important;
+}
+
+.crm-st-info {
+  background: #e0f2fe !important;
+  color: #0369a1 !important;
+}
+
+.crm-st-warning {
+  background: #fef3c7 !important;
+  color: #b45309 !important;
+}
+
+.crm-st-danger {
+  background: #fee2e2 !important;
+  color: #b91c1c !important;
+}

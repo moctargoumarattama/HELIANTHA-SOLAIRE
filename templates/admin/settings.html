@@ -2,10 +2,30 @@
 {% block title %}Paramètres - HeliAntha Admin{% endblock %}
 {% block page_title %}Paramètres généraux{% endblock %}
 {% block content %}
+{% for category, message in get_flashed_messages(with_categories=True) %}
+  <div class="{{ 'admin-success' if category == 'success' else 'admin-alert' }}" role="alert">{{ message }}</div>
+{% endfor %}
 <form class="panel" method="post">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+  <section class="form-section" aria-labelledby="transport-heading">
+    <h2 id="transport-heading">Tarifs de Transport &amp; Logistique</h2>
+    <p>Ces tarifs HT sont appliqués à chaque panneau. La TVA transport est définie dans la <a href="{{ url_for('main.admin_tva') }}">page TVA</a>.</p>
+    <div class="form-grid">
+      {% for s in settings if s.category == 'transport' %}
+      <label>
+        {{ s.label }}
+        {% if s.key == 'transport_pumping_mode' %}
+          <select name="value_{{ s.id }}"><option value="per_panel" selected>Par panneau</option></select>
+        {% else %}
+          <input type="number" name="value_{{ s.id }}" value="{{ s.value }}" min="0" step="0.01" required inputmode="decimal">
+          <small>DH HT / panneau</small>
+        {% endif %}
+      </label>
+      {% endfor %}
+    </div>
+  </section>
   <div class="form-grid">
-    {% for s in settings %}
+    {% for s in settings if s.category != 'transport' %}
     {% set long_field = s.key in ['pdf_social_links', 'pdf_legal_footer'] or (s.value and s.value|length > 120) %}
     <label class="{% if long_field %}full{% endif %}">
       {{ s.label }} <small>{{ s.key }}</small>

@@ -50,6 +50,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from .catalog import ProductValidationError, product_completeness, validate_product
 from .tax import normalize_financial_totals
+from .transport import TRANSPORT_KEYS, TRANSPORT_SETTINGS, transport_rate, validate_transport_setting
 from .defaults import (
     CALCULATION_PARAMETERS,
     DASHBOARD_PROJECT_LABELS,
@@ -787,6 +788,19 @@ def _seed_defaults(db):
             (key, value, category, label),
         )
 
+    # Seed once, preserving an administrator's existing On-Grid tariff.
+    legacy_transport = db.execute(
+        "SELECT value FROM ongrid_parameters WHERE key = 'transport_per_pv'"
+    ).fetchone()
+    legacy_context = {"ongrid_parameters": {"transport_per_pv": dict(legacy_transport)} if legacy_transport else {}}
+    for key, value, category, label in TRANSPORT_SETTINGS:
+        if key == "transport_ongrid_rate":
+            value = str(transport_rate(legacy_context, "photovoltaic"))
+        db.execute(
+            "INSERT OR IGNORE INTO company_settings (key, value, category, label) VALUES (?, ?, ?, ?)",
+            (key, value, category, label),
+        )
+
     direction_user = db.execute(
         """SELECT * FROM users
         WHERE username = 'direction@heliantha.ma' OR role = 'Direction'
@@ -1058,6 +1072,7 @@ def _load_raw_calculation_context():
         "pricing_rules": pricing,
         "pumping_solar_rules": pumping_rules,
         "ongrid_parameters": ongrid_parameters,
+        "company_settings": {row["key"]: dict(row) for row in db.execute("SELECT * FROM company_settings").fetchall()},
         "vat_rates": {row["key"]: dict(row) for row in db.execute("SELECT * FROM vat_rates").fetchall()},
         "products": products,
         "technical_reference": reference,
@@ -1841,6 +1856,9 @@ def list_ongrid_parameters():
 
 
 def update_ongrid_parameters(values: dict[str, object], changed_by: str = "HeliAntha") -> None:
+    values = dict(values)
+    if "transport_per_pv" in values:
+        values["transport_per_pv"] = validate_transport_setting("transport_ongrid_rate", values["transport_per_pv"])
     legacy_vat = {
         "vat_pv_rate": ("panels",), "vat_transport_rate": ("transport",),
         "vat_standard_rate": ("equipment", "accessories", "installation"),
@@ -1887,6 +1905,11 @@ def update_ongrid_parameters(values: dict[str, object], changed_by: str = "HeliA
                 )
         if central:
             _write_vat_rates(db, central, changed_by)
+        if "transport_per_pv" in values:
+            db.execute(
+                "UPDATE company_settings SET value = ?, updated_at = ? WHERE key = 'transport_ongrid_rate'",
+                (values["transport_per_pv"], utc_now()),
+            )
     invalidate_calculation_context()
 
 
@@ -1906,14 +1929,33 @@ def list_company_settings():
     return [dict(row) for row in db.execute("SELECT * FROM company_settings ORDER BY category, key").fetchall()]
 
 
+def update_company_settings(values):
+    """Validate the entire settings submission before committing any changes."""
+    values = dict(values)
+    for key in TRANSPORT_KEYS & values.keys():
+        values[key] = validate_transport_setting(key, values[key])
+    db = get_db()
+    ensure_schema(db)
+    with db:
+        for key, value in values.items():
+            db.execute(
+                "UPDATE company_settings SET value = ?, updated_at = ? WHERE key = ?",
+                (value, utc_now(), key),
+            )
+        if "transport_ongrid_rate" in values:
+            db.execute(
+                "UPDATE ongrid_parameters SET value = ?, updated_at = ? WHERE key = 'transport_per_pv'",
+                (values["transport_ongrid_rate"], utc_now()),
+            )
+    invalidate_calculation_context()
+
+
 def update_company_setting(setting_id, value):
     db = get_db()
     ensure_schema(db)
-    db.execute(
-        "UPDATE company_settings SET value = ?, updated_at = ? WHERE id = ?",
-        (value, utc_now(), setting_id),
-    )
-    db.commit()
+    row = db.execute("SELECT key FROM company_settings WHERE id = ?", (setting_id,)).fetchone()
+    if row:
+        update_company_settings({row["key"]: value})
 
 
 def list_users():

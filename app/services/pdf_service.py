@@ -335,8 +335,12 @@ def _draw_table(canvas: _Canvas, quote: Any, rows: list[dict[str, Any]]) -> floa
         description = _clean(
             _line_value(row, "role", "category", "details", "description", default=name)
         )
-        canvas.text(LEFT + 7, y + 18.5, _wrap(name, 39)[0], size=7.1, bold=True, color=INK)
-        canvas.text(LEFT + 7, y + 7, _wrap(description, 48)[0], size=5.9, color=MUTED)
+        name_lines = _wrap(name, 39)
+        canvas.text(LEFT + 7, y + 18.5, name_lines[0], size=7.1, bold=True, color=INK)
+        if len(name_lines) > 1:
+            canvas.text(LEFT + 7, y + 7, name_lines[1], size=7.1, bold=True, color=INK)
+        else:
+            canvas.text(LEFT + 7, y + 7, _wrap(description, 48)[0], size=5.9, color=MUTED)
 
         vat = _line_value(row, "display_vat_rate", "vat_rate", "tva")
         vat_text = str(vat) if isinstance(vat, str) and "%" in vat else f"{_number(vat):.0f} %" if vat not in {"", None} else ""

@@ -32,7 +32,8 @@ from app.pumping_rules import (
     normalize_pump_cv,
 )
 from app.parameter_views import format_display_value
-from app.tax import get_vat_rates, money, vat_rate_for_component
+from app.tax import get_vat_rates, money, vat_amount, vat_rate_for_component
+from app.transport import TRANSPORT_DESCRIPTION, transport_rate
 from app.services import BOMBuilder, CompatibilityChecker, PricingEngine as ServicePricingEngine, ProductSelector
 from app.services.compatibility import as_float, normalize_text, spec_value
 from app.services.hybrid_service import calculate_hybrid
@@ -205,6 +206,7 @@ class ContextView:
             else default_pumping_rules
         )
         self.ongrid_parameters = deepcopy(context.get("ongrid_parameters") or {})
+        self.company_settings = deepcopy(context.get("company_settings") or {})
         self.reference = dict(context.get("technical_reference") or TECHNICAL_REFERENCE)
 
     @staticmethod
@@ -1047,6 +1049,35 @@ class CalculationEngine:
                     category="Pompage",
                     role="Règle HeliAntha",
                 )
+
+                transport_unit_price = transport_rate(cfg, "pumping")
+                transport_vat_rate = vat_rate_for_component(cfg, "pumping", "transport")
+                transport_ht = money(Decimal(panels) * transport_unit_price)
+                transport_vat = vat_amount(transport_ht, transport_vat_rate)
+                selections["transport"] = build_rule_selection(
+                    "transport",
+                    category="transport",
+                    quantity=panels,
+                    unit_price_ht=float(transport_unit_price),
+                    reference="TRANSPORT-POMPAGE",
+                    brand="HeliAntha",
+                    model="",
+                    description=TRANSPORT_DESCRIPTION,
+                    role=TRANSPORT_DESCRIPTION,
+                    financial_category="transport",
+                    vat_rate=float(transport_vat_rate),
+                    source_reference="transport_pumping_rate",
+                    source_name="Tarifs de Transport & Logistique",
+                    technical_specs={"pricing_mode": "per_panel", "panel_count": panels},
+                    price_status="rule_price",
+                )
+                final_updates.update({
+                    "transport_rate": float(transport_unit_price),
+                    "transport_mode": "per_panel",
+                    "transport_ht": float(transport_ht),
+                    "transport_tva": float(transport_vat),
+                    "transport_ttc": float(money(transport_ht + transport_vat)),
+                })
 
                 structure_rule = cfg.pumping_rule("structure_pricing", panel_power_w=panel_power_w) or {}
                 structure_unit_price = float(structure_rule.get("unit_price_ht") or 0)
