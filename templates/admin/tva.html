@@ -344,7 +344,11 @@
 <!-- ========================================================== -->
 <!-- 5. SIMULATEUR INTERACTIF EN DIRECT (CALCULATEUR RAPIDE)     -->
 <!-- ========================================================== -->
-<section class="panel tva-main-card tva-simulator-card" id="tva-simulator">
+<section class="panel tva-main-card tva-simulator-card" id="tva-simulator"
+         data-default-og-rate="{{ ns.ongrid }}"
+         data-default-pump-rate="{{ ns.pumping }}"
+         data-default-og-vat="{{ values.get('residential_transport', '10') }}"
+         data-default-pump-vat="{{ values.get('pumping_transport', '10') }}">
   <div class="tva-section-header-block">
     <div class="tva-section-title-wrap">
       <span class="tva-section-icon-badge tva-calc-badge-icon">🧮</span>
@@ -446,6 +450,12 @@ document.addEventListener("DOMContentLoaded", () => {
   const ongridVatInput = document.getElementById("residential_transport");
   const pumpingVatInput = document.getElementById("pumping_transport");
 
+  const simCard = document.getElementById("tva-simulator");
+  const defaultOgRate = simCard ? parseFloat(simCard.getAttribute("data-default-og-rate")) || 50 : 50;
+  const defaultPumpRate = simCard ? parseFloat(simCard.getAttribute("data-default-pump-rate")) || 60 : 60;
+  const defaultOgVat = simCard ? parseFloat(simCard.getAttribute("data-default-og-vat")) || 10 : 10;
+  const defaultPumpVat = simCard ? parseFloat(simCard.getAttribute("data-default-pump-vat")) || 10 : 10;
+
   const elOgRate = document.getElementById("sim-og-rate");
   const elOgHt = document.getElementById("sim-og-ht");
   const elOgVatRate = document.getElementById("sim-og-tva-rate");
@@ -463,15 +473,15 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function recalculate() {
-    const panels = Math.max(1, parseInt(countInput.value, 10) || 1);
+    const panels = Math.max(1, parseInt(countInput ? countInput.value : 12, 10) || 1);
     
     // Tarifs unitaires HT
-    const ogRate = parseFloat(ongridRateInput ? ongridRateInput.value : {{ ns.ongrid }}) || 0;
-    const pumpRate = parseFloat(pumpingRateInput ? pumpingRateInput.value : {{ ns.pumping }}) || 0;
+    const ogRate = parseFloat(ongridRateInput && ongridRateInput.value ? ongridRateInput.value : defaultOgRate) || 0;
+    const pumpRate = parseFloat(pumpingRateInput && pumpingRateInput.value ? pumpingRateInput.value : defaultPumpRate) || 0;
 
     // Taux TVA transport %
-    const ogVatPercent = parseFloat(ongridVatInput ? ongridVatInput.value : {{ values.get('residential_transport', '10') }}) || 0;
-    const pumpVatPercent = parseFloat(pumpingVatInput ? pumpingVatInput.value : {{ values.get('pumping_transport', '10') }}) || 0;
+    const ogVatPercent = parseFloat(ongridVatInput && ongridVatInput.value ? ongridVatInput.value : defaultOgVat) || 0;
+    const pumpVatPercent = parseFloat(pumpingVatInput && pumpingVatInput.value ? pumpingVatInput.value : defaultPumpVat) || 0;
 
     // Calculs On-Grid
     const ogHt = panels * ogRate;
@@ -486,13 +496,13 @@ document.addEventListener("DOMContentLoaded", () => {
     // Mise a jour DOM
     if (elOgRate) elOgRate.textContent = fmt(ogRate);
     if (elOgHt) elOgHt.textContent = fmt(ogHt);
-    if (elOgVatRate) elOgVatRate.textContent = ogVatPercent;
+    if (elOgVatRate) elOgVatRate.textContent = String(ogVatPercent);
     if (elOgVat) elOgVat.textContent = fmt(ogVat);
     if (elOgTtc) elOgTtc.textContent = fmt(ogTtc);
 
     if (elPumpRate) elPumpRate.textContent = fmt(pumpRate);
     if (elPumpHt) elPumpHt.textContent = fmt(pumpHt);
-    if (elPumpVatRate) elPumpVatRate.textContent = pumpVatPercent;
+    if (elPumpVatRate) elPumpVatRate.textContent = String(pumpVatPercent);
     if (elPumpVat) elPumpVat.textContent = fmt(pumpVat);
     if (elPumpTtc) elPumpTtc.textContent = fmt(pumpTtc);
   }
