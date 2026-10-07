@@ -13,7 +13,7 @@
       <div class="qc-title-line">
         <h1 class="qc-quote-num">{{ quote.quote_number }}</h1>
         <span class="qc-badge qc-badge-project">{{ project_labels.get(quote.project, quote.project) }}</span>
-        <span class="qc-badge qc-badge-status status">{{ quote.display_status }}</span>
+        <span class="qc-badge qc-badge-status status {% if quote.status in ['Accepte', 'Termine'] %}crm-st-success{% elif quote.status in ['Etude', 'Devis prepare', 'Devis envoye', 'Installation'] %}crm-st-info{% elif quote.status == 'Refuse' %}crm-st-danger{% else %}crm-st-warning{% endif %}">{{ quote.display_status }}</span>
       </div>
       <div class="qc-meta-line">
         {% if quote.created_at %}<span>📅 {{ quote.created_at }}</span><span class="qc-sep">•</span>{% endif %}
@@ -320,6 +320,18 @@
       const openModals = document.querySelectorAll('.qc-modal-overlay.qc-modal-open');
       openModals.forEach(modal => closeQcModal(modal.id));
     }
+  });
+
+  document.addEventListener("DOMContentLoaded", () => {
+    handleAjaxForm(document.querySelector(".qc-status-form"), {
+      onSuccess(data) {
+        const badge = document.querySelector(".qc-badge-status");
+        if (!badge) return;
+        badge.textContent = data.status_label;
+        badge.classList.remove("crm-st-success", "crm-st-info", "crm-st-danger", "crm-st-warning");
+        badge.classList.add(data.badge_class);
+      },
+    });
   });
 </script>
 {% endblock %}

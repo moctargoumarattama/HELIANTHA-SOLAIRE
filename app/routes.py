@@ -111,7 +111,7 @@ from .services.whatsapp_service import (
     send_whatsapp_raw,
 )
 from .wizard_projects import engine_project_for, normalize_wizard_project
-from .transport import TRANSPORT_DESCRIPTION, TRANSPORT_KEYS, TransportValidationError
+from .transport import TRANSPORT_DESCRIPTION, TRANSPORT_KEYS, TransportValidationError, validate_transport_setting
 
 
 bp = Blueprint("main", __name__)
@@ -1542,10 +1542,32 @@ def admin_quote_pdf(quote_id):
 
 @bp.post("/admin/devis/<int:quote_id>/status")
 def admin_quote_status(quote_id):
-    status = request.form.get("status", "Nouveau")
+    fields = _admin_submitted_fields()
+    if fields is None:
+        return _admin_ajax_error({"form": "Données invalides."})
+    status = str(fields.get("status", "Nouveau"))
     if status not in ADMIN_QUOTE_STATUSES:
+        if _admin_is_ajax():
+            return _admin_ajax_error({"status": "Choisissez un statut valide."})
         abort(400)
-    update_quote_status(quote_id, status, session.get("admin_user", "admin"))
+    updated = update_quote_status(quote_id, status, session.get("admin_user", "admin"))
+    if _admin_is_ajax():
+        if not updated:
+            return jsonify(success=False, errors={"status": "Ce devis est introuvable."}), 404
+        label = display_quote_status(status)
+        if status in {"Accepte", "Termine"}:
+            badge_class = "crm-st-success"
+        elif status in {"Etude", "Devis prepare", "Devis envoye", "Installation"}:
+            badge_class = "crm-st-info"
+        elif status == "Refuse":
+            badge_class = "crm-st-danger"
+        else:
+            badge_class = "crm-st-warning"
+        return jsonify(
+            success=True, quote_id=quote_id, new_status=status,
+            status_label=label, badge_class=badge_class,
+            message="Statut du devis actualisé.",
+        )
     return redirect(url_for("main.admin_quote_detail", quote_id=quote_id))
 
 
@@ -1555,12 +1577,27 @@ def admin_prospects():
     return redirect(url_for("main.admin_quotes", **filters))
 
 
-def _catalog_is_ajax():
+def _admin_is_ajax():
     return (
         request.headers.get("X-Requested-With") == "XMLHttpRequest"
         or request.accept_mimetypes.best == "application/json"
         or request.is_json
     )
+
+
+def _admin_submitted_fields():
+    if request.is_json:
+        fields = request.get_json(silent=True)
+        return fields if isinstance(fields, dict) else None
+    return request.form
+
+
+def _admin_ajax_error(errors, message="Veuillez corriger les champs signalés."):
+    return jsonify(success=False, errors=errors, message=message), 400
+
+
+def _catalog_is_ajax():
+    return _admin_is_ajax()
 
 
 def _catalog_submitted_fields():
@@ -1753,18 +1790,28 @@ def admin_pumping_rules():
     saved = False
 
     if request.method == "POST":
-        action = request.form.get("action", "").strip()
-        rule_type = request.form.get("rule_type", "").strip()
+        fields = _admin_submitted_fields()
+        if fields is None:
+            return _admin_ajax_error({"form": "Données invalides."})
+        action = str(fields.get("action") or "").strip()
+        rule_type = str(fields.get("rule_type") or "").strip()
         section = _pumping_rule_section(rule_type)
         if not section:
+            if _admin_is_ajax():
+                return _admin_ajax_error({"rule_type": "Type de règle inconnu."})
             abort(400)
 
         rules = list_pumping_solar_rules()
-        rule_id = request.form.get("rule_id", type=int)
+        try:
+            rule_id = int(fields.get("rule_id") or 0)
+        except (TypeError, ValueError):
+            rule_id = 0
         current = next((row for row in rules if int(row.get("id") or 0) == int(rule_id or 0)), None) if rule_id else None
         try:
-            payload = _pumping_rule_payload(rule_type, request.form, current)
+            payload = _pumping_rule_payload(rule_type, fields, current)
         except TaxValidationError as exc:
+            if _admin_is_ajax():
+                return _admin_ajax_error(exc.errors or {"form": str(exc)})
             flash(str(exc), "error")
             return render_template(
                 "admin/pumping_rules.html",
@@ -1775,10 +1822,14 @@ def admin_pumping_rules():
 
         if action == "add_rule":
             if not section.get("addable"):
+                if _admin_is_ajax():
+                    return _admin_ajax_error({"action": "Cette section ne permet pas l'ajout."})
                 abort(400)
             if rule_type == "pump_configuration":
                 target_cv = normalize_pump_cv(payload.get("pump_cv"))
                 if not target_cv:
+                    if _admin_is_ajax():
+                        return _admin_ajax_error({"field_pump_cv": "Indiquez la puissance de la pompe."})
                     abort(400)
                 existing = next(
                     (
@@ -1791,23 +1842,39 @@ def admin_pumping_rules():
                 )
                 if existing:
                     update_pumping_solar_rule(existing["id"], payload, changed_by=admin_name)
+                    saved_rule_id = existing["id"]
                 else:
                     payload["rule_key"] = f"pump_configuration_{str(target_cv).replace('.', '_')}_{uuid4().hex[:6]}"
                     payload["title"] = (payload.get("title") or f"{str(target_cv).replace('.', ',')} CV").strip()
                     payload["sort_order"] = max(
                         [int(row.get("sort_order") or 0) for row in rules if str(row.get("rule_type") or "") == "pump_configuration"] or [0]
                     ) + 10
-                    create_pumping_solar_rule(payload, changed_by=admin_name)
+                    saved_rule_id = create_pumping_solar_rule(payload, changed_by=admin_name)
             else:
+                if _admin_is_ajax():
+                    return _admin_ajax_error({"rule_type": "Type de règle inconnu."})
                 abort(400)
             saved = True
         elif action == "save_rule" and current:
             update_pumping_solar_rule(current["id"], payload, changed_by=admin_name)
+            saved_rule_id = current["id"]
             saved = True
         else:
+            if _admin_is_ajax():
+                return _admin_ajax_error({"rule_id": "Règle introuvable."})
             abort(400)
 
         if saved:
+            if _admin_is_ajax():
+                sections = group_rules(list_pumping_solar_rules())
+                return jsonify(
+                    success=True, message="Règles pompage mises à jour.",
+                    rule_id=saved_rule_id, rule_type=rule_type,
+                    page_html=render_template(
+                        "admin/pumping_rules.html", sections=sections,
+                        section_definitions=PUMPING_RULE_SECTIONS, saved=False,
+                    ),
+                )
             return redirect(url_for("main.admin_pumping_rules", saved=1))
 
     sections = group_rules(list_pumping_solar_rules())
@@ -1823,16 +1890,28 @@ def admin_pumping_rules():
 def admin_ongrid_rules():
     saved = False
     if request.method == "POST":
+        fields = _admin_submitted_fields()
+        if fields is None:
+            return _admin_ajax_error({"form": "Données invalides."})
         values = {
             key.removeprefix("value_"): value
-            for key, value in request.form.items()
+            for key, value in fields.items()
             if key.startswith("value_")
         }
         try:
             update_ongrid_parameters(values, changed_by=session.get("admin_user", "HeliAntha"))
         except (TaxValidationError, TransportValidationError) as exc:
+            if _admin_is_ajax():
+                errors = getattr(exc, "errors", None)
+                if errors:
+                    errors = {f"value_{key}": value for key, value in errors.items()}
+                else:
+                    errors = {"value_transport_per_pv" if isinstance(exc, TransportValidationError) else "form": str(exc)}
+                return _admin_ajax_error(errors)
             flash(str(exc), "error")
             return redirect(url_for("main.admin_ongrid_rules"))
+        if _admin_is_ajax():
+            return jsonify(success=True, message="Règles On-Grid mises à jour.", updated_values=values)
         return redirect(url_for("main.admin_ongrid_rules", saved=1))
 
     groups = [
@@ -1949,19 +2028,36 @@ def admin_tva():
     transport_settings = [row for row in list_company_settings() if row["key"] in TRANSPORT_KEYS]
     errors = {}
     transport_error = ""
-    if request.method == "POST" and request.form.get("action") == "save_transport":
-        submitted = {key: request.form[key] for key in TRANSPORT_KEYS if key in request.form}
+    fields = _admin_submitted_fields() if request.method == "POST" else None
+    if request.method == "POST" and fields is None:
+        return _admin_ajax_error({"form": "Données invalides."})
+    if request.method == "POST" and fields.get("action") == "save_transport":
+        submitted = {key: fields[key] for key in TRANSPORT_KEYS if key in fields}
+        if _admin_is_ajax():
+            field_errors = {}
+            for key, raw in submitted.items():
+                try:
+                    validate_transport_setting(key, raw)
+                except TransportValidationError as exc:
+                    field_errors[key] = str(exc)
+            if field_errors:
+                return _admin_ajax_error(field_errors)
         try:
             update_company_settings(submitted)
         except TransportValidationError as exc:
+            if _admin_is_ajax():
+                return _admin_ajax_error({"form": str(exc)})
             transport_error = str(exc)
             flash(transport_error, "error")
             transport_settings = [{**row, "value": submitted.get(row["key"], row["value"])} for row in transport_settings]
         else:
+            if _admin_is_ajax():
+                updated = {row["key"]: row["value"] for row in list_company_settings() if row["key"] in TRANSPORT_KEYS}
+                return jsonify(success=True, message="Barèmes de TVA et transport mis à jour.", updated_values=updated)
             flash("Tarifs de transport enregistrés avec succès.", "success")
             return redirect(url_for("main.admin_tva", _anchor="transport-heading"))
     elif request.method == "POST":
-        values = {field["key"]: request.form.get(field["key"], "") for field in VAT_FIELDS}
+        values = {field["key"]: fields.get(field["key"], "") for field in VAT_FIELDS}
         for field in VAT_FIELDS:
             key = field["key"]
             try:
@@ -1969,10 +2065,16 @@ def admin_tva():
             except TaxValidationError as exc:
                 errors[key] = str(exc)
         if errors:
+            if _admin_is_ajax():
+                return _admin_ajax_error(errors)
             for message in dict.fromkeys(errors.values()):
                 flash(message, "error")
         else:
             update_vat_rates(values, changed_by=session.get("admin_user", "HeliAntha"))
+            if _admin_is_ajax():
+                return jsonify(success=True, message="Barèmes de TVA et transport mis à jour.", updated_values={
+                    row["key"]: row["value"] for row in list_vat_rates()
+                })
             flash("Taux de TVA mis à jour avec succès", "success")
             return redirect(url_for("main.admin_tva"))
     return render_template(
@@ -1985,6 +2087,7 @@ def admin_tva():
     ), 400 if errors or transport_error else 200
 
 
+@bp.route("/admin/settings", methods=["GET", "POST"])
 @bp.route("/admin/parametres", methods=["GET", "POST"])
 def admin_settings():
     settings = [
@@ -1993,16 +2096,23 @@ def admin_settings():
         if setting.get("key") not in HIDDEN_COMPANY_SETTING_KEYS | TRANSPORT_KEYS
     ]
     if request.method == "POST":
+        fields = _admin_submitted_fields()
+        if fields is None:
+            return _admin_ajax_error({"form": "Données invalides."})
         submitted = {
-            setting["key"]: request.form[f"value_{setting['id']}"]
-            for setting in settings if f"value_{setting['id']}" in request.form
+            setting["key"]: fields[f"value_{setting['id']}"]
+            for setting in settings if f"value_{setting['id']}" in fields
         }
         try:
             update_company_settings(submitted)
         except TransportValidationError as exc:
+            if _admin_is_ajax():
+                return _admin_ajax_error({"form": str(exc)})
             flash(str(exc), "error")
             settings = [{**setting, "value": submitted.get(setting["key"], setting["value"])} for setting in settings]
             return render_template("admin/settings.html", settings=settings), 400
+        if _admin_is_ajax():
+            return jsonify(success=True, message="Paramètres enregistrés avec succès.", updated_values=submitted)
         flash("Paramètres enregistrés avec succès.", "success")
         return redirect(url_for("main.admin_settings"))
     return render_template("admin/settings.html", settings=settings)
@@ -2238,7 +2348,7 @@ def _pumping_rule_payload(rule_type: str, form, current: dict | None = None) -> 
 
     for field in section.get("fields") or []:
         key = field["key"]
-        raw = (form.get(f"field_{key}") or "").strip()
+        raw = str(form.get(f"field_{key}") or "").strip()
         kind = field.get("kind")
         if kind == "number":
             if key == "vat_rate":

@@ -74,7 +74,6 @@
         </thead>
         <tbody>
           {% for q in client.quotes %}
-          {% set st = (q.display_status or q.status or 'Nouveau')|lower %}
           <tr data-quote-row data-project="{{ q.project or '' }}" data-status="{{ q.status or '' }}"
               data-search="{{ [client.customer_name, client.phone, client.email, client.company, client.city, q.quote_number, q.customer_name, q.phone, q.email, q.company, q.location, q.city, project_labels.get(q.project, q.project), q.solution_name, q.display_status]|select|join(' ') }}"
               class="crm-row">
@@ -92,9 +91,18 @@
             <td data-label="TVA" class="amount-vat"><span>{{ (q.amount_vat or 0)|format_currency }}</span></td>
             <td data-label="Total TTC" class="amount-ttc"><strong>{{ (q.amount_ttc or 0)|format_currency }}</strong></td>
             <td data-label="Statut">
-              <span class="status crm-status-badge {% if 'valid' in st or 'confirm' in st %}crm-st-success{% elif 'cours' in st or 'traitement' in st %}crm-st-info{% elif 'perdu' in st or 'annul' in st %}crm-st-danger{% else %}crm-st-warning{% endif %}">
+              <span class="status crm-status-badge {% if q.status in ['Accepte', 'Termine'] %}crm-st-success{% elif q.status in ['Etude', 'Devis prepare', 'Devis envoye', 'Installation'] %}crm-st-info{% elif q.status == 'Refuse' %}crm-st-danger{% else %}crm-st-warning{% endif %}">
                 {{ q.display_status or "Nouveau" }}
               </span>
+              <form method="post" action="{{ url_for('main.admin_quote_status', quote_id=q.id) }}" class="crm-inline-status-form" data-quote-id="{{ q.id }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+                <select name="status" aria-label="Changer le statut du devis {{ q.quote_number }}">
+                  {% for status in statuses %}
+                  <option value="{{ status }}" {% if q.status == status %}selected{% endif %}>{{ status }}</option>
+                  {% endfor %}
+                </select>
+                <button type="submit" class="ghost-button">Enregistrer</button>
+              </form>
             </td>
           </tr>
           {% endfor %}
@@ -170,6 +178,22 @@
   form.addEventListener("change", () => {
     syncUrl();
     applyFilters();
+  });
+  document.querySelectorAll(".crm-inline-status-form").forEach((statusForm) => {
+    handleAjaxForm(statusForm, {
+      onSuccess(data) {
+        const row = statusForm.closest("[data-quote-row]");
+        const badge = row?.querySelector(".crm-status-badge");
+        if (!row || !badge) return;
+        const previous = badge.textContent.trim();
+        row.dataset.status = data.new_status;
+        row.dataset.search = row.dataset.search.replace(previous, data.status_label);
+        badge.textContent = data.status_label;
+        badge.classList.remove("crm-st-success", "crm-st-info", "crm-st-danger", "crm-st-warning");
+        badge.classList.add(data.badge_class);
+        applyFilters();
+      },
+    });
   });
   applyFilters();
 })();

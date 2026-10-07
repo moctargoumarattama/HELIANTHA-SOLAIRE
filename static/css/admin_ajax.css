@@ -1,0 +1,47 @@
+#admin-toast-container {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 1500;
+  display: grid;
+  gap: 8px;
+  max-width: min(400px, calc(100vw - 36px));
+  pointer-events: none;
+}
+
+.admin-ajax-toast {
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: #e5f7f1;
+  border: 1px solid #8bd6ba;
+  color: #075a3e;
+  box-shadow: 0 10px 30px #10223924;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.admin-ajax-toast.is-error {
+  background: #fff1f1;
+  border-color: #f2b3b3;
+  color: #8f2020;
+}
+
+.admin-ajax-field-error {
+  display: block;
+  margin-top: 5px;
+  color: #a32626;
+  font-size: 12px;
+}
+
+.is-invalid { border-color: #d94949 !important; }
+
+.crm-inline-status-form {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.crm-inline-status-form select { max-width: 145px; padding: 5px 6px; font-size: 11px; }
+.crm-inline-status-form button { padding: 5px 8px; font-size: 11px; }

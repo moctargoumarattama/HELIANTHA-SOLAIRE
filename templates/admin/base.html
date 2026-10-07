@@ -13,6 +13,7 @@
   <link rel="icon" href="{{ url_for('main.brand_image') }}" type="image/jpeg">
   <link rel="apple-touch-icon" href="{{ url_for('main.brand_image') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}?v=20261007-no-stock">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin_ajax.css') }}">
 </head>
 <body class="admin-app">
   <div class="admin-backdrop" id="admin-backdrop" aria-hidden="true"></div>
@@ -55,6 +56,8 @@
       {% block content %}{% endblock %}
     </main>
   </div>
+  <div id="admin-toast-container" aria-live="polite"></div>
+  <script src="{{ url_for('static', filename='js/admin_ajax.js') }}"></script>
   <script>
     (() => {
       const toggle = document.getElementById("admin-menu-toggle");

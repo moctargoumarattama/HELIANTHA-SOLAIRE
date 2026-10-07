@@ -331,7 +331,7 @@
 
 {% block page_scripts %}
 <script>
-(() => {
+window.initPumpingRuleUI = () => {
   const KEY = "heliantha_pumping_rules_tab";
   const tabs = document.querySelectorAll(".pr-tab");
   const panels = document.querySelectorAll(".pr-panel");
@@ -358,6 +358,20 @@
     }));
     dlg.addEventListener("click", (e) => { if (e.target === dlg) dlg.close(); });
   });
-})();
+
+  document.querySelectorAll(".pr-dialog-form").forEach(form => {
+    handleAjaxForm(form, {
+      onSuccess(data) {
+        const page = new DOMParser().parseFromString(data.page_html || "", "text/html");
+        const updated = page.getElementById("pr-cockpit");
+        const current = document.getElementById("pr-cockpit");
+        if (!updated || !current) throw new Error("Règles enregistrées, actualisation impossible");
+        current.replaceWith(updated);
+        window.initPumpingRuleUI();
+      },
+    });
+  });
+};
+window.initPumpingRuleUI();
 </script>
 {% endblock %}

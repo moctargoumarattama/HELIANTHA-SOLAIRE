@@ -477,4 +477,19 @@ document.addEventListener("DOMContentLoaded", () => {
   recalculate();
 });
 </script>
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  for (const id of ["vat-profiles-form", "transport-form"]) {
+    handleAjaxForm(document.getElementById(id), {
+      onSuccess(data, form) {
+        Object.entries(data.updated_values || {}).forEach(([key, value]) => {
+          const field = Array.from(form.elements).find((element) => element.name === key);
+          if (field) field.value = value;
+        });
+        document.getElementById("transport_ongrid_rate")?.dispatchEvent(new Event("input"));
+      },
+    });
+  }
+});
+</script>
 {% endblock %}
