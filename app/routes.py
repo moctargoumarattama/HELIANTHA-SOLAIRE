@@ -117,15 +117,9 @@ assistant_devis_manager = AssistantDevisManager()
 CATALOG_SORT_OPTIONS = [
     {"value": "catalog", "label": "Ordre catalogue"},
     {"value": "brand", "label": "Marque"},
-    {"value": "stock_desc", "label": "Stock decroissant"},
     {"value": "price_asc", "label": "Prix croissant"},
     {"value": "price_desc", "label": "Prix decroissant"},
     {"value": "updated", "label": "Derniere mise a jour"},
-]
-CATALOG_STOCK_OPTIONS = [
-    {"value": "", "label": "Tous stocks"},
-    {"value": "available", "label": "Stock disponible"},
-    {"value": "empty", "label": "Stock a confirmer / nul"},
 ]
 HIDDEN_COMPANY_SETTING_KEYS = {
     "pdf_amount_note",
@@ -1517,9 +1511,10 @@ def admin_catalog():
         "category": request.args.get("category", ""),
         "active": request.args.get("active", ""),
         "brand": request.args.get("brand", ""),
-        "stock": request.args.get("stock", ""),
         "sort": request.args.get("sort", "catalog"),
     }
+    if filters["sort"] == "stock_desc":
+        filters["sort"] = "catalog"
     products = [
         _decorate_catalog_product(item)
         for item in list_products(
@@ -1527,17 +1522,22 @@ def admin_catalog():
             category=filters["category"],
             active=filters["active"],
             brand=filters["brand"],
-            stock=filters["stock"],
             sort=filters["sort"],
         )
     ]
+    products_data_map = {
+        str(item["id"]): _catalog_form_view_product(item)
+        for item in products
+        if item.get("id")
+    }
     return render_template(
         "admin/catalog.html",
         products=products,
+        products_data_map=products_data_map,
         filters=filters,
         category_options=category_options(),
+        technical_fields=technical_fields_by_category(),
         sort_options=CATALOG_SORT_OPTIONS,
-        stock_options=CATALOG_STOCK_OPTIONS,
     )
 
 
@@ -1545,14 +1545,27 @@ def admin_catalog():
 def admin_catalog_new():
     product = _catalog_form_defaults()
     errors = {}
+    is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.accept_mimetypes.best == "application/json"
     if request.method == "POST":
         product = _product_from_form(request.form)
         try:
             save_product(product, submitted_fields=request.form)
         except ProductValidationError as exc:
             errors = exc.errors
+            if is_ajax:
+                return jsonify({
+                    "ok": False,
+                    "errors": errors,
+                    "message": "La fiche produit n'a pas été enregistrée. Corrigez les champs signalés."
+                }), 400
             flash("La fiche produit n'a pas été enregistrée. Corrigez les champs signalés.", "error")
         else:
+            if is_ajax:
+                return jsonify({
+                    "ok": True,
+                    "reference": product.get("reference"),
+                    "redirect": url_for("main.admin_catalog", saved=product.get("reference"))
+                })
             return redirect(url_for("main.admin_catalog", saved=product.get("reference")))
     return render_template(
         "admin/catalog_form.html",
@@ -1569,14 +1582,32 @@ def admin_catalog_edit(product_id):
     if not product:
         abort(404)
     errors = {}
+    is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.accept_mimetypes.best == "application/json"
+    if request.method == "GET" and (is_ajax or request.args.get("format") == "json"):
+        return jsonify({
+            "ok": True,
+            "product": _catalog_form_view_product(product),
+        })
     if request.method == "POST":
         product = _product_from_form(request.form, existing_product=product)
         try:
             save_product(product, product_id=product_id, submitted_fields=request.form)
         except ProductValidationError as exc:
             errors = exc.errors
+            if is_ajax:
+                return jsonify({
+                    "ok": False,
+                    "errors": errors,
+                    "message": "La fiche produit n'a pas été enregistrée. Corrigez les champs signalés."
+                }), 400
             flash("La fiche produit n'a pas été enregistrée. Corrigez les champs signalés.", "error")
         else:
+            if is_ajax:
+                return jsonify({
+                    "ok": True,
+                    "reference": product.get("reference"),
+                    "redirect": url_for("main.admin_catalog", saved=product.get("reference"))
+                })
             return redirect(url_for("main.admin_catalog", saved=product.get("reference")))
     return render_template(
         "admin/catalog_form.html",
