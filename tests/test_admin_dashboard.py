@@ -88,3 +88,4 @@ def test_admin_dashboard_with_mocked_data(tmp_path):
         assert "Pompage" in html
         assert "15" in html
         assert "+3 aujourd&#39;hui" in html or "+3 aujourd'hui" in html
+

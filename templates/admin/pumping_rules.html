@@ -124,10 +124,16 @@
   </section>
 
   <!-- 3. ONGLETS -->
-  <nav class="pr-tabs" role="tablist">
-    <button type="button" class="pr-tab active" data-tab="pr-tab-config" role="tab">💧 Configurations pompe <span>{{ s_pump.rules|length if s_pump else 0 }}</span></button>
-    <button type="button" class="pr-tab" data-tab="pr-tab-equip" role="tab">🧱 Tarifs équipements <span>{{ equip_count }}</span></button>
-    <button type="button" class="pr-tab" data-tab="pr-tab-sale" role="tab">💰 Prix de vente pompe &amp; TVA</button>
+  <nav class="pr-tabs" role="tablist" aria-label="Sections des règles de pompage">
+    <div class="pr-tabs-label" aria-hidden="true">
+      <span class="pr-tabs-label-icon">📂</span>
+      <span>Sections :</span>
+    </div>
+    <div class="pr-tabs-list">
+      <button type="button" class="pr-tab active" data-tab="pr-tab-config" role="tab" title="Afficher les configurations de pompe">💧 Configurations pompe <span>{{ s_pump.rules|length if s_pump else 0 }}</span></button>
+      <button type="button" class="pr-tab" data-tab="pr-tab-equip" role="tab" title="Afficher les tarifs des équipements">🧱 Tarifs équipements <span>{{ equip_count }}</span></button>
+      <button type="button" class="pr-tab" data-tab="pr-tab-sale" role="tab" title="Afficher les prix de vente pompe et TVA">💰 Prix de vente pompe &amp; TVA</button>
+    </div>
   </nav>
 
   <!-- ===== ONGLET 1 : CONFIGURATIONS ===== -->
