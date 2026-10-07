@@ -7,7 +7,7 @@ import re
 from typing import Any
 
 from .defaults import PROJECT_LABELS
-from .tax import line_vat_amount, money
+from .tax import format_currency, line_vat_amount, money
 
 
 MAIN_COMPONENT_ORDER = ("panels", "inverters", "batteries", "pumps", "drives", "structures")
@@ -114,13 +114,13 @@ def format_decimal_fr(value: Any, decimals: int = 2) -> str:
     return text.replace(",", " ").replace(".", ",")
 
 
-def format_money_fr(value: Any, currency: str = "DH", decimals: int = 0) -> str:
+def format_money_fr(value: Any, currency: str = "DH", decimals: int = 2) -> str:
     try:
-        number = float(value)
+        if value is None:
+            raise ValueError
+        return format_currency(value, currency, decimals)
     except (TypeError, ValueError):
         return f"À confirmer {currency}".strip()
-    text = f"{number:,.{decimals}f}"
-    return f"{text.replace(',', ' ').replace('.', ',')} {currency}".strip()
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
@@ -289,8 +289,8 @@ def offer_signature(offer: dict[str, Any]) -> tuple[Any, ...]:
         )
     )
     return (
-        round(float(offer.get("ttc") or 0), 2),
-        round(float(offer.get("ht") or 0), 2),
+        float(money(offer.get("ttc"))),
+        float(money(offer.get("ht"))),
         equipment,
     )
 

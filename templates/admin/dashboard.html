@@ -35,7 +35,7 @@
           <td><a href="{{ url_for('main.admin_quote_detail', quote_id=q.id) }}">{{ q.quote_number }}</a></td>
           <td>{{ q.customer_name or "-" }}</td>
           <td>{{ project_labels.get(q.project, q.project) }}</td>
-          <td>{{ "{:,.0f}".format(q.amount_ttc or 0).replace(",", " ") }} DH</td>
+          <td>{{ (q.amount_ttc or 0)|format_currency }}</td>
           <td><span class="status">{{ display_quote_status(q.status) }}</span></td>
         </tr>
         {% else %}<tr><td colspan="5">Aucun devis enregistré.</td></tr>{% endfor %}

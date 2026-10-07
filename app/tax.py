@@ -154,7 +154,21 @@ def money(value: Any) -> Decimal:
 
 
 def vat_amount(ht: Any, ratio: Any) -> Decimal:
-    return money(Decimal(str(ht)) * Decimal(str(ratio)))
+    return money(money(ht) * Decimal(str(ratio)))
+
+
+def format_currency(value: Any, currency: str = "DH", decimals: int = 2) -> str:
+    """Format the same commercial rounding as the invoice, with fixed decimals."""
+    amount = money(value).quantize(Decimal(1).scaleb(-decimals), rounding=ROUND_HALF_UP)
+    text = f"{amount:,.{decimals}f}".replace(",", " ").replace(".", ",")
+    return f"{text} {currency}".strip()
+
+
+def normalize_financial_totals(financial: Mapping[str, Any]) -> dict[str, Any]:
+    """Canonicalize a new snapshot; TTC is the sum of its cent-rounded HT and VAT."""
+    ht = money(financial.get("total_ht"))
+    vat = money(financial.get("vat"))
+    return {**financial, "total_ht": float(ht), "vat": float(vat), "total_ttc": float(money(ht + vat))}
 
 
 def line_vat_amount(item: Mapping[str, Any]) -> Decimal:

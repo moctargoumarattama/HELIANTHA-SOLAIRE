@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Devis {{ quote.quote_number }}</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css', v='20261007-cents') }}">
 </head>
 <body class="pdf-page">
   {% set financial = quote.financial_breakdown or {} %}
@@ -61,17 +61,17 @@
       <tbody>
         {% for item in display_equipment_lines %}
           <tr>
-            <td>
+            <td data-label="Designation"><span>
               <strong>{{ item.display_designation or item.description or "-" }}</strong>
               {% if item.role or item.category %}
                 <small>{{ item.role or item.category }}</small>
               {% endif %}
-            </td>
-            <td>{{ item.display_vat_rate }}</td>
-            <td>{{ "{:,.2f}".format(item.display_unit_price_ht or item.unit_price or 0).replace(",", " ") }}</td>
-            <td>{{ item.quantity }}</td>
-            <td>{{ "{:,.2f}".format(item.display_total_price_ht or item.total_price or 0).replace(",", " ") }}</td>
-            <td><strong>{{ "{:,.2f}".format(item.display_total_ttc or 0).replace(",", " ") }}</strong></td>
+            </span></td>
+            <td data-label="TVA"><span>{{ item.display_vat_rate }}</span></td>
+            <td data-label="P.U. HT" class="amount-ht"><span>{{ (item.display_unit_price_ht or item.unit_price or 0)|format_currency('') }}</span></td>
+            <td data-label="Qte"><span>{{ item.quantity }}</span></td>
+            <td data-label="Total HT" class="amount-ht"><span>{{ (item.display_total_price_ht or item.total_price or 0)|format_currency('') }}</span></td>
+            <td data-label="Total TTC" class="amount-ttc"><strong>{{ (item.display_total_ttc or 0)|format_currency('') }}</strong></td>
           </tr>
         {% else %}
           <tr>
@@ -97,9 +97,9 @@
 
       <table class="proposal-totals">
         <tbody>
-          <tr><td>Total HT</td><td>{{ "{:,.2f}".format(total_ht).replace(",", " ") }} MAD</td></tr>
-          <tr><td>Total TVA</td><td>{{ "{:,.2f}".format(vat_amount).replace(",", " ") }} MAD</td></tr>
-          <tr class="grand-total"><td>TOTAL TTC</td><td>{{ "{:,.2f}".format(total_ttc).replace(",", " ") }} MAD</td></tr>
+          <tr><td>Total HT</td><td>{{ total_ht|format_currency('MAD') }}</td></tr>
+          <tr><td>Total TVA</td><td>{{ vat_amount|format_currency('MAD') }}</td></tr>
+          <tr class="grand-total"><td>TOTAL TTC</td><td>{{ total_ttc|format_currency('MAD') }}</td></tr>
         </tbody>
       </table>
     </section>

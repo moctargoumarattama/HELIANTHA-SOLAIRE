@@ -39,7 +39,7 @@
   </div>
   <div class="table-wrap quotes-table-wrap">
     <table>
-      <thead><tr><th>Numéro</th><th>Date</th><th>Projet</th><th>Solution</th><th>HT</th><th>TTC</th><th>Statut</th></tr></thead>
+      <thead><tr><th>Numéro</th><th>Date</th><th>Projet</th><th>Solution</th><th>Total HT</th><th>TVA</th><th>Total TTC</th><th>Statut</th></tr></thead>
       <tbody>
         {% for q in client.quotes %}
         <tr data-quote-row data-project="{{ q.project or '' }}" data-status="{{ q.status or '' }}"
@@ -48,8 +48,9 @@
           <td data-label="Date">{{ q.created_at }}</td>
           <td data-label="Projet">{{ project_labels.get(q.project, q.project) }}</td>
           <td data-label="Solution">{{ q.solution_name or "-" }}</td>
-          <td data-label="HT">{{ "{:,.2f}".format(q.amount_ht or 0).replace(",", " ") }} DH</td>
-          <td data-label="TTC">{{ "{:,.2f}".format(q.amount_ttc or 0).replace(",", " ") }} DH</td>
+          <td data-label="Total HT" class="amount-ht"><span>{{ (q.amount_ht or 0)|format_currency }}</span></td>
+          <td data-label="TVA" class="amount-vat"><span>{{ (q.amount_vat or 0)|format_currency }}</span></td>
+          <td data-label="Total TTC" class="amount-ttc"><strong>{{ (q.amount_ttc or 0)|format_currency }}</strong></td>
           <td data-label="Statut"><span class="status">{{ q.display_status or "Nouveau" }}</span></td>
         </tr>
         {% endfor %}

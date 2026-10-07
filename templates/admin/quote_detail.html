@@ -40,7 +40,7 @@
     </div>
     <span class="status">{{ bom_lines|length }} ligne(s)</span>
   </div>
-  <div class="table-wrap">
+  <div class="table-wrap quotes-table-wrap">
     <table class="simple-quote-table">
       <thead>
         <tr>
@@ -54,11 +54,11 @@
       <tbody>
         {% for item in bom_lines %}
         <tr>
-          <td>{{ item.display_designation or item.description or item.role or "-" }}</td>
-          <td>{{ item.quantity }}</td>
-          <td>{{ "{:,.2f}".format(item.display_unit_price_ht or item.unit_price or 0).replace(",", " ") }} {{ item.currency or "DH" }}</td>
-          <td>{{ item.display_vat_rate }}<br>{{ "{:,.2f}".format(item.display_vat_amount or 0).replace(",", " ") }} {{ item.currency or "DH" }}</td>
-          <td>{{ "{:,.2f}".format(item.display_total_ttc or 0).replace(",", " ") }} {{ item.currency or "DH" }}</td>
+          <td data-label="Élément"><span>{{ item.display_designation or item.description or item.role or "-" }}</span></td>
+          <td data-label="Quantité"><span>{{ item.quantity }}</span></td>
+          <td data-label="PU HT" class="amount-ht"><span>{{ (item.display_unit_price_ht or 0)|format_currency(item.currency or 'DH') }}</span></td>
+          <td data-label="TVA" class="amount-vat"><span>{{ item.display_vat_rate }}<br>{{ (item.display_vat_amount or 0)|format_currency(item.currency or 'DH') }}</span></td>
+          <td data-label="Total TTC" class="amount-ttc"><strong>{{ (item.display_total_ttc or 0)|format_currency(item.currency or 'DH') }}</strong></td>
         </tr>
         {% else %}
         <tr><td colspan="5">Aucun élément enregistré.</td></tr>
@@ -74,7 +74,7 @@
     {% for row in financial_summary_rows %}
     <div class="{% if row.emphasis %}total{% endif %}">
       <span>{{ row.label }}</span>
-      <b>{{ "{:,.2f}".format(row.amount or 0).replace(",", " ") }} DH</b>
+      <b>{{ (row.amount or 0)|format_currency }}</b>
     </div>
     {% endfor %}
   </div>

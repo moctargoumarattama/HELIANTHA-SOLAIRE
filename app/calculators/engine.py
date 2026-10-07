@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
+from decimal import Decimal
 from math import ceil
 from typing import Any, Callable
 
@@ -2369,7 +2370,7 @@ class CalculationEngine:
         return deepcopy(equipment)
     @staticmethod
     def _line(product: dict[str, Any], quantity: float, role: str) -> dict[str, Any]:
-        unit_price = float(product.get("sale_price") or 0)
+        unit_price = float(money(product.get("sale_price")))
         return {
             "reference": product.get("reference", ""),
             "category": product.get("category", ""),
@@ -2381,7 +2382,7 @@ class CalculationEngine:
             "quantity": quantity,
             "unit": product.get("unit", "piece"),
             "unit_price": unit_price,
-            "total_price": round(quantity * unit_price),
+            "total_price": float(money(Decimal(str(quantity)) * Decimal(str(unit_price)))),
             "technical_specs": deepcopy(product.get("technical_specs") or {}),
             "power_w": product.get("power_w"),
             "power_kw": product.get("power_kw"),

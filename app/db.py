@@ -40,6 +40,7 @@ def _get_redis_version():
     return None
 
 import json
+from copy import deepcopy
 import sqlite3
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -48,6 +49,7 @@ from flask import current_app, g
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from .catalog import ProductValidationError, product_completeness, validate_product
+from .tax import normalize_financial_totals
 from .defaults import (
     CALCULATION_PARAMETERS,
     DASHBOARD_PROJECT_LABELS,
@@ -1090,7 +1092,18 @@ def load_calculation_context():
 def save_quote(quote_number, project, data, contact, result):
     db = get_db()
     ensure_schema(db)
+    # Normalize only a new record, never a historical quote on read.
+    result = deepcopy(result)
     financial = result.get("financial_breakdown") or {}
+    if financial:
+        financial = normalize_financial_totals(financial)
+        result["financial_breakdown"] = financial
+        if result.get("quote_snapshot"):
+            result["quote_snapshot"]["financial_breakdown"] = deepcopy(financial)
+    for offer in result.get("offers") or []:
+        if offer.get("financial_breakdown"):
+            offer_financial = normalize_financial_totals(offer["financial_breakdown"])
+            offer.update(financial_breakdown=offer_financial, ht=offer_financial["total_ht"], ttc=offer_financial["total_ttc"])
     calculation_detail = result.get("calculation_detail") or {}
     snapshot = result.get("quote_snapshot") or {}
     offers = result.get("offers") or []

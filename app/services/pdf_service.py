@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from app.tax import format_currency
+
 
 PAGE_WIDTH = 595.0
 PAGE_HEIGHT = 842.0
@@ -40,9 +42,7 @@ def _get(source: Any, *keys: str, default: Any = "") -> Any:
 
 
 def _money(value: Any, suffix: str = "MAD") -> str:
-    amount = _number(value)
-    formatted = f"{amount:,.2f}".replace(",", " ")
-    return f"{formatted} {suffix}" if suffix else formatted
+    return format_currency(value, suffix)
 
 
 def _pdf_text(value: Any) -> str:

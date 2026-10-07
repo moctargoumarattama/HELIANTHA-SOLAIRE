@@ -62,6 +62,7 @@ from .tax import (
     VAT_FIELDS,
     VAT_PROFILES,
     TaxValidationError,
+    format_currency,
     line_vat_amount,
     money,
     parse_vat_percentage,
@@ -107,6 +108,7 @@ from .wizard_projects import engine_project_for, normalize_wizard_project
 
 
 bp = Blueprint("main", __name__)
+bp.add_app_template_filter(format_currency)
 engine = CalculationEngine()
 assistant_devis_manager = AssistantDevisManager()
 CATALOG_SORT_OPTIONS = [
@@ -456,10 +458,9 @@ def _ai_phase(value: str) -> str:
 
 def _money_label(value) -> str:
     try:
-        number = float(value or 0)
-    except (TypeError, ValueError):
-        number = 0
-    return f"{number:,.0f}".replace(",", " ") + " DH"
+        return format_currency(value, decimals=0)
+    except ValueError:
+        return format_currency(0, decimals=0)
 
 
 def _quote_summary(project: str, result: dict) -> str:

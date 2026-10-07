@@ -12,3 +12,4 @@ client sans pompe catalogue/
 *.db-shm
 *.db-wal
 _tmp_*.db
+.pytest_temp/

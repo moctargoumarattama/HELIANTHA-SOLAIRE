@@ -95,7 +95,7 @@
           </td>
           <td>{{ p.category_label }}</td>
           <td>{{ p.main_characteristic }}</td>
-          <td>{{ "{:,.2f}".format(p.sale_price or 0).replace(",", " ") }} {{ p.currency or "DH" }}</td>
+          <td>{{ (p.sale_price or 0)|format_currency(p.currency or 'DH') }}</td>
           <td data-pump-hidden-column>
             {% if p.category != 'pumps' %}
               <strong>{{ p.stock or 0 }}</strong>

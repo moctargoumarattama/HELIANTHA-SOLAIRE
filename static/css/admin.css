@@ -2507,29 +2507,35 @@ body.admin-menu-open{
     line-height:1.45;
   }
 
-  .quotes-table-wrap{
+
+
+}
+
+@media screen and (max-width:768px){
+  :is(.quotes-table-wrap, .proposal-table){
     overflow:visible;
     border:0;
   }
 
-  .quotes-table-wrap table,
-  .quotes-table-wrap tbody,
-  .quotes-table-wrap tr,
-  .quotes-table-wrap td{
+  .proposal-table,
+  :is(.quotes-table-wrap, .proposal-table) table,
+  :is(.quotes-table-wrap, .proposal-table) tbody,
+  :is(.quotes-table-wrap, .proposal-table) tr,
+  :is(.quotes-table-wrap, .proposal-table) td{
     display:block;
     width:100%;
     min-width:0;
   }
 
-  .quotes-table-wrap table{
+  :is(.quotes-table-wrap, .proposal-table) table{
     background:transparent;
   }
 
-  .quotes-table-wrap thead{
+  :is(.quotes-table-wrap, .proposal-table) thead{
     display:none;
   }
 
-  .quotes-table-wrap tr{
+  :is(.quotes-table-wrap, .proposal-table) tr{
     margin:0 0 9px;
     padding:10px;
     background:#fff;
@@ -2538,26 +2544,30 @@ body.admin-menu-open{
     box-shadow:0 6px 16px rgba(17,45,38,.055);
   }
 
-  .quotes-table-wrap td{
+  :is(.quotes-table-wrap, .proposal-table) td[data-label]{
+    display:grid;
+    grid-template-columns:minmax(84px, .9fr) minmax(0, 1.4fr);
+    gap:12px;
+    align-items:baseline;
     border:0;
     padding:5px 0;
-    font-size:11.5px;
+    font-size:13px;
     line-height:1.35;
     overflow-wrap:anywhere;
   }
 
-  .quotes-table-wrap td::before{
+  :is(.quotes-table-wrap, .proposal-table) td[data-label]::before{
     content:attr(data-label);
     display:block;
     margin-bottom:2px;
     color:var(--muted);
-    font-size:9.5px;
-    font-weight:800;
-    text-transform:uppercase;
+    font-size:11px;
+    font-weight:600;
+    text-transform:none;
   }
 
 
-  .quotes-table-wrap td:first-child a{
+  :is(.quotes-table-wrap, .proposal-table) td:first-child a{
     display:inline-flex;
     align-items:center;
     min-height:30px;
@@ -2569,10 +2579,27 @@ body.admin-menu-open{
     box-shadow:0 8px 18px rgba(22,75,61,.16);
   }
 
-  .quotes-table-wrap .status{
+  :is(.quotes-table-wrap, .proposal-table) .status{
     padding:4px 7px;
     font-size:10px;
   }
+  :is(.quotes-table-wrap, .proposal-table) .amount-ht,
+  :is(.quotes-table-wrap, .proposal-table) .amount-vat,
+  :is(.quotes-table-wrap, .proposal-table) .amount-ttc{
+    text-align:right;
+  }
+  :is(.quotes-table-wrap, .proposal-table) td[data-label]::before{
+    text-align:left;
+    color:#64748b;
+  }
+}
+
+:is(.quotes-table-wrap, .proposal-table) :is(.amount-ht, .amount-vat, .amount-ttc){
+  font-variant-numeric:tabular-nums;
+}
+:is(.quotes-table-wrap, .proposal-table) .amount-ttc{
+  color:var(--green);
+  font-weight:800;
 }
 
 .admin-topbar-actions{
