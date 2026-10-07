@@ -93,37 +93,18 @@
     <div class="pr-flash success">✓ Règles pompage mises à jour — appliquées aux <b>nouveaux devis</b> uniquement.</div>
   {% endif %}
 
-  <!-- 1. BARRE SUPÉRIEURE -->
+  <!-- 1. BARRE SUPÉRIEURE COMPACTE -->
   <header class="pr-bar">
     <div class="pr-bar-title">
       <span class="pr-bar-icon">💧</span>
-      <div>
-        <h2>Règles Pompage solaire</h2>
-        <small>Quand la puissance de la pompe est connue, HeliAntha choisit automatiquement la configuration et les tarifs ci-dessous.</small>
-      </div>
+      <h2>Règles &amp; Tarifs Pompage Solaire</h2>
     </div>
     <div class="pr-bar-chips">
-      <span class="pr-chip"><b>{{ s_pump.rules|length if s_pump else 0 }}</b> configurations pompe</span>
-      <span class="pr-chip"><b>{{ equip_count }}</b> tarifs équipements</span>
-      <span class="pr-chip pr-chip-info">🔒 Devis existants non modifiés</span>
       <a class="pr-chip pr-chip-link" href="{{ url_for('main.admin_tva') }}">🧾 TVA &amp; Transport →</a>
     </div>
   </header>
 
-  <!-- 2. COMMENT LE DEVIS EST CALCULÉ -->
-  <section class="pr-flow" aria-label="Comment le devis pompage est calculé">
-    <div class="pr-flow-step"><span class="pr-flow-n">1</span><div><b>Pompe (CV)</b><small>Saisie par le client</small></div></div>
-    <span class="pr-flow-arrow">→</span>
-    <div class="pr-flow-step"><span class="pr-flow-n">2</span><div><b>Configuration</b><small>Nb panneaux + variateur</small></div></div>
-    <span class="pr-flow-arrow">→</span>
-    <div class="pr-flow-step"><span class="pr-flow-n">3</span><div><b>Équipements</b><small>Structure, coffret, câblage, pose</small></div></div>
-    <span class="pr-flow-arrow">→</span>
-    <div class="pr-flow-step"><span class="pr-flow-n">4</span><div><b>Prix pompe</b><small>PT × Coef 1 × Coef 2</small></div></div>
-    <span class="pr-flow-arrow">→</span>
-    <div class="pr-flow-step pr-flow-final"><span class="pr-flow-n">✓</span><div><b>Devis TTC</b><small>+ TVA &amp; transport</small></div></div>
-  </section>
-
-  <!-- 3. ONGLETS -->
+  <!-- 2. ONGLETS -->
   <nav class="pr-tabs" role="tablist" aria-label="Sections des règles de pompage">
     <div class="pr-tabs-label" aria-hidden="true">
       <span class="pr-tabs-label-icon">📂</span>
