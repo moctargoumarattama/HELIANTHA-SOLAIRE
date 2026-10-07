@@ -10718,10 +10718,11 @@ tbody tr:hover{
 }
 
 /* ========================================================== */
-/* EN-TÊTES COMPACTS SANS BLA-BLA (METHODE POMPAGE & ON-GRID) */
+/* EN-TÊTES COMPACTS SANS BLA-BLA (POMPAGE, ON-GRID & TVA)    */
 /* ========================================================== */
 .pm-hero-compact,
-.og-hero-compact {
+.og-hero-compact,
+.tva-hero-compact {
   display: flex !important;
   align-items: center !important;
   justify-content: space-between !important;
@@ -10736,7 +10737,8 @@ tbody tr:hover{
 }
 
 .pm-hero-compact-left,
-.og-hero-compact-left {
+.og-hero-compact-left,
+.tva-hero-compact-left {
   display: flex !important;
   align-items: center !important;
   gap: 10px !important;
@@ -10744,21 +10746,31 @@ tbody tr:hover{
 }
 
 .pm-hero-compact-left h2,
-.og-hero-compact-left h2 {
+.og-hero-compact-left h2,
+.tva-hero-compact-left h2 {
   margin: 0 !important;
   font-size: 15px !important;
   font-weight: 800 !important;
   color: var(--ink) !important;
 }
 
-.og-hero-icon {
+.og-hero-icon,
+.tva-hero-icon {
   font-size: 20px !important;
   line-height: 1 !important;
 }
 
 .pm-hero-compact-right,
-.og-hero-compact-right {
+.og-hero-compact-right,
+.tva-hero-compact-right {
   display: flex !important;
   align-items: center !important;
   gap: 8px !important;
+}
+
+.tva-section-sub-compact {
+  display: block !important;
+  font-size: 11.5px !important;
+  color: var(--muted) !important;
+  margin-top: 2px !important;
 }

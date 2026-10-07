@@ -21,43 +21,15 @@
 {% endfor %}
 
 <!-- ========================================================== -->
-<!-- 1. HERO BANNER : GOUVERNANCE FISCALE & LOGISTIQUE          -->
+<!-- 1. EN-TÊTE COMPACT (ACCÈS DIRECT SANS BLA-BLA)            -->
 <!-- ========================================================== -->
-<section class="panel tva-hero-panel">
-  <div class="tva-hero-content">
-    <div class="tva-hero-badge-row">
-      <span class="tva-live-badge"><span class="tva-live-dot"></span> Barèmes Fiscaux Actifs</span>
-      <span class="source-badge">Paramétrage Central HeliAntha</span>
-    </div>
-    <h2 class="tva-hero-title">Taux de TVA &amp; Logistique de Transport</h2>
-    <p class="tva-hero-desc">
-      Configurez les taux de Taxe sur la Valeur Ajoutée (TVA) et les barèmes de transport par panneau solaire.
-      Ces réglages s'appliquent immédiatement à l'ensemble du catalogue et aux moteurs de chiffrage (On-Grid, Hybride, Pompage Agricole).
-      L'intégrité financière des devis déjà signés et archivés reste strictement préservée.
-    </p>
-
-    <div class="tva-pills-bar">
-      <div class="tva-pill">
-        <span class="tva-pill-icon">⚖️</span>
-        <span>Plage autorisée : <strong>0 % à 30 %</strong></span>
-      </div>
-      <div class="tva-pill">
-        <span class="tva-pill-icon">🌾</span>
-        <span><strong>0 %</strong> = Exonération agricole / Attestation</span>
-      </div>
-      <div class="tva-pill">
-        <span class="tva-pill-icon">🚚</span>
-        <span>Transport = Barème unitaire <strong>DH HT / panneau</strong></span>
-      </div>
-      <div class="tva-pill">
-        <span class="tva-pill-icon">⚡</span>
-        <span>Effet immédiat sur les <strong>nouveaux devis</strong></span>
-      </div>
-    </div>
+<header class="panel tva-hero-compact">
+  <div class="tva-hero-compact-left">
+    <span class="tva-hero-icon">%</span>
+    <h2>Taux de TVA &amp; Logistique de Transport</h2>
+    <span class="tva-live-badge"><span class="tva-live-dot"></span> Barèmes Fiscaux Actifs</span>
   </div>
-
-  <div class="tva-quick-nav">
-    <span class="tva-quick-nav-label">Accès rapide :</span>
+  <div class="tva-hero-compact-right">
     <div class="tva-quick-nav-links">
       <a href="#profile-residential" class="tva-nav-chip">🏡 Résidentiel &amp; Hybride</a>
       <a href="#profile-pumping" class="tva-nav-chip">🌾 Pompage Agricole</a>
@@ -65,7 +37,7 @@
       <a href="#tva-simulator" class="tva-nav-chip">🧮 Simulateur</a>
     </div>
   </div>
-</section>
+</header>
 
 <!-- ========================================================== -->
 <!-- 2. SYNTHÈSE DES CHIFFRES CLÉS EN DIRECT (KPI CARDS)        -->
@@ -155,10 +127,7 @@
       <span class="tva-section-icon-badge">📊</span>
       <div>
         <h2 class="tva-section-title">Profils de TVA par Projet</h2>
-        <p class="tva-section-subtitle">
-          Saisissez les pourcentages directs (ex : <strong>10</strong> pour 10 %, <strong>20</strong> pour 20 %, <strong>0</strong> pour exonéré).
-          Les taux sont ventilés par catégorie de matériel pour garantir une facture conforme aux exigences fiscales marocaines.
-        </p>
+        <small class="tva-section-sub-compact">Taux HT (0% à 30%) ventilés par catégorie de matériel</small>
       </div>
     </div>
   </div>
@@ -268,26 +237,8 @@
         <span class="tva-section-icon-badge tva-transport-badge-icon">🚚</span>
         <div>
           <h2 id="transport-heading" class="tva-section-title">Tarifs de Transport &amp; Logistique</h2>
-          <p class="tva-section-subtitle">
-            Tarifs HT appliqués par panneau solaire livré sur chantier. La TVA transport correspondante (10% par défaut)
-            est calculée selon les profils définis plus haut.
-          </p>
+          <small class="tva-section-sub-compact">Tarifs unitaires DH HT par panneau solaire livré sur chantier</small>
         </div>
-      </div>
-    </div>
-
-    <div class="tva-formula-box">
-      <span class="tva-formula-icon">📐</span>
-      <div class="tva-formula-content">
-        <strong>Formule de chiffrage transport :</strong>
-        <div class="tva-formula-equation">
-          <span class="tva-f-part">Montant Transport HT</span>
-          <span class="tva-f-op">=</span>
-          <span class="tva-f-part">Nombre de Panneaux</span>
-          <span class="tva-f-op">×</span>
-          <span class="tva-f-part highlight">Tarif unitaire HT</span>
-        </div>
-        <p class="tva-formula-desc">Exemple : 12 panneaux solaires × 50,00 DH HT = 600,00 DH HT (+ TVA 10% = 660,00 DH TTC).</p>
       </div>
     </div>
 
