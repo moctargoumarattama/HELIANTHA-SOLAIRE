@@ -1,4 +1,7 @@
 import time
+import threading
+
+_SCHEMA_LOCK = threading.RLock()
 
 _CALC_CACHE = None
 _CALC_CACHE_VERSION = None
@@ -45,7 +48,7 @@ import sqlite3
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from flask import current_app, g
+from flask import current_app, g, has_app_context
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from .catalog import ProductValidationError, product_completeness, validate_product
@@ -398,7 +401,19 @@ PUMPING_SOLAR_RULE_COLUMNS = {
 
 def get_db():
     if "db" not in g:
-        g.db = sqlite3.connect(current_app.config["DATABASE"])
+        database = current_app.config["DATABASE"]
+        if database == ":memory:":
+            # Keep a private shared-memory database alive for this app while
+            # request connections still follow the normal g/teardown lifecycle.
+            with _SCHEMA_LOCK:
+                memory = current_app.extensions.get("heliantha_memory_database")
+                if memory is None:
+                    uri = f"file:heliantha-{uuid4().hex}?mode=memory&cache=shared"
+                    memory = (uri, sqlite3.connect(uri, uri=True))
+                    current_app.extensions["heliantha_memory_database"] = memory
+            g.db = sqlite3.connect(memory[0], uri=True)
+        else:
+            g.db = sqlite3.connect(database)
         g.db.row_factory = sqlite3.Row
     return g.db
 
@@ -414,20 +429,41 @@ def init_db():
     ensure_schema(db)
 
 
+def _ensure_database_initialized(db):
+    """Bootstrap an empty database; ordinary reads never rerun migrations."""
+    app_context = has_app_context()
+    if app_context and g.get("heliantha_initialized_connection") is db:
+        return
+    sentinel = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'users' LIMIT 1"
+    if db.execute(sentinel).fetchone() is None:
+        with _SCHEMA_LOCK:
+            if db.execute(sentinel).fetchone() is None:
+                ensure_schema(db)
+    if app_context:
+        g.heliantha_initialized_connection = db
+
+
 def ensure_schema(db=None):
-    """Apply idempotent migrations without deleting or rebuilding data."""
+    """Explicit startup/migration entry point, not a routine read operation."""
     db = db or get_db()
-    db.executescript(SCHEMA)
-    _migrate_quote_requests(db)
-    _migrate_products(db)
-    _migrate_pump_curve_points(db)
-    _migrate_calculation_parameters(db)
-    _migrate_pumping_solar_rules(db)
-    _migrate_public_tracking(db)
-    _migrate_users(db)
-    _seed_defaults(db)
-    _seed_vat_rates(db)
-    db.commit()
+    with _SCHEMA_LOCK:
+        db.executescript(SCHEMA)
+        _migrate_quote_requests(db)
+        _migrate_products(db)
+        _migrate_pump_curve_points(db)
+        _migrate_calculation_parameters(db)
+        _migrate_pumping_solar_rules(db)
+        _migrate_public_tracking(db)
+        _migrate_users(db)
+        _seed_defaults(db)
+        _seed_vat_rates(db)
+        db.commit()
+
+
+def _default_password_hash_if_missing(existing_hash=None):
+    if existing_hash:
+        return existing_hash
+    return generate_password_hash(current_app.config.get("ADMIN_PASSWORD", "heliantha2026"))
 
 
 def _migrate_quote_requests(db):
@@ -494,7 +530,7 @@ def _migrate_users(db):
         db.execute("ALTER TABLE users ADD COLUMN password_hash TEXT")
 
     direction_user = db.execute(
-        """SELECT id FROM users
+        """SELECT id, password_hash FROM users
         WHERE username = 'direction@heliantha.ma' OR role = 'Direction'
         ORDER BY CASE WHEN username = 'direction@heliantha.ma' THEN 0 ELSE 1 END, id ASC
         LIMIT 1"""
@@ -507,7 +543,7 @@ def _migrate_users(db):
                 role = 'Direction',
                 password_hash = COALESCE(NULLIF(password_hash, ''), ?)
             WHERE id = ?""",
-            (generate_password_hash(current_app.config.get("ADMIN_PASSWORD", "heliantha2026")), direction_user["id"]),
+            (_default_password_hash_if_missing(direction_user["password_hash"]), direction_user["id"]),
         )
 
 
@@ -808,7 +844,7 @@ def _seed_defaults(db):
         LIMIT 1"""
     ).fetchone()
     legacy_admin_user = db.execute(
-        "SELECT id FROM users WHERE username = 'admin' AND role = 'Administrateur'"
+        "SELECT id, password_hash FROM users WHERE username = 'admin' AND role = 'Administrateur'"
     ).fetchone()
 
     if legacy_admin_user and not direction_user:
@@ -819,13 +855,13 @@ def _seed_defaults(db):
                 role = 'Direction',
                 password_hash = COALESCE(NULLIF(password_hash, ''), ?)
             WHERE id = ?""",
-            (generate_password_hash(current_app.config.get("ADMIN_PASSWORD", "heliantha2026")), legacy_admin_user["id"]),
+            (_default_password_hash_if_missing(legacy_admin_user["password_hash"]), legacy_admin_user["id"]),
         )
     elif not direction_user:
         db.execute(
             """INSERT OR IGNORE INTO users (username, display_name, role, password_hash)
             VALUES ('direction@heliantha.ma', 'Direction HeliAntha', 'Direction', ?)""",
-            (generate_password_hash(current_app.config.get("ADMIN_PASSWORD", "heliantha2026")),),
+            (_default_password_hash_if_missing(),),
         )
     else:
         db.execute(
@@ -835,7 +871,7 @@ def _seed_defaults(db):
                 role = 'Direction',
                 password_hash = COALESCE(NULLIF(password_hash, ''), ?)
             WHERE id = ?""",
-            (generate_password_hash(current_app.config.get("ADMIN_PASSWORD", "heliantha2026")), direction_user["id"]),
+            (_default_password_hash_if_missing(direction_user["password_hash"]), direction_user["id"]),
         )
         if legacy_admin_user and legacy_admin_user["id"] != direction_user["id"]:
             db.execute("DELETE FROM users WHERE id = ?", (legacy_admin_user["id"],))
@@ -1001,7 +1037,7 @@ def _write_vat_rates(db, values, changed_by):
 
 def list_vat_rates():
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     rows = {row["key"]: dict(row) for row in db.execute("SELECT * FROM vat_rates").fetchall()}
     return [dict(rows[field["key"]], label=field["label"], profile=field["profile"]) for field in VAT_FIELDS]
 
@@ -1013,7 +1049,7 @@ def update_vat_rates(values, changed_by="HeliAntha"):
     if not parsed:
         return
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     with db:
         _write_vat_rates(db, parsed, changed_by)
     invalidate_calculation_context()
@@ -1042,7 +1078,7 @@ def _pumping_vat_updates(rule, fraction):
 
 def _load_raw_calculation_context():
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     params = {
         row["key"]: dict(row)
         for row in db.execute("SELECT * FROM calculation_parameters WHERE active = 1").fetchall()
@@ -1106,7 +1142,7 @@ def load_calculation_context():
 
 def save_quote(quote_number, project, data, contact, result):
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     # Normalize only a new record, never a historical quote on read.
     result = deepcopy(result)
     financial = result.get("financial_breakdown") or {}
@@ -1170,7 +1206,7 @@ def save_quote(quote_number, project, data, contact, result):
 
 def list_quotes(search="", project="", status="", limit=200):
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     where = []
     values = []
     if search:
@@ -1195,14 +1231,14 @@ def list_quotes(search="", project="", status="", limit=200):
 
 def get_quote(quote_id):
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     row = db.execute("SELECT * FROM quote_requests WHERE id = ?", (quote_id,)).fetchone()
     return _hydrate_quote(row)
 
 
 def get_quote_by_number(quote_number):
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     row = db.execute("SELECT * FROM quote_requests WHERE quote_number = ?", (quote_number,)).fetchone()
     return _hydrate_quote(row)
 
@@ -1253,7 +1289,7 @@ def update_quote_status(quote_id, new_status, changed_by="admin"):
     if new_status not in QUOTE_STATUSES:
         raise ValueError("Statut non reconnu")
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     row = db.execute("SELECT status FROM quote_requests WHERE id = ?", (quote_id,)).fetchone()
     if not row:
         return False
@@ -1273,7 +1309,7 @@ def update_quote_status(quote_id, new_status, changed_by="admin"):
 
 def update_quote_selected_offer(quote_id, level):
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     db.execute(
         "UPDATE quote_requests SET selected_offer_level = ?, updated_at = ? WHERE id = ?",
         (level, utc_now(), quote_id),
@@ -1283,7 +1319,7 @@ def update_quote_selected_offer(quote_id, level):
 
 def save_visit_request(quote_id, quote_number, payload):
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     db.execute(
         """INSERT INTO visit_requests
         (quote_id, quote_number, preferred_date, time_slot, address, phone, comment, status)
@@ -1305,7 +1341,7 @@ def save_visit_request(quote_id, quote_number, payload):
 
 def save_quote_client_event(quote_id, quote_number, event_type, event_value=""):
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     db.execute(
         """INSERT INTO quote_client_events (quote_id, quote_number, event_type, event_value)
         VALUES (?, ?, ?, ?)""",
@@ -1318,7 +1354,7 @@ def enqueue_whatsapp_message(
     phone, msg_type="text", pdf_url="", filename="", caption="", *, replace_pending=False
 ):
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     if replace_pending:
         from .services.anti_abuse import whatsapp_queue_key
 
@@ -1360,7 +1396,7 @@ def enqueue_whatsapp_message(
 
 def list_whatsapp_outbox(status=None, limit=10, newest=True):
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     limit = max(1, min(int(limit or 10), 100))
     order = "DESC" if newest else "ASC"
     if status:
@@ -1392,7 +1428,7 @@ def _outbox_payload_condition(payload):
 
 def mark_whatsapp_outbox_sent(item_id, *, expected_payload=None):
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     condition, values = _outbox_payload_condition(expected_payload)
     db.execute(
         """UPDATE whatsapp_outbox
@@ -1405,7 +1441,7 @@ def mark_whatsapp_outbox_sent(item_id, *, expected_payload=None):
 
 def mark_whatsapp_outbox_failed(item_id, attempts, error_message="", *, expected_payload=None):
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     next_status = "FAILED" if int(attempts or 0) >= 5 else "PENDING"
     condition, values = _outbox_payload_condition(expected_payload)
     db.execute(
@@ -1419,7 +1455,7 @@ def mark_whatsapp_outbox_failed(item_id, attempts, error_message="", *, expected
 
 def dashboard_stats():
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     rows = [dict(row) for row in db.execute("SELECT * FROM quote_requests ORDER BY id DESC").fetchall()]
     canonical_projects = set(PUBLIC_PROJECTS)
     rows = [row for row in rows if row.get("project") in canonical_projects]
@@ -1458,7 +1494,7 @@ def dashboard_stats():
 
 def list_products(search="", category="", active="", brand="", stock="", sort="catalog"):
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     where = []
     values = []
     if search:
@@ -1495,7 +1531,7 @@ def list_products(search="", category="", active="", brand="", stock="", sort="c
 
 def get_product(product_id):
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     row = db.execute("SELECT * FROM products WHERE id = ?", (product_id,)).fetchone()
     products = _products_with_pump_curves(db, [row] if row else [])
     return products[0] if products else None
@@ -1503,7 +1539,7 @@ def get_product(product_id):
 
 def save_product(product, product_id=None, submitted_fields=None):
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     existing = get_product(product_id) if product_id else None
     validated = validate_product(product, existing=existing, submitted_fields=submitted_fields)
     if validated.get("category") == "pumps" and not validated.get("reference"):
@@ -1594,7 +1630,7 @@ def save_product(product, product_id=None, submitted_fields=None):
 
 def set_product_active(product_id, active):
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     if active:
         product = get_product(product_id)
         if product:
@@ -1606,7 +1642,7 @@ def set_product_active(product_id, active):
 
 def list_calculation_parameters(admin_visible_only=False):
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     sql = "SELECT * FROM calculation_parameters"
     values = ()
     if admin_visible_only:
@@ -1617,7 +1653,7 @@ def list_calculation_parameters(admin_visible_only=False):
 
 def get_calculation_parameter(param_id):
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     row = db.execute("SELECT * FROM calculation_parameters WHERE id = ?", (param_id,)).fetchone()
     return dict(row) if row else None
 
@@ -1636,7 +1672,7 @@ def update_calculation_parameter(
 ):
     invalidate_calculation_context()
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     row = db.execute("SELECT * FROM calculation_parameters WHERE id = ?", (param_id,)).fetchone()
     if not row:
         return False
@@ -1689,7 +1725,7 @@ def update_calculation_parameter(
 
 def list_calculation_parameter_history(limit=80):
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     return [
         dict(row)
         for row in db.execute(
@@ -1704,14 +1740,14 @@ def list_calculation_parameter_history(limit=80):
 
 def list_pricing_rules():
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     return [dict(row) for row in db.execute("SELECT * FROM pricing_rules ORDER BY key").fetchall()]
 
 
 def update_pricing_rule(rule_id, value, active=True):
     invalidate_calculation_context()
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     db.execute(
         "UPDATE pricing_rules SET value = ?, active = ?, updated_at = ? WHERE id = ?",
         (value, 1 if active else 0, utc_now(), rule_id),
@@ -1721,7 +1757,7 @@ def update_pricing_rule(rule_id, value, active=True):
 
 def list_pumping_solar_rules():
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     return [
         dict(row)
         for row in db.execute(
@@ -1732,7 +1768,7 @@ def list_pumping_solar_rules():
 
 def get_pumping_solar_rule(rule_id):
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     row = db.execute("SELECT * FROM pumping_solar_rules WHERE id = ?", (rule_id,)).fetchone()
     return dict(row) if row else None
 
@@ -1742,7 +1778,7 @@ def update_pumping_solar_rule(rule_id, data: dict[str, object], changed_by: str 
     if "vat_rate" in data and data["vat_rate"] not in (None, ""):
         data["vat_rate"] = _validated_legacy_vat_fraction(data["vat_rate"])
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     row = db.execute("SELECT * FROM pumping_solar_rules WHERE id = ?", (rule_id,)).fetchone()
     if not row:
         return False
@@ -1802,7 +1838,7 @@ def create_pumping_solar_rule(data: dict[str, object], changed_by: str = "HeliAn
     if data.get("vat_rate") not in (None, ""):
         data["vat_rate"] = _validated_legacy_vat_fraction(data["vat_rate"])
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     payload = {
         "rule_key": str(data.get("rule_key") or "").strip(),
         "rule_type": str(data.get("rule_type") or "").strip(),
@@ -1851,7 +1887,7 @@ def create_pumping_solar_rule(data: dict[str, object], changed_by: str = "HeliAn
 
 def list_ongrid_parameters():
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     return [dict(row) for row in db.execute("SELECT * FROM ongrid_parameters ORDER BY id").fetchall()]
 
 
@@ -1875,7 +1911,7 @@ def update_ongrid_parameters(values: dict[str, object], changed_by: str = "HeliA
     if errors:
         raise TaxValidationError(next(iter(errors.values())), errors=errors)
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     known = {
         row["key"]: dict(row)
         for row in db.execute("SELECT * FROM ongrid_parameters").fetchall()
@@ -1925,7 +1961,7 @@ def active_reference():
 
 def list_company_settings():
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     return [dict(row) for row in db.execute("SELECT * FROM company_settings ORDER BY category, key").fetchall()]
 
 
@@ -1935,7 +1971,7 @@ def update_company_settings(values):
     for key in TRANSPORT_KEYS & values.keys():
         values[key] = validate_transport_setting(key, values[key])
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     with db:
         for key, value in values.items():
             db.execute(
@@ -1952,7 +1988,7 @@ def update_company_settings(values):
 
 def update_company_setting(setting_id, value):
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     row = db.execute("SELECT key FROM company_settings WHERE id = ?", (setting_id,)).fetchone()
     if row:
         update_company_settings({row["key"]: value})
@@ -1960,13 +1996,13 @@ def update_company_setting(setting_id, value):
 
 def list_users():
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     return [dict(row) for row in db.execute("SELECT * FROM users ORDER BY role, username").fetchall()]
 
 
 def get_primary_admin_user():
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     row = db.execute(
         """SELECT * FROM users
         WHERE active = 1 AND (username = 'direction@heliantha.ma' OR role = 'Direction')
@@ -1978,7 +2014,7 @@ def get_primary_admin_user():
 
 def authenticate_user(email: str, password: str):
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     row = db.execute(
         "SELECT * FROM users WHERE username = ? AND active = 1 ORDER BY id ASC LIMIT 1",
         (email.strip().lower(),),
@@ -1993,14 +2029,14 @@ def authenticate_user(email: str, password: str):
 
 def get_user(user_id):
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     row = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
     return dict(row) if row else None
 
 
 def save_user(user_id=None, username="", display_name="", role="Commercial", active=True, password=""):
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     username = username.strip().lower()
     display_name = display_name.strip() or username
     payload = (
@@ -2032,7 +2068,7 @@ def save_user(user_id=None, username="", display_name="", role="Commercial", act
 
 def delete_user(user_id):
     db = get_db()
-    ensure_schema(db)
+    _ensure_database_initialized(db)
     db.execute("DELETE FROM users WHERE id = ?", (user_id,))
     db.commit()
 

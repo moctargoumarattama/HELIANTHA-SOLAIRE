@@ -1,74 +1,519 @@
 {% extends "admin/base.html" %}
 {% block title %}TVA & Transport - HeliAntha Admin{% endblock %}
 {% block page_title %}TVA & Transport{% endblock %}
+
 {% block content %}
-{% for category, message in get_flashed_messages(with_categories=True) %}
-  <div class="{{ 'admin-success' if category == 'success' else 'admin-alert' }}" role="{{ 'status' if category == 'success' else 'alert' }}">{{ message }}</div>
+{# Collecter les tarifs de transport actifs pour les indicateurs visuels #}
+{% set ns = namespace(ongrid='50.00', pumping='60.00') %}
+{% for s in transport_settings %}
+  {% if s.key == 'transport_ongrid_rate' %}
+    {% set ns.ongrid = s.value %}
+  {% elif s.key == 'transport_pumping_rate' %}
+    {% set ns.pumping = s.value %}
+  {% endif %}
 {% endfor %}
 
-<section class="learning-panel">
-  <h2>Une saisie claire pour tous vos devis</h2>
-  <p>Saisissez les taux sous forme de pourcentage direct (ex : tapez 10 pour 10 %, 20 pour 20 %, 0 pour exonéré).</p>
-  <p>Plage autorisée : 0 % à 30 %.</p>
-  <div class="legend-row">
-    <span>0 % = exonération</span>
-    <span>On-Grid et Hybride : mêmes taux</span>
-    <span>Nouveaux devis uniquement</span>
+{% for category, message in get_flashed_messages(with_categories=True) %}
+  <div class="{{ 'admin-success tva-alert-success' if category == 'success' else 'admin-alert tva-alert-error' }}" role="{{ 'status' if category == 'success' else 'alert' }}">
+    <span class="tva-alert-icon">{{ '✅' if category == 'success' else '⚠️' }}</span>
+    <span>{{ message }}</span>
+  </div>
+{% endfor %}
+
+<!-- ========================================================== -->
+<!-- 1. HERO BANNER : GOUVERNANCE FISCALE & LOGISTIQUE          -->
+<!-- ========================================================== -->
+<section class="panel tva-hero-panel">
+  <div class="tva-hero-content">
+    <div class="tva-hero-badge-row">
+      <span class="tva-live-badge"><span class="tva-live-dot"></span> Barèmes Fiscaux Actifs</span>
+      <span class="source-badge">Paramétrage Central HeliAntha</span>
+    </div>
+    <h2 class="tva-hero-title">Taux de TVA &amp; Logistique de Transport</h2>
+    <p class="tva-hero-desc">
+      Configurez les taux de Taxe sur la Valeur Ajoutée (TVA) et les barèmes de transport par panneau solaire.
+      Ces réglages s'appliquent immédiatement à l'ensemble du catalogue et aux moteurs de chiffrage (On-Grid, Hybride, Pompage Agricole).
+      L'intégrité financière des devis déjà signés et archivés reste strictement préservée.
+    </p>
+
+    <div class="tva-pills-bar">
+      <div class="tva-pill">
+        <span class="tva-pill-icon">⚖️</span>
+        <span>Plage autorisée : <strong>0 % à 30 %</strong></span>
+      </div>
+      <div class="tva-pill">
+        <span class="tva-pill-icon">🌾</span>
+        <span><strong>0 %</strong> = Exonération agricole / Attestation</span>
+      </div>
+      <div class="tva-pill">
+        <span class="tva-pill-icon">🚚</span>
+        <span>Transport = Barème unitaire <strong>DH HT / panneau</strong></span>
+      </div>
+      <div class="tva-pill">
+        <span class="tva-pill-icon">⚡</span>
+        <span>Effet immédiat sur les <strong>nouveaux devis</strong></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="tva-quick-nav">
+    <span class="tva-quick-nav-label">Accès rapide :</span>
+    <div class="tva-quick-nav-links">
+      <a href="#profile-residential" class="tva-nav-chip">🏡 Résidentiel &amp; Hybride</a>
+      <a href="#profile-pumping" class="tva-nav-chip">🌾 Pompage Agricole</a>
+      <a href="#transport-heading" class="tva-nav-chip">🚚 Tarifs Transport</a>
+      <a href="#tva-simulator" class="tva-nav-chip">🧮 Simulateur</a>
+    </div>
   </div>
 </section>
 
-<form method="post" class="panel catalog-form">
+<!-- ========================================================== -->
+<!-- 2. SYNTHÈSE DES CHIFFRES CLÉS EN DIRECT (KPI CARDS)        -->
+<!-- ========================================================== -->
+<section class="tva-kpi-grid">
+  <!-- KPI 1 : Panneaux Solaires -->
+  <article class="tva-kpi-card">
+    <div class="tva-kpi-header">
+      <span class="tva-kpi-icon">☀️</span>
+      <span class="badge tva-badge-pill">Taux Réduit</span>
+    </div>
+    <div class="tva-kpi-content">
+      <small>TVA Panneaux Solaires</small>
+      <div class="tva-kpi-duo">
+        <div>
+          <span class="tva-kpi-label">Résidentiel</span>
+          <b class="tva-kpi-val">{{ values.get('residential_panels', '10') }} <small>%</small></b>
+        </div>
+        <div class="tva-kpi-divider"></div>
+        <div>
+          <span class="tva-kpi-label">Pompage</span>
+          <b class="tva-kpi-val">{{ values.get('pumping_panels', '10') }} <small>%</small></b>
+        </div>
+      </div>
+      <span class="tva-kpi-sub">Standard photovoltaïque national</span>
+    </div>
+  </article>
+
+  <!-- KPI 2 : Équipements & Onduleurs -->
+  <article class="tva-kpi-card">
+    <div class="tva-kpi-header">
+      <span class="tva-kpi-icon">⚡</span>
+      <span class="badge tva-badge-pill">Taux Normal</span>
+    </div>
+    <div class="tva-kpi-content">
+      <small>TVA Équipements &amp; Onduleurs</small>
+      <div class="tva-kpi-duo">
+        <div>
+          <span class="tva-kpi-label">Onduleurs/Batt.</span>
+          <b class="tva-kpi-val">{{ values.get('residential_equipment', '20') }} <small>%</small></b>
+        </div>
+        <div class="tva-kpi-divider"></div>
+        <div>
+          <span class="tva-kpi-label">Variateurs</span>
+          <b class="tva-kpi-val">{{ values.get('pumping_equipment', '20') }} <small>%</small></b>
+        </div>
+      </div>
+      <span class="tva-kpi-sub">Électronique de puissance</span>
+    </div>
+  </article>
+
+  <!-- KPI 3 : Transport On-Grid & Hybride -->
+  <article class="tva-kpi-card">
+    <div class="tva-kpi-header">
+      <span class="tva-kpi-icon">🚚</span>
+      <span class="badge tva-badge-pill">Par Panneau</span>
+    </div>
+    <div class="tva-kpi-content">
+      <small>Transport On-Grid &amp; Hybride</small>
+      <b class="tva-kpi-single-val">{{ ns.ongrid }} <small>DH HT / pan.</small></b>
+      <span class="tva-kpi-sub">TVA transport associée : <strong>{{ values.get('residential_transport', '10') }} %</strong></span>
+    </div>
+  </article>
+
+  <!-- KPI 4 : Transport Pompage Agricole -->
+  <article class="tva-kpi-card">
+    <div class="tva-kpi-header">
+      <span class="tva-kpi-icon">🚜</span>
+      <span class="badge tva-badge-pill">Par Panneau</span>
+    </div>
+    <div class="tva-kpi-content">
+      <small>Transport Pompage Agricole</small>
+      <b class="tva-kpi-single-val">{{ ns.pumping }} <small>DH HT / pan.</small></b>
+      <span class="tva-kpi-sub">TVA transport associée : <strong>{{ values.get('pumping_transport', '10') }} %</strong></span>
+    </div>
+  </article>
+</section>
+
+<!-- ========================================================== -->
+<!-- 3. FORMULAIRE PRINCIPAL : PROFILS DE TAUX DE TVA           -->
+<!-- ========================================================== -->
+<form method="post" class="panel catalog-form tva-main-card" id="vat-profiles-form">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+
+  <div class="tva-section-header-block">
+    <div class="tva-section-title-wrap">
+      <span class="tva-section-icon-badge">📊</span>
+      <div>
+        <h2 class="tva-section-title">Profils de TVA par Projet</h2>
+        <p class="tva-section-subtitle">
+          Saisissez les pourcentages directs (ex : <strong>10</strong> pour 10 %, <strong>20</strong> pour 20 %, <strong>0</strong> pour exonéré).
+          Les taux sont ventilés par catégorie de matériel pour garantir une facture conforme aux exigences fiscales marocaines.
+        </p>
+      </div>
+    </div>
+  </div>
+
   {% for profile in profiles %}
-  <section class="form-section" aria-labelledby="profile-{{ profile.key }}">
-    <h2 id="profile-{{ profile.key }}">{{ profile.title }}</h2>
-    <div class="form-grid">
+  <section class="form-section tva-profile-block" aria-labelledby="profile-{{ profile.key }}" id="profile-section-{{ profile.key }}">
+    <div class="tva-profile-banner">
+      <div class="tva-profile-banner-left">
+        <span class="tva-profile-avatar">{{ '🏡' if profile.key == 'residential' else '🌾' }}</span>
+        <div>
+          <h2 id="profile-{{ profile.key }}" class="tva-profile-heading">{{ profile.title }}</h2>
+          <span class="tva-profile-meta">
+            {% if profile.key == 'residential' %}
+              Appliqué aux devis On-Grid (autoconsommation raccordée) et Hybride (avec stockage batterie lithium).
+            {% else %}
+              Appliqué aux stations de pompage solaire agricole au fil du soleil et chantiers d'irrigation.
+            {% endif %}
+          </span>
+        </div>
+      </div>
+      <div class="tva-profile-banner-right">
+        <span class="badge {{ 'source-heliantha' if profile.key == 'residential' else 'source-demo' }}">
+          {{ 'Résidentiel & Tertiaire' if profile.key == 'residential' else 'Secteur Agricole' }}
+        </span>
+      </div>
+    </div>
+
+    <div class="tva-inputs-grid">
       {% for field in fields if field.profile == profile.key %}
-      <label for="{{ field.key }}">
-        {{ field.label }}
-        <div class="input-with-unit">
+      <div class="tva-input-card {% if errors.get(field.key) %}has-error{% endif %}">
+        <div class="tva-input-header">
+          <label for="{{ field.key }}" class="tva-input-label">
+            <span class="tva-field-bullet">
+              {% if 'panels' in field.key %}☀️
+              {% elif 'equipment' in field.key %}{{ '🔋' if profile.key == 'residential' else '⚡' }}
+              {% elif 'accessories' in field.key %}{{ '🔌' if profile.key == 'residential' else '🏗️' }}
+              {% elif 'transport' in field.key %}🚚
+              {% elif 'installation' in field.key %}🔧
+              {% else %}📦{% endif %}
+            </span>
+            <span class="tva-field-title">{{ field.label }}</span>
+          </label>
+          <span class="tva-default-chip" title="Valeur par défaut recommandée">Défaut: {{ field.default }}%</span>
+        </div>
+
+        <div class="input-with-unit tva-input-wrap">
           <input id="{{ field.key }}" name="{{ field.key }}" type="number"
                  min="0" max="30" step="any" required
                  value="{{ values.get(field.key, '') }}" placeholder="{{ field.default }}"
+                 class="tva-text-input"
                  {% if errors.get(field.key) %}aria-invalid="true" aria-describedby="error-{{ field.key }}"{% endif %}>
-          <small>%</small>
+          <small class="tva-unit-tag">%</small>
         </div>
+
         {% if errors.get(field.key) %}
-        <small class="field-error" id="error-{{ field.key }}">{{ errors[field.key] }}</small>
+        <small class="field-error tva-error-msg" id="error-{{ field.key }}">
+          ⚠️ {{ errors[field.key] }}
+        </small>
+        {% else %}
+        <span class="tva-input-hint">
+          {% if 'panels' in field.key %}Taux standard 10% (0% si exonéré)
+          {% elif 'equipment' in field.key %}{{ 'Onduleurs & batteries (20%)' if profile.key == 'residential' else 'Variateurs & pompes (20%)' }}
+          {% elif 'accessories' in field.key %}{{ 'Coffrets AC/DC, câbles, rails (20%)' if profile.key == 'residential' else 'Tuyauterie, structure, brides (20%)' }}
+          {% elif 'transport' in field.key %}Taux applicable à la logistique (10%)
+          {% elif 'installation' in field.key %}Prestation main d'œuvre & pose (20%)
+          {% endif %}
+        </span>
         {% endif %}
-      </label>
+      </div>
       {% endfor %}
     </div>
+
     {% if profile.key == 'pumping' %}
-    <p class="muted">Le taux de transport s’applique au nombre de panneaux multiplié par le tarif HT défini ci-dessous.</p>
+    <div class="tva-callout-note">
+      <span class="tva-callout-icon">💡</span>
+      <div class="tva-callout-text">
+        <strong>Spécificité du Pompage Agricole :</strong>
+        Le taux de transport s'applique au produit (nombre de panneaux multiplié par le tarif HT défini ci-dessous).
+        Pour les exploitations agricoles disposant d'une exonération fiscale totale, positionnez chaque taux à <strong>0 %</strong>.
+      </div>
+    </div>
     {% endif %}
   </section>
   {% endfor %}
-  <div class="detail-actions">
-    <button class="admin-button" type="submit">Enregistrer les taux de TVA</button>
+
+  <div class="tva-action-toolbar">
+    <div class="tva-toolbar-note">
+      <span class="tva-toolbar-bullet">ℹ️</span>
+      <span>Les modifications seront sauvegardées dans la table centrale et appliquées dès la prochaine estimation.</span>
+    </div>
+    <button class="admin-button tva-submit-button" type="submit">
+      <span>💾 Enregistrer les taux de TVA</span>
+    </button>
   </div>
 </form>
 
-<form class="panel catalog-form" method="post" id="transport-form">
+<!-- ========================================================== -->
+<!-- 4. FORMULAIRE TRANSPORT & LOGISTIQUE                      -->
+<!-- ========================================================== -->
+<form class="panel catalog-form tva-main-card tva-transport-card" method="post" id="transport-form">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
   <input type="hidden" name="action" value="save_transport">
-  <section class="form-section" aria-labelledby="transport-heading">
-    <h2 id="transport-heading">Tarifs de Transport &amp; Logistique</h2>
-    <p>Tarifs HT par panneau. Les taux de TVA transport sont définis dans les profils ci-dessus.</p>
-    <div class="form-grid">
+
+  <section class="form-section tva-transport-section" aria-labelledby="transport-heading">
+    <div class="tva-section-header-block">
+      <div class="tva-section-title-wrap">
+        <span class="tva-section-icon-badge tva-transport-badge-icon">🚚</span>
+        <div>
+          <h2 id="transport-heading" class="tva-section-title">Tarifs de Transport &amp; Logistique</h2>
+          <p class="tva-section-subtitle">
+            Tarifs HT appliqués par panneau solaire livré sur chantier. La TVA transport correspondante (10% par défaut)
+            est calculée selon les profils définis plus haut.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="tva-formula-box">
+      <span class="tva-formula-icon">📐</span>
+      <div class="tva-formula-content">
+        <strong>Formule de chiffrage transport :</strong>
+        <div class="tva-formula-equation">
+          <span class="tva-f-part">Montant Transport HT</span>
+          <span class="tva-f-op">=</span>
+          <span class="tva-f-part">Nombre de Panneaux</span>
+          <span class="tva-f-op">×</span>
+          <span class="tva-f-part highlight">Tarif unitaire HT</span>
+        </div>
+        <p class="tva-formula-desc">Exemple : 12 panneaux solaires × 50,00 DH HT = 600,00 DH HT (+ TVA 10% = 660,00 DH TTC).</p>
+      </div>
+    </div>
+
+    <div class="tva-inputs-grid tva-transport-grid">
       {% for s in transport_settings %}
-      <label for="{{ s.key }}">
-        {{ s.label }}
+      <div class="tva-input-card tva-transport-item-card">
+        <div class="tva-input-header">
+          <label for="{{ s.key }}" class="tva-input-label">
+            <span class="tva-field-bullet">
+              {% if 'ongrid' in s.key %}☀️🚚
+              {% elif 'pumping_rate' in s.key %}🌾🚚
+              {% elif 'mode' in s.key %}⚙️
+              {% else %}📦{% endif %}
+            </span>
+            <span class="tva-field-title">{{ s.label }}</span>
+          </label>
+        </div>
+
         {% if s.key == 'transport_pumping_mode' %}
-          <select id="{{ s.key }}" name="{{ s.key }}"><option value="per_panel" selected>Par panneau</option></select>
+          <div class="tva-select-wrap">
+            <select id="{{ s.key }}" name="{{ s.key }}" class="tva-select-input">
+              <option value="per_panel" selected>Par panneau solaire</option>
+            </select>
+          </div>
+          <span class="tva-input-hint">Mode proportionnel au dimensionnement du champ</span>
         {% else %}
-          <input type="number" id="{{ s.key }}" name="{{ s.key }}" value="{{ s.value }}" min="0" step="0.01" required inputmode="decimal">
-          <small>DH HT / panneau</small>
+          <div class="input-with-unit tva-input-wrap">
+            <input type="number" id="{{ s.key }}" name="{{ s.key }}" value="{{ s.value }}"
+                   min="0" step="0.01" required inputmode="decimal" class="tva-text-input">
+            <small class="tva-unit-tag">DH HT / pan.</small>
+          </div>
+          <span class="tva-input-hint">
+            {% if 'ongrid' in s.key %}Chantiers toiture &amp; sol raccordés au réseau
+            {% else %}Acheminement zones agricoles &amp; puits
+            {% endif %}
+          </span>
         {% endif %}
-      </label>
+      </div>
       {% endfor %}
     </div>
+
+    <div class="tva-action-toolbar">
+      <div class="tva-toolbar-note">
+        <span class="tva-toolbar-bullet">🚚</span>
+        <span>Ajustement direct des forfaits kilométriques et expéditions régionales.</span>
+      </div>
+      <button class="admin-button tva-submit-button" type="submit">
+        <span>Enregistrer les tarifs de transport</span>
+      </button>
+    </div>
   </section>
-  <button class="admin-button" type="submit">Enregistrer les tarifs de transport</button>
 </form>
+
+<!-- ========================================================== -->
+<!-- 5. SIMULATEUR INTERACTIF EN DIRECT (CALCULATEUR RAPIDE)     -->
+<!-- ========================================================== -->
+<section class="panel tva-main-card tva-simulator-card" id="tva-simulator">
+  <div class="tva-section-header-block">
+    <div class="tva-section-title-wrap">
+      <span class="tva-section-icon-badge tva-calc-badge-icon">🧮</span>
+      <div>
+        <h2 class="tva-section-title">Simulateur Rapide de Calcul Logistique &amp; TVA</h2>
+        <p class="tva-section-subtitle">
+          Testez immédiatement l'impact de vos barèmes sur un projet type pour vérifier les totaux HT, la TVA générée et le montant TTC.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="tva-sim-container">
+    <div class="tva-sim-controls">
+      <label for="sim-panels-count" class="tva-sim-label">
+        <span>Nombre de panneaux du projet :</span>
+        <div class="tva-sim-input-row">
+          <input type="range" id="sim-panels-slider" min="2" max="60" value="12" step="2" class="tva-range-slider">
+          <div class="input-with-unit tva-sim-num-wrap">
+            <input type="number" id="sim-panels-count" min="1" max="500" value="12" class="tva-sim-num-input">
+            <small class="tva-unit-tag">panneaux</small>
+          </div>
+        </div>
+      </label>
+    </div>
+
+    <div class="tva-sim-results-grid">
+      <!-- Résultat On-Grid -->
+      <article class="tva-sim-card">
+        <header class="tva-sim-card-header">
+          <div class="tva-sim-card-title">
+            <span>🏡</span>
+            <strong>Projet On-Grid / Hybride</strong>
+          </div>
+          <span class="badge source-heliantha">Taux appliqué</span>
+        </header>
+        <div class="tva-sim-card-body">
+          <div class="tva-sim-row">
+            <span>Barème unitaire HT :</span>
+            <b><span id="sim-og-rate">{{ ns.ongrid }}</span> DH / pan.</b>
+          </div>
+          <div class="tva-sim-row">
+            <span>Transport Total HT :</span>
+            <b><span id="sim-og-ht">600,00</span> DH HT</b>
+          </div>
+          <div class="tva-sim-row">
+            <span>TVA Transport (<span id="sim-og-tva-rate">{{ values.get('residential_transport', '10') }}</span> %) :</span>
+            <span class="tva-sim-vat-amt">+ <strong id="sim-og-vat">60,00</strong> DH</span>
+          </div>
+          <div class="tva-sim-divider"></div>
+          <div class="tva-sim-total-row">
+            <strong>Total Transport TTC :</strong>
+            <b class="tva-sim-grand-val"><span id="sim-og-ttc">660,00</span> DH TTC</b>
+          </div>
+        </div>
+      </article>
+
+      <!-- Résultat Pompage -->
+      <article class="tva-sim-card">
+        <header class="tva-sim-card-header">
+          <div class="tva-sim-card-title">
+            <span>🌾</span>
+            <strong>Projet Pompage Solaire</strong>
+          </div>
+          <span class="badge source-demo">Secteur Agricole</span>
+        </header>
+        <div class="tva-sim-card-body">
+          <div class="tva-sim-row">
+            <span>Barème unitaire HT :</span>
+            <b><span id="sim-pump-rate">{{ ns.pumping }}</span> DH / pan.</b>
+          </div>
+          <div class="tva-sim-row">
+            <span>Transport Total HT :</span>
+            <b><span id="sim-pump-ht">720,00</span> DH HT</b>
+          </div>
+          <div class="tva-sim-row">
+            <span>TVA Transport (<span id="sim-pump-tva-rate">{{ values.get('pumping_transport', '10') }}</span> %) :</span>
+            <span class="tva-sim-vat-amt">+ <strong id="sim-pump-vat">72,00</strong> DH</span>
+          </div>
+          <div class="tva-sim-divider"></div>
+          <div class="tva-sim-total-row">
+            <strong>Total Transport TTC :</strong>
+            <b class="tva-sim-grand-val"><span id="sim-pump-ttc">792,00</span> DH TTC</b>
+          </div>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- Script interactif du simulateur client -->
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const slider = document.getElementById("sim-panels-slider");
+  const countInput = document.getElementById("sim-panels-count");
+
+  const ongridRateInput = document.getElementById("transport_ongrid_rate");
+  const pumpingRateInput = document.getElementById("transport_pumping_rate");
+  const ongridVatInput = document.getElementById("residential_transport");
+  const pumpingVatInput = document.getElementById("pumping_transport");
+
+  const elOgRate = document.getElementById("sim-og-rate");
+  const elOgHt = document.getElementById("sim-og-ht");
+  const elOgVatRate = document.getElementById("sim-og-tva-rate");
+  const elOgVat = document.getElementById("sim-og-vat");
+  const elOgTtc = document.getElementById("sim-og-ttc");
+
+  const elPumpRate = document.getElementById("sim-pump-rate");
+  const elPumpHt = document.getElementById("sim-pump-ht");
+  const elPumpVatRate = document.getElementById("sim-pump-tva-rate");
+  const elPumpVat = document.getElementById("sim-pump-vat");
+  const elPumpTtc = document.getElementById("sim-pump-ttc");
+
+  function fmt(num) {
+    return num.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function recalculate() {
+    const panels = Math.max(1, parseInt(countInput.value, 10) || 1);
+    
+    // Tarifs unitaires HT
+    const ogRate = parseFloat(ongridRateInput ? ongridRateInput.value : {{ ns.ongrid }}) || 0;
+    const pumpRate = parseFloat(pumpingRateInput ? pumpingRateInput.value : {{ ns.pumping }}) || 0;
+
+    // Taux TVA transport %
+    const ogVatPercent = parseFloat(ongridVatInput ? ongridVatInput.value : {{ values.get('residential_transport', '10') }}) || 0;
+    const pumpVatPercent = parseFloat(pumpingVatInput ? pumpingVatInput.value : {{ values.get('pumping_transport', '10') }}) || 0;
+
+    // Calculs On-Grid
+    const ogHt = panels * ogRate;
+    const ogVat = Math.round(ogHt * (ogVatPercent / 100) * 100) / 100;
+    const ogTtc = ogHt + ogVat;
+
+    // Calculs Pompage
+    const pumpHt = panels * pumpRate;
+    const pumpVat = Math.round(pumpHt * (pumpVatPercent / 100) * 100) / 100;
+    const pumpTtc = pumpHt + pumpVat;
+
+    // Mise a jour DOM
+    if (elOgRate) elOgRate.textContent = fmt(ogRate);
+    if (elOgHt) elOgHt.textContent = fmt(ogHt);
+    if (elOgVatRate) elOgVatRate.textContent = ogVatPercent;
+    if (elOgVat) elOgVat.textContent = fmt(ogVat);
+    if (elOgTtc) elOgTtc.textContent = fmt(ogTtc);
+
+    if (elPumpRate) elPumpRate.textContent = fmt(pumpRate);
+    if (elPumpHt) elPumpHt.textContent = fmt(pumpHt);
+    if (elPumpVatRate) elPumpVatRate.textContent = pumpVatPercent;
+    if (elPumpVat) elPumpVat.textContent = fmt(pumpVat);
+    if (elPumpTtc) elPumpTtc.textContent = fmt(pumpTtc);
+  }
+
+  if (slider && countInput) {
+    slider.addEventListener("input", (e) => {
+      countInput.value = e.target.value;
+      recalculate();
+    });
+    countInput.addEventListener("input", (e) => {
+      slider.value = e.target.value;
+      recalculate();
+    });
+  }
+
+  // Reactivite lors de la modification des champs en direct
+  [ongridRateInput, pumpingRateInput, ongridVatInput, pumpingVatInput].forEach(inp => {
+    if (inp) inp.addEventListener("input", recalculate);
+  });
+
+  recalculate();
+});
+</script>
 {% endblock %}
