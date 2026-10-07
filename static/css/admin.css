@@ -10774,3 +10774,33 @@ tbody tr:hover{
   color: var(--muted) !important;
   margin-top: 2px !important;
 }
+
+/* Consultation serveur des devis : filtres et navigation paginée. */
+.crm-filter-bar { flex-wrap: wrap; }
+.crm-filter-submit, .crm-filter-reset { min-height: 40px; display: inline-flex; align-items: center; }
+.crm-pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 16px 0 28px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.crm-pagination-links { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.crm-pagination-links a, .crm-pagination-links span {
+  display: inline-flex;
+  min-height: 34px;
+  min-width: 34px;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  color: var(--ink);
+  text-decoration: none;
+}
+.crm-pagination-links .is-current { background: #0f766e; border-color: #0f766e; color: white; }
+.crm-pagination-links .is-disabled { opacity: .45; cursor: default; }

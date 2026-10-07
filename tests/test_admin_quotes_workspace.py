@@ -82,10 +82,14 @@ def client():
 
 
 def test_workspace_renders_contact_once_with_all_quote_links_and_no_visit_ui(client):
-    with patch("app.routes.list_quotes", return_value=[quote(2), quote(1)]) as read:
+    page = {
+        "items": [quote(2), quote(1)], "total_count": 2, "total_pages": 1,
+        "current_page": 1, "per_page": 25, "has_prev": False, "has_next": False,
+    }
+    with patch("app.routes.list_quotes_paginated", return_value=page) as read:
         response = client.get("/admin/devis")
     assert response.status_code == 200
-    read.assert_called_once_with(limit=None)
+    read.assert_called_once_with(page=1, per_page=25, q="", status="", system_type="")
     html = response.get_data(as_text=True)
     assert html.count("<h2>Client Exemple</h2>") == 1
     assert html.count('data-quote-row ') == 2

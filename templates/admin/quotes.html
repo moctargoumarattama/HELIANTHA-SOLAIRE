@@ -5,30 +5,46 @@
 {% block content %}
 <!-- Barre d'outils CRM haute densité : Filtres + Compteurs -->
 <div class="crm-toolbar-wrap">
-  <form class="filters quote-filters quote-filter-panel crm-filter-bar" method="get" data-live-quote-filters>
+  <form class="filters quote-filters quote-filter-panel crm-filter-bar" method="get" action="{{ url_for('main.admin_quotes') }}" data-live-quote-filters>
     <div class="crm-search-box">
       <span class="crm-search-icon" aria-hidden="true">🔍</span>
-      <input name="q" value="{{ filters.get('q', '') }}" placeholder="Client, téléphone, référence…" aria-label="Rechercher un client ou un devis">
+      <input name="q" value="{{ filters.get('q', '') }}" placeholder="Client, téléphone, ville, numéro…" aria-label="Rechercher un client ou un devis">
     </div>
 
-    <select name="project" aria-label="Projet" class="crm-filter-select">
+    <select name="type" aria-label="Projet" class="crm-filter-select">
       <option value="">Tous projets</option>
-      {% for key in public_projects %}
-      <option value="{{ key }}" {% if filters.get('project') == key %}selected{% endif %}>{{ project_labels.get(key) }}</option>
-      {% endfor %}
+      <option value="pumping" {% if filters.get('type') == 'pumping' %}selected{% endif %}>Pompage solaire</option>
+      <option value="ongrid" {% if filters.get('type') == 'ongrid' %}selected{% endif %}>On-Grid</option>
+      <option value="hybride" {% if filters.get('type') == 'hybride' %}selected{% endif %}>Hybride</option>
     </select>
 
     <select name="status" aria-label="Statut" class="crm-filter-select">
       <option value="">Tous statuts</option>
+      <optgroup label="Vue rapide">
+        <option value="en_attente" {% if filters.get('status') == 'en_attente' %}selected{% endif %}>En attente</option>
+        <option value="envoye" {% if filters.get('status') == 'envoye' %}selected{% endif %}>Envoyés</option>
+        <option value="valide" {% if filters.get('status') == 'valide' %}selected{% endif %}>Validés</option>
+        <option value="rejete" {% if filters.get('status') == 'rejete' %}selected{% endif %}>Rejetés</option>
+      </optgroup>
+      <optgroup label="Étape précise">
       {% for status in statuses %}
       <option value="{{ status }}" {% if filters.get('status') == status %}selected{% endif %}>{{ status }}</option>
       {% endfor %}
+      </optgroup>
     </select>
+    <select name="per_page" aria-label="Devis par page" class="crm-filter-select">
+      {% if filters.get('per_page') not in [20, 25, 30, 50, 100] %}<option value="{{ filters.get('per_page') }}" selected>{{ filters.get('per_page') }} / page</option>{% endif %}
+      {% for size in [20, 25, 30, 50, 100] %}<option value="{{ size }}" {% if filters.get('per_page') == size %}selected{% endif %}>{{ size }} / page</option>{% endfor %}
+    </select>
+    <button type="submit" class="admin-button crm-filter-submit">Filtrer</button>
+    {% if filters.get('q') or filters.get('type') or filters.get('status') %}
+      <a class="ghost-button crm-filter-reset" href="{{ url_for('main.admin_quotes') }}" title="Effacer les filtres">Effacer</a>
+    {% endif %}
   </form>
 
   <div class="crm-live-counters" aria-live="polite">
-    <span class="status crm-counter-pill"><span data-live-client-count>{{ client_groups|length }}</span>&nbsp;client(s)</span>
-    <span class="status crm-counter-pill crm-counter-accent"><span data-live-quote-count>{{ quote_count }}</span>&nbsp;devis</span>
+    <span class="status crm-counter-pill"><span data-live-client-count>{{ client_groups|length }}</span>&nbsp;client(s) sur cette page</span>
+    <span class="status crm-counter-pill crm-counter-accent"><span data-live-quote-count>{{ quote_count }}</span>&nbsp;devis trouvés</span>
   </div>
 </div>
 
@@ -114,88 +130,43 @@
 </div>
 
 <div class="quote-no-results" data-live-quote-empty {% if client_groups %}hidden{% endif %}>
-  🔍 Aucun devis ne correspond aux critères de recherche.
+  Aucun devis ne correspond aux critères de recherche.
+  <a href="{{ url_for('main.admin_quotes') }}">Réinitialiser la recherche</a>
 </div>
+{% if quote_count %}
+<nav class="crm-pagination" aria-label="Pagination des devis">
+  <span class="crm-pagination-summary">Affichage {{ start_index }} à {{ end_index }} sur {{ quote_count }} devis</span>
+  <div class="crm-pagination-links">
+    {% if pagination.has_prev %}
+      <a href="{{ url_for('main.admin_quotes', page=pagination.current_page - 1, per_page=pagination.per_page, q=filters.get('q'), status=filters.get('status'), type=filters.get('type')) }}">Précédent</a>
+    {% else %}<span class="is-disabled" aria-disabled="true">Précédent</span>{% endif %}
+    {% for page_number in page_numbers %}
+      <a href="{{ url_for('main.admin_quotes', page=page_number, per_page=pagination.per_page, q=filters.get('q'), status=filters.get('status'), type=filters.get('type')) }}" {% if page_number == pagination.current_page %}aria-current="page" class="is-current"{% endif %}>{{ page_number }}</a>
+    {% endfor %}
+    {% if pagination.has_next %}
+      <a href="{{ url_for('main.admin_quotes', page=pagination.current_page + 1, per_page=pagination.per_page, q=filters.get('q'), status=filters.get('status'), type=filters.get('type')) }}">Suivant</a>
+    {% else %}<span class="is-disabled" aria-disabled="true">Suivant</span>{% endif %}
+  </div>
+</nav>
+{% endif %}
 {% endblock %}
 
 {% block page_scripts %}
 <script>
 (() => {
-  const form = document.querySelector("[data-live-quote-filters]");
-  const rows = Array.from(document.querySelectorAll("[data-quote-row]"));
-  const count = document.querySelector("[data-live-quote-count]");
-  const groups = Array.from(document.querySelectorAll("[data-client-group]"));
-  const clientCount = document.querySelector("[data-live-client-count]");
-  const empty = document.querySelector("[data-live-quote-empty]");
-  if (!form) return;
-
-  const normalize = (value) => (value || "").toString().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
-
-  const matches = (row) => {
-    const query = normalize(form.elements.q.value);
-    const project = form.elements.project.value;
-    const status = form.elements.status.value;
-    if (project && row.dataset.project !== project) return false;
-    if (status && row.dataset.status !== status) return false;
-    if (query && !query.split(/\s+/).every((term) => normalize(row.dataset.search).includes(term))) return false;
-    return true;
-  };
-
-  const syncUrl = () => {
-    const url = new URL(window.location.href);
-    ["q", "project", "status"].forEach((key) => {
-      const value = form.elements[key].value.trim();
-      if (value) url.searchParams.set(key, value);
-      else url.searchParams.delete(key);
-    });
-    window.history.replaceState({}, "", url);
-  };
-
-  const applyFilters = () => {
-    let visibleCount = 0;
-    rows.forEach((row) => {
-      const visible = matches(row);
-      row.hidden = !visible;
-      row.style.display = visible ? "" : "none";
-      if (visible) visibleCount += 1;
-    });
-    let visibleClients = 0;
-    groups.forEach((group) => {
-      group.hidden = !Array.from(group.querySelectorAll("[data-quote-row]")).some((row) => !row.hidden);
-      group.style.display = group.hidden ? "none" : "";
-      if (!group.hidden) visibleClients += 1;
-    });
-    if (clientCount) clientCount.textContent = visibleClients;
-    if (count) count.textContent = visibleCount;
-    if (empty) empty.hidden = visibleCount !== 0;
-  };
-
-  form.addEventListener("submit", (event) => event.preventDefault());
-  form.addEventListener("input", () => {
-    syncUrl();
-    applyFilters();
-  });
-  form.addEventListener("change", () => {
-    syncUrl();
-    applyFilters();
-  });
   document.querySelectorAll(".crm-inline-status-form").forEach((statusForm) => {
     handleAjaxForm(statusForm, {
       onSuccess(data) {
         const row = statusForm.closest("[data-quote-row]");
         const badge = row?.querySelector(".crm-status-badge");
         if (!row || !badge) return;
-        const previous = badge.textContent.trim();
         row.dataset.status = data.new_status;
-        row.dataset.search = row.dataset.search.replace(previous, data.status_label);
         badge.textContent = data.status_label;
         badge.classList.remove("crm-st-success", "crm-st-info", "crm-st-danger", "crm-st-warning");
         badge.classList.add(data.badge_class);
-        applyFilters();
       },
     });
   });
-  applyFilters();
 })();
 </script>
 {% endblock %}

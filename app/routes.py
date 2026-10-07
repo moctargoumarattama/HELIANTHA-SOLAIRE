@@ -40,6 +40,7 @@ from .db import (
     list_ongrid_parameters,
     list_products,
     list_quotes,
+    list_quotes_paginated,
     list_users,
     list_vat_rates,
     list_whatsapp_outbox,
@@ -935,6 +936,8 @@ def admin_logout():
     return redirect(url_for("main.admin_login"))
 
 
+@bp.get("/admin/dashboard")
+@bp.get("/admin")
 @bp.get("/admin/")
 def admin_dashboard():
     return render_template(
@@ -1354,17 +1357,33 @@ def admin_pumping_method():
     return render_template("admin/pumping_method.html", **view)
 
 
+@bp.get("/admin/quotes")
 @bp.get("/admin/devis")
 def admin_quotes():
-    groups = group_quotes_by_client(list_quotes(limit=None))
+    q = request.args.get("q", "").strip()[:120]
+    status = request.args.get("status", "").strip()
+    project_type = (request.args.get("type") or request.args.get("project") or "").strip()
+    project_type = {"photovoltaic": "ongrid", "hybrid": "hybride"}.get(project_type, project_type)
+    pagination = list_quotes_paginated(
+        page=request.args.get("page", 1),
+        per_page=request.args.get("per_page", 25),
+        q=q, status=status, system_type=project_type,
+    )
+    groups = group_quotes_by_client(pagination["items"])
+    current_page = pagination["current_page"]
+    total_count = pagination["total_count"]
     return render_template(
         "admin/quotes.html",
         client_groups=groups,
-        quote_count=sum(len(group["quotes"]) for group in groups),
+        quote_count=total_count,
         project_labels=PROJECT_LABELS,
         public_projects=PUBLIC_PROJECTS,
         statuses=ADMIN_QUOTE_STATUSES,
-        filters=request.args,
+        filters={"q": q, "status": status, "type": project_type, "per_page": pagination["per_page"]},
+        pagination=pagination,
+        start_index=(current_page - 1) * pagination["per_page"] + 1 if total_count else 0,
+        end_index=min(current_page * pagination["per_page"], total_count),
+        page_numbers=range(max(1, current_page - 2), min(pagination["total_pages"], current_page + 2) + 1),
     )
 
 

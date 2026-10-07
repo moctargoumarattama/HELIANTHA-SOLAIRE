@@ -1229,6 +1229,75 @@ def list_quotes(search="", project="", status="", limit=200):
     return [dict(row) for row in db.execute(sql, values).fetchall()]
 
 
+def list_quotes_paginated(page=1, per_page=25, q=None, status=None, system_type=None, db=None):
+    """Return one lightweight quote page and its filtered row count."""
+    db = db or get_db()
+    _ensure_database_initialized(db)
+    try:
+        page = max(1, int(page))
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        per_page = max(10, min(100, int(per_page)))
+    except (TypeError, ValueError):
+        per_page = 25
+
+    where = []
+    params = []
+    search = str(q or "").strip()[:120].lower()
+    if search:
+        term = f"%{search}%"
+        where.append("""(
+            LOWER(COALESCE(customer_name, '')) LIKE ? OR
+            COALESCE(phone, '') LIKE ? OR
+            LOWER(COALESCE(city, '')) LIKE ? OR
+            LOWER(COALESCE(location, '')) LIKE ? OR
+            LOWER(COALESCE(company, '')) LIKE ? OR
+            LOWER(COALESCE(email, '')) LIKE ? OR
+            LOWER(quote_number) LIKE ? OR CAST(id AS TEXT) LIKE ?
+        )""")
+        params.extend([term] * 8)
+
+    status_value = str(status or "").strip().casefold()
+    status_groups = {
+        "valide": ("accepte", "accepté", "valide", "validé", "validated"),
+        "en_attente": ("nouveau", "a contacter", "pending", "en_attente", "en attente"),
+        "envoye": ("devis envoye", "devis envoyé", "envoye", "envoyé", "sent"),
+        "rejete": ("refuse", "refusé", "rejete", "rejeté", "rejected", "annule", "annulé"),
+    }
+    if status_value and status_value != "all":
+        accepted = status_groups.get(status_value, (status_value,))
+        where.append(f"LOWER(TRIM(status)) IN ({', '.join('?' for _ in accepted)})")
+        params.extend(accepted)
+
+    project_value = str(system_type or "").strip().casefold()
+    project_value = {"ongrid": "photovoltaic", "hybride": "hybrid"}.get(project_value, project_value)
+    if project_value and project_value != "all":
+        where.append("LOWER(project) = ?")
+        params.append(project_value)
+
+    predicate = " WHERE " + " AND ".join(where) if where else ""
+    total_count = db.execute("SELECT COUNT(*) FROM quote_requests" + predicate, params).fetchone()[0]
+    total_pages = max(1, (total_count + per_page - 1) // per_page)
+    page = min(page, total_pages)
+    items = [dict(row) for row in db.execute(
+        """SELECT id, quote_number, customer_name, phone, email, location, company, city,
+                  project, solution_name, amount_ht, amount_ttc, financial_breakdown_json,
+                  status, created_at
+           FROM quote_requests""" + predicate + " ORDER BY id DESC LIMIT ? OFFSET ?",
+        [*params, per_page, (page - 1) * per_page],
+    ).fetchall()]
+    return {
+        "items": items,
+        "total_count": total_count,
+        "total_pages": total_pages,
+        "current_page": page,
+        "per_page": per_page,
+        "has_prev": page > 1,
+        "has_next": page < total_pages,
+    }
+
+
 def get_quote(quote_id):
     db = get_db()
     _ensure_database_initialized(db)
@@ -1495,20 +1564,70 @@ def purge_whatsapp_outbox(status: str = "SENT") -> int:
     return cur.rowcount
 
 
-def dashboard_stats():
-    db = get_db()
+def get_dashboard_metrics(db=None):
+    """Aggregate dashboard figures in SQL without reading quote snapshots."""
+    db = db or get_db()
     _ensure_database_initialized(db)
-    rows = [dict(row) for row in db.execute("SELECT * FROM quote_requests ORDER BY id DESC").fetchall()]
-    canonical_projects = set(PUBLIC_PROJECTS)
-    rows = [row for row in rows if row.get("project") in canonical_projects]
-    today = datetime.now(UTC).date().isoformat()
-    by_status = {}
+    rows = db.execute("""SELECT status, project, COUNT(*) AS quote_count,
+                               COALESCE(SUM(amount_ttc), 0) AS total_ttc,
+                               COALESCE(SUM(substr(created_at, 1, 10) = ?), 0) AS new_today
+                        FROM quote_requests GROUP BY status, project""",
+                      (datetime.now(UTC).date().isoformat(),)).fetchall()
+    metrics = {
+        "total_quotes": 0, "new_today": 0, "validated_count": 0,
+        "pending_count": 0, "sent_count": 0, "rejected_count": 0,
+        "installing_count": 0, "visit_requests": 0,
+        "ca_validated": 0.0, "ca_total_potentiel": 0.0,
+        "by_status": {}, "project_counts": {},
+    }
+    validated = {"accepte", "accepté", "valide", "validé", "validated"}
+    pending = {"nouveau", "a contacter", "pending", "en_attente", "en attente"}
+    sent = {"devis envoye", "devis envoyé", "envoye", "envoyé", "sent"}
+    rejected = {"refuse", "refusé", "rejete", "rejeté", "rejected", "annule", "annulé"}
     for row in rows:
-        by_status[row["status"]] = by_status.get(row["status"], 0) + 1
-    project_counts = {project: 0 for project in PUBLIC_PROJECTS}
-    for row in rows:
-        project = row["project"]
-        project_counts[project] = project_counts.get(project, 0) + 1
+        count = int(row["quote_count"])
+        amount = float(row["total_ttc"] or 0)
+        status = str(row["status"] or "").strip().casefold()
+        metrics["total_quotes"] += count
+        metrics["new_today"] += int(row["new_today"])
+        metrics["ca_total_potentiel"] += amount
+        metrics["by_status"][row["status"]] = metrics["by_status"].get(row["status"], 0) + count
+        metrics["project_counts"][row["project"]] = metrics["project_counts"].get(row["project"], 0) + count
+        if status in validated:
+            metrics["validated_count"] += count
+            metrics["ca_validated"] += amount
+        if status in pending:
+            metrics["pending_count"] += count
+        if status in sent:
+            metrics["sent_count"] += count
+        if status in rejected:
+            metrics["rejected_count"] += count
+        if status == "installation":
+            metrics["installing_count"] += count
+        if status == "visite programmee":
+            metrics["visit_requests"] += count
+    return metrics
+
+
+def get_recent_quotes_summary(limit=8, db=None):
+    """Read only the fields rendered in the dashboard's recent-quotes table."""
+    db = db or get_db()
+    _ensure_database_initialized(db)
+    try:
+        limit = max(0, min(100, int(limit)))
+    except (TypeError, ValueError):
+        limit = 8
+    return [dict(row) for row in db.execute(
+        """SELECT id, quote_number, customer_name, phone, company, city, project,
+                  amount_ht, amount_ttc, status, created_at
+           FROM quote_requests ORDER BY id DESC LIMIT ?""",
+        (limit,),
+    ).fetchall()]
+
+
+def dashboard_stats():
+    metrics = get_dashboard_metrics()
+    project_counts = metrics["project_counts"]
     project_breakdown = [
         {
             "key": project,
@@ -1519,18 +1638,18 @@ def dashboard_stats():
         if (count := project_counts.get(project, 0)) > 0
     ]
     return {
-        "total_prospects": len(rows),
-        "new_today": sum(1 for row in rows if str(row.get("created_at", "")).startswith(today)),
-        "simulations": len(rows),
-        "quotes_generated": len(rows),
-        "visit_requests": by_status.get("Visite programmee", 0),
-        "pending_quotes": by_status.get("Nouveau", 0) + by_status.get("A contacter", 0),
-        "accepted_quotes": by_status.get("Accepte", 0),
-        "refused_quotes": by_status.get("Refuse", 0),
-        "installing_projects": by_status.get("Installation", 0),
+        "total_prospects": metrics["total_quotes"],
+        "new_today": metrics["new_today"],
+        "simulations": metrics["total_quotes"],
+        "quotes_generated": metrics["total_quotes"],
+        "visit_requests": metrics["visit_requests"],
+        "pending_quotes": metrics["pending_count"],
+        "accepted_quotes": metrics["validated_count"],
+        "refused_quotes": metrics["rejected_count"],
+        "installing_projects": metrics["installing_count"],
         "project_breakdown": project_breakdown,
-        "by_status": by_status,
-        "latest_quotes": rows[:8],
+        "by_status": metrics["by_status"],
+        "latest_quotes": get_recent_quotes_summary(limit=8),
     }
 
 

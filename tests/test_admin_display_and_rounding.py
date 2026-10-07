@@ -61,7 +61,11 @@ def assert_table_labels(table):
 
 def test_list_data_labels_match_headers_and_ttc_never_appears_under_ht(client):
     original = quote()
-    with patch("app.routes.list_quotes", return_value=[original]):
+    page = {
+        "items": [original], "total_count": 1, "total_pages": 1,
+        "current_page": 1, "per_page": 25, "has_prev": False, "has_next": False,
+    }
+    with patch("app.routes.list_quotes_paginated", return_value=page):
         response = client.get("/admin/devis")
     assert response.status_code == 200
     soup = BeautifulSoup(response.data, "html.parser")
