@@ -835,10 +835,14 @@ def get_dynamic_suggested_products(category: str = "panels", limit: int = 3) -> 
     """Récupère les produits réels en stock depuis SQLite avec repli sécurisé."""
     products = None
     try:
-        from app.services.catalog_service import get_all_products
-        products = get_all_products()
+        from .catalog_service import get_all_products
+        products = get_all_products(category=category)
     except Exception:
-        pass
+        try:
+            from app.services.catalog_service import get_all_products
+            products = get_all_products(category=category)
+        except Exception:
+            pass
 
     if not products and has_app_context():
         try:
