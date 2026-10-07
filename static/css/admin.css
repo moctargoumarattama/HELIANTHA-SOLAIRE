@@ -7895,3 +7895,598 @@ tbody tr:hover{
   }
 }
 
+/* ========================================================== */
+/* WHATSAPP COCKPIT DASHBOARD (MODE SANS SCROLL DESKTOP)      */
+/* ========================================================== */
+
+/* Verrouillage du scroll global pour le cockpit WhatsApp */
+@media (min-width: 1024px) {
+  body.wa-page-active,
+  body:has(#wa-cockpit) {
+    overflow: hidden !important;
+  }
+
+  body.wa-page-active .admin-content,
+  .admin-content:has(#wa-cockpit) {
+    padding: 12px 24px 14px !important;
+    height: calc(100vh - 88px) !important;
+    max-height: calc(100vh - 88px) !important;
+    overflow: hidden !important;
+    box-sizing: border-box !important;
+  }
+
+  .wa-cockpit {
+    height: 100% !important;
+    max-height: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+    overflow: hidden !important;
+  }
+
+  .wa-cockpit-grid {
+    flex: 1 !important;
+    min-height: 0 !important;
+    display: grid !important;
+    grid-template-columns: 380px 1fr !important;
+    gap: 14px !important;
+    overflow: hidden !important;
+  }
+
+  .wa-left-col {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+  }
+
+  .wa-right-col {
+    display: flex !important;
+    flex-direction: column !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+  }
+
+  .wa-session-card {
+    flex: 1.25 !important;
+    min-height: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+  }
+
+  .wa-test-card {
+    flex: 1 !important;
+    min-height: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+  }
+
+  .wa-outbox-card {
+    height: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+  }
+
+  .wa-table-wrap {
+    flex: 1 !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+  }
+}
+
+/* Barre supérieure cockpit */
+.wa-cockpit-bar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px 18px;
+  box-shadow: 0 4px 14px rgba(17, 45, 38, 0.04);
+}
+
+.wa-cockpit-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.wa-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.wa-app-icon {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.wa-cockpit-heading {
+  margin: 0 !important;
+  font-size: 16px !important;
+  font-weight: 800 !important;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+
+.wa-status-text-sub {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.whatsapp-status-badge {
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  padding: 4px 10px !important;
+  border-radius: 999px !important;
+}
+
+.wa-cockpit-chips {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.wa-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #f7faf8;
+  border: 1px solid #dbe6df;
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 11.5px;
+  color: #384e46;
+}
+
+.wa-chip-label {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.wa-chip strong {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.wa-cockpit-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wa-btn-refresh,
+.wa-btn-retry,
+.wa-btn-logout {
+  padding: 7px 12px !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  border-radius: 8px !important;
+  cursor: pointer !important;
+  white-space: nowrap !important;
+}
+
+.wa-btn-retry {
+  background: linear-gradient(180deg, #1f5f4d 0%, var(--green) 100%) !important;
+  color: #ffffff !important;
+}
+
+.wa-btn-retry:hover {
+  background: #174b3d !important;
+}
+
+/* Cartes générales */
+.wa-card {
+  margin-bottom: 0 !important;
+  padding: 14px 18px !important;
+  border: 1px solid var(--line) !important;
+  border-radius: 14px !important;
+  background: #ffffff !important;
+  box-shadow: 0 4px 14px rgba(17, 45, 38, 0.04) !important;
+}
+
+.wa-card-head {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 10px !important;
+  margin-bottom: 10px !important;
+  padding-bottom: 8px !important;
+  border-bottom: 1px solid #edf2ee !important;
+}
+
+.wa-card-head-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wa-head-icon {
+  font-size: 18px;
+}
+
+.wa-card-title {
+  margin: 0 !important;
+  font-size: 14px !important;
+  font-weight: 800 !important;
+  color: var(--ink);
+}
+
+.wa-card-head small {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* Zone QR Code */
+.wa-phone-badge {
+  background: #f0fdf4 !important;
+  color: #166534 !important;
+  border: 1px solid #bbf7d0 !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  padding: 3px 8px !important;
+}
+
+.wa-qr-container {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 4px 0;
+}
+
+.whatsapp-qr-box {
+  width: 100%;
+  height: 100%;
+  min-height: 140px;
+  max-height: 190px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fafcfb;
+  border: 1px dashed #b9c8c0;
+  border-radius: 10px;
+  padding: 8px;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.wa-qr-img {
+  max-height: 155px;
+  width: auto;
+  background: #ffffff;
+  border: 4px solid #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
+}
+
+.wa-connected-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.wa-connected-symbol {
+  font-size: 32px;
+  line-height: 1;
+}
+
+.wa-connected-box strong {
+  color: #166534;
+  font-size: 13.5px;
+}
+
+.wa-connected-box p {
+  margin: 0 !important;
+  font-size: 12px;
+}
+
+.wa-ready-tag {
+  display: inline-block;
+  background: #dcfce7;
+  color: #15803d;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  margin-top: 4px;
+}
+
+.wa-session-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #edf2ee;
+  margin-top: 4px;
+}
+
+.wa-info-pill {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.wa-info-pill strong {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+/* Formulaire Test Message */
+.wa-test-feedback {
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.wa-test-feedback.success {
+  color: #16a34a;
+}
+
+.wa-test-feedback.error {
+  color: #dc2626;
+}
+
+.wa-test-form-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+  justify-content: space-between;
+}
+
+.wa-form-row {
+  display: flex;
+  flex-direction: column;
+}
+
+.wa-label {
+  display: flex !important;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11.5px !important;
+  font-weight: 700 !important;
+  color: #2a3c36 !important;
+}
+
+.wa-input {
+  border: 1px solid #c9d8ce !important;
+  border-radius: 6px !important;
+  padding: 6px 10px !important;
+  font-size: 12.5px !important;
+  background: #ffffff !important;
+}
+
+.wa-textarea {
+  border: 1px solid #c9d8ce !important;
+  border-radius: 6px !important;
+  padding: 6px 10px !important;
+  font-size: 12px !important;
+  resize: none !important;
+  background: #ffffff !important;
+  min-height: 48px !important;
+  line-height: 1.4 !important;
+}
+
+.wa-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 2px;
+}
+
+.wa-btn-send {
+  padding: 7px 14px !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  border-radius: 8px !important;
+}
+
+/* File d'attente Outbox */
+.wa-outbox-count-badge {
+  background: #eef5f0 !important;
+  color: var(--green) !important;
+  font-size: 11px !important;
+}
+
+.wa-outbox-feedback {
+  font-size: 11.5px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.wa-table-wrap {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.wa-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.wa-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #f0f5f2 !important;
+  color: #3b5049 !important;
+  padding: 8px 10px !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  border-bottom: 1px solid #d4dfd8 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.wa-table tbody td {
+  padding: 8px 10px !important;
+  font-size: 12px !important;
+  border-bottom: 1px solid #edf2ee !important;
+  vertical-align: middle !important;
+}
+
+.wa-table tbody tr:hover {
+  background: #f9fbf9;
+}
+
+.wa-td-date {
+  font-size: 11px !important;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.wa-phone-chip {
+  display: inline-block;
+  background: #f3f7f4;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 700;
+  color: var(--ink);
+  font-size: 11.5px;
+}
+
+.wa-type-tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.wa-type-tag.pdf {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #dbeafe;
+}
+
+.wa-type-tag.text {
+  background: #f5f3ff;
+  color: #6d28d9;
+  border: 1px solid #ede9fe;
+}
+
+.wa-status-pill {
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  padding: 2px 7px !important;
+  border-radius: 999px !important;
+  white-space: nowrap !important;
+}
+
+.wa-attempts-badge {
+  display: inline-block;
+  background: #f1f5f3;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 700;
+  font-size: 11px;
+}
+
+.wa-error-text {
+  color: #b91c1c;
+  font-size: 11px;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.wa-ok-text {
+  color: #15803d;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.wa-empty-td {
+  padding: 40px 10px !important;
+  text-align: center;
+}
+
+.wa-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.wa-empty-icon {
+  font-size: 32px;
+}
+
+.wa-empty-state strong {
+  font-size: 13.5px;
+  color: var(--ink);
+}
+
+.wa-empty-state p {
+  margin: 0 !important;
+  font-size: 12px;
+  max-width: 320px;
+}
+
+/* ========================================================== */
+/* RESPONSIVITÉ MOBILE & TABLETTE (< 1024px)                  */
+/* ========================================================== */
+@media (max-width: 1023px) {
+  body.wa-page-active {
+    overflow: auto !important;
+  }
+
+  body.wa-page-active .admin-content,
+  .admin-content:has(#wa-cockpit) {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 16px !important;
+  }
+
+  .wa-cockpit {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .wa-cockpit-bar {
+    flex-direction: column;
+    align-items: stretch;
+    height: auto;
+  }
+
+  .wa-cockpit-left {
+    justify-content: space-between;
+  }
+
+  .wa-cockpit-chips {
+    flex-wrap: wrap;
+  }
+
+  .wa-cockpit-actions {
+    justify-content: flex-end;
+  }
+
+  .wa-cockpit-grid {
+    grid-template-columns: 1fr !important;
+    overflow: visible !important;
+  }
+
+  .wa-table-wrap {
+    max-height: 400px;
+    overflow-y: auto !important;
+  }
+}
+
+

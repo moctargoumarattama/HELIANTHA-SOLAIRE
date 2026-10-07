@@ -1,109 +1,218 @@
 {% extends "admin/base.html" %}
 {% block title %}WhatsApp - HeliAntha Admin{% endblock %}
 {% block page_title %}Passerelle WhatsApp{% endblock %}
+
 {% block content %}
-<section class="admin-grid two whatsapp-admin">
-  <article class="panel whatsapp-status-panel">
-    <div class="panel-head">
-      <div>
-        <h2>Etat de connexion</h2>
-        <p class="muted">Passerelle locale : <strong>{{ settings.gateway_url }}</strong></p>
+<div class="wa-cockpit" id="wa-cockpit">
+  <!-- ========================================================== -->
+  <!-- 1. BARRE DE COMMANDE SUPÉRIEURE (COCKPIT COMPACT)          -->
+  <!-- ========================================================== -->
+  <header class="wa-cockpit-bar">
+    <div class="wa-cockpit-left">
+      <div class="wa-title-wrap">
+        <span class="wa-app-icon">💬</span>
+        <div>
+          <h2 class="wa-cockpit-heading">Passerelle WhatsApp</h2>
+          <span class="wa-status-text-sub" id="wa-status-text">Vérification en cours...</span>
+        </div>
       </div>
-      <span class="status whatsapp-status-badge" id="wa-status-badge">Verification...</span>
+      <span class="status whatsapp-status-badge" id="wa-status-badge">Vérification...</span>
     </div>
 
-    <dl class="info-list whatsapp-info-list">
-      <dt>Etat</dt><dd id="wa-status-text">Verification en cours</dd>
-      <dt>Telephone connecte</dt><dd id="wa-phone">-</dd>
-      <dt>QR disponible</dt><dd id="wa-has-qr">-</dd>
-      <dt>Telephone admin</dt><dd>{{ settings.admin_whatsapp or "-" }}</dd>
-      <dt>URL publique</dt><dd>{{ settings.app_base_url or "-" }}</dd>
-    </dl>
-
-    <div class="detail-actions whatsapp-actions">
-      <button class="admin-button secondary" type="button" id="wa-refresh">Actualiser</button>
-      <button class="ghost-button" type="button" id="wa-logout">Deconnecter / Reinitialiser</button>
-      <button class="admin-button" type="button" id="wa-retry-outbox">Rejouer la file</button>
-    </div>
-  </article>
-
-  <article class="panel whatsapp-qr-panel">
-    <div class="panel-head">
-      <div>
-        <h2>QR code WhatsApp</h2>
-        <p class="muted">Scannez ce QR avec WhatsApp pour connecter la session.</p>
+    <div class="wa-cockpit-chips">
+      <div class="wa-chip" title="URL du serveur passerelle local">
+        <span class="wa-chip-label">Passerelle :</span>
+        <strong>{{ settings.gateway_url }}</strong>
       </div>
+      {% if settings.admin_whatsapp %}
+      <div class="wa-chip" title="Numéro WhatsApp de l'administration pour notification">
+        <span class="wa-chip-label">Admin :</span>
+        <strong>{{ settings.admin_whatsapp }}</strong>
+      </div>
+      {% endif %}
     </div>
-    <div class="whatsapp-qr-box" id="wa-qr-box">
-      <p class="muted">Chargement du QR...</p>
-    </div>
-  </article>
-</section>
 
-<section class="panel">
-  <div class="panel-head">
-    <div>
-      <h2>File d'attente des messages</h2>
-      <p class="muted">Les devis restent ici tant que WhatsApp n'a pas confirme l'envoi.</p>
+    <div class="wa-cockpit-actions">
+      <button class="admin-button secondary wa-btn-refresh" type="button" id="wa-refresh" title="Actualiser l'état du serveur">
+        🔄 Actualiser
+      </button>
+      <button class="admin-button wa-btn-retry" type="button" id="wa-retry-outbox" title="Forcer le renvoi des messages en attente">
+        ⚡ Rejouer file
+      </button>
+      <button class="ghost-button wa-btn-logout" type="button" id="wa-logout" title="Déconnecter la session WhatsApp">
+        🚪 Déconnecter
+      </button>
     </div>
-    <span class="muted" id="wa-outbox-result"></span>
-  </div>
-  <div class="table-wrap whatsapp-outbox-table">
-    <table>
-      <thead>
-        <tr>
-          <th>Date</th>
-          <th>Destinataire</th>
-          <th>Type</th>
-          <th>Statut</th>
-          <th>Essais</th>
-          <th>Erreur</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for item in outbox_items %}
-        <tr>
-          <td>{{ item.created_at }}</td>
-          <td>{{ item.phone or "-" }}</td>
-          <td>{{ "PDF" if item.msg_type == "document" else "Texte" }}</td>
-          <td>
-            <span class="status outbox-status {{ item.status|lower }}">
-              {% if item.status == "SENT" %}Envoye{% elif item.status == "FAILED" %}Echoue{% else %}En attente{% endif %}
-            </span>
-          </td>
-          <td>{{ item.attempts }}</td>
-          <td>{{ item.error_message or "-" }}</td>
-        </tr>
-        {% else %}
-        <tr>
-          <td colspan="6" class="muted">Aucun message dans la file.</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</section>
+  </header>
 
-<section class="panel">
-  <h2>Message de test</h2>
-  <form class="form-grid whatsapp-test-form" id="wa-test-form">
-    <label>Telephone destinataire <small>Par defaut : telephone admin</small>
-      <input name="phone" value="{{ settings.admin_whatsapp }}" placeholder="06XXXXXXXX">
-    </label>
-    <label class="full">Message
-      <textarea name="message" rows="3">Test WhatsApp HeliAntha : la passerelle est operationnelle.</textarea>
-    </label>
-    <div class="full">
-      <button class="admin-button" type="submit">Envoyer le test</button>
-      <span class="muted" id="wa-test-result"></span>
+  <!-- ========================================================== -->
+  <!-- 2. GRILLE COCKPIT EN 2 COLONNES (SANS SCROLL SUR DESKTOP) -->
+  <!-- ========================================================== -->
+  <div class="wa-cockpit-grid">
+    <!-- COLONNE GAUCHE : État Session / Scan QR + Formulaire Test -->
+    <div class="wa-left-col">
+      <!-- A. Carte Session & QR Scanner -->
+      <article class="panel wa-card wa-session-card">
+        <div class="panel-head wa-card-head">
+          <div class="wa-card-head-title">
+            <span class="wa-head-icon">📲</span>
+            <div>
+              <h2 class="wa-card-title">QR code WhatsApp</h2>
+              <small class="muted">Scannez ce QR avec WhatsApp pour connecter la session.</small>
+            </div>
+          </div>
+          <span class="badge wa-phone-badge" id="wa-phone-badge">
+            <span id="wa-phone">-</span>
+          </span>
+        </div>
+
+        <div class="wa-qr-container">
+          <div class="whatsapp-qr-box" id="wa-qr-box">
+            <p class="muted">Chargement du QR code WhatsApp...</p>
+          </div>
+        </div>
+
+        <div class="wa-session-footer">
+          <div class="wa-info-pill">
+            <span>QR disponible :</span>
+            <strong id="wa-has-qr">-</strong>
+          </div>
+          <div class="wa-info-pill">
+            <span>URL Publique :</span>
+            <strong>{{ settings.app_base_url or "-" }}</strong>
+          </div>
+        </div>
+      </article>
+
+      <!-- B. Carte Envoi de Message Test -->
+      <article class="panel wa-card wa-test-card">
+        <div class="panel-head wa-card-head">
+          <div class="wa-card-head-title">
+            <span class="wa-head-icon">🧪</span>
+            <div>
+              <h3 class="wa-card-title">Message de test</h3>
+              <small class="muted">Vérification de l'envoi immédiat via l'API.</small>
+            </div>
+          </div>
+          <span class="wa-test-feedback" id="wa-test-result"></span>
+        </div>
+
+        <form class="whatsapp-test-form wa-test-form-layout" id="wa-test-form">
+          <div class="wa-form-row">
+            <label class="wa-label" for="wa-test-phone">
+              Téléphone destinataire
+              <input id="wa-test-phone" name="phone" value="{{ settings.admin_whatsapp }}"
+                     placeholder="06XXXXXXXX ou +2126XXXXXXXX" class="wa-input" required>
+            </label>
+          </div>
+          <div class="wa-form-row">
+            <label class="wa-label" for="wa-test-message">
+              Message
+              <textarea id="wa-test-message" name="message" rows="2" class="wa-textarea" required>Test WhatsApp HeliAntha : la passerelle est opérationnelle.</textarea>
+            </label>
+          </div>
+          <div class="wa-form-actions">
+            <button class="admin-button wa-btn-send" type="submit">
+              <span>🚀 Envoyer le test</span>
+            </button>
+          </div>
+        </form>
+      </article>
     </div>
-  </form>
-</section>
+
+    <!-- COLONNE DROITE : File d'attente (Outbox) pleine hauteur -->
+    <div class="wa-right-col">
+      <article class="panel wa-card wa-outbox-card">
+        <div class="panel-head wa-card-head">
+          <div class="wa-card-head-title">
+            <span class="wa-head-icon">📤</span>
+            <div>
+              <h2 class="wa-card-title">File d'attente des messages</h2>
+              <small class="muted">Les devis restent ici tant que WhatsApp n'a pas confirmé l'envoi.</small>
+            </div>
+          </div>
+          <div class="wa-outbox-header-right">
+            <span class="badge wa-outbox-count-badge">{{ outbox_items|length }} message(s)</span>
+            <span class="wa-outbox-feedback" id="wa-outbox-result"></span>
+          </div>
+        </div>
+
+        <div class="table-wrap whatsapp-outbox-table wa-table-wrap">
+          <table class="wa-table">
+            <thead>
+              <tr>
+                <th style="width: 130px;">Date &amp; Heure</th>
+                <th style="width: 140px;">Destinataire</th>
+                <th style="width: 85px;">Type</th>
+                <th style="width: 105px;">Statut</th>
+                <th style="width: 65px;">Essais</th>
+                <th>Détail / Erreur</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in outbox_items %}
+              <tr>
+                <td class="wa-td-date">
+                  <span class="wa-date-val">{{ item.created_at }}</span>
+                </td>
+                <td class="wa-td-phone">
+                  <span class="wa-phone-chip">{{ item.phone or "-" }}</span>
+                </td>
+                <td>
+                  <span class="wa-type-tag {{ 'pdf' if item.msg_type == 'document' else 'text' }}">
+                    {{ '📄 PDF' if item.msg_type == 'document' else '💬 Texte' }}
+                  </span>
+                </td>
+                <td>
+                  <span class="status outbox-status {{ item.status|lower }} wa-status-pill">
+                    {% if item.status == "SENT" %}
+                      Envoyé
+                    {% elif item.status == "FAILED" %}
+                      Échoué
+                    {% else %}
+                      En attente
+                    {% endif %}
+                  </span>
+                </td>
+                <td class="wa-td-attempts">
+                  <span class="wa-attempts-badge">{{ item.attempts }}</span>
+                </td>
+                <td class="wa-td-error">
+                  {% if item.error_message %}
+                    <span class="wa-error-text" title="{{ item.error_message }}">{{ item.error_message }}</span>
+                  {% elif item.status == "SENT" %}
+                    <span class="wa-ok-text">Envoyé avec succès</span>
+                  {% else %}
+                    <span class="muted">-</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="6" class="wa-empty-td">
+                  <div class="wa-empty-state">
+                    <span class="wa-empty-icon">📭</span>
+                    <strong>Aucun message dans la file.</strong>
+                    <p class="muted">Dès qu'un devis est créé, il sera automatiquement mis en file pour transmission au client.</p>
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </article>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block page_scripts %}
 <script>
 (() => {
+  // Verrouillage du scroll sur grand ecran
+  document.body.classList.add("wa-page-active");
+
   const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || "";
   const csrfHeaders = () => ({ "X-CSRFToken": csrfToken });
   const statusBadge = document.getElementById("wa-status-badge");
@@ -118,11 +227,15 @@
   const setStatus = (payload) => {
     const online = payload.online !== false;
     const connected = payload.connected === true;
-    statusBadge.className = `status whatsapp-status-badge ${!online ? "offline" : connected ? "connected" : "disconnected"}`;
-    statusBadge.textContent = !online ? "Hors ligne" : connected ? "Connecte" : "Deconnecte";
-    statusText.textContent = !online ? "Passerelle injoignable" : connected ? "Session WhatsApp connectee" : "En attente de scan QR";
-    phone.textContent = payload.phone || "-";
-    hasQr.textContent = payload.has_qr ? "Oui" : "Non";
+    if (statusBadge) {
+      statusBadge.className = `status whatsapp-status-badge ${!online ? "offline" : connected ? "connected" : "disconnected"}`;
+      statusBadge.textContent = !online ? "Hors ligne" : connected ? "Connecté" : "Déconnecté";
+    }
+    if (statusText) {
+      statusText.textContent = !online ? "Passerelle injoignable" : connected ? "Session WhatsApp connectée" : "En attente de scan QR";
+    }
+    if (phone) phone.textContent = payload.phone || "-";
+    if (hasQr) hasQr.textContent = payload.has_qr ? "Oui" : "Non";
   };
 
   const loadStatus = async () => {
@@ -134,21 +247,39 @@
         autoRetried = true;
         retryOutbox(false);
       }
-      if (!payload.connected) loadQr();
+      if (!payload.connected) {
+        loadQr();
+      } else if (qrBox) {
+        qrBox.innerHTML = `
+          <div class="wa-connected-box">
+            <span class="wa-connected-symbol">✅</span>
+            <strong>Session WhatsApp active</strong>
+            <p class="muted">Ligne connectée : <b>${payload.phone || "Authentifié"}</b></p>
+            <small class="wa-ready-tag">Prête à diffuser les devis clients</small>
+          </div>
+        `;
+      }
     } catch (_) {
       setStatus({ online: false, connected: false, phone: null, has_qr: false });
     }
   };
 
   const loadQr = async () => {
-    qrBox.innerHTML = '<p class="muted">Recherche du QR...</p>';
+    if (!qrBox) return;
+    qrBox.innerHTML = '<p class="muted">Recherche du QR code...</p>';
     try {
       const response = await fetch("{{ url_for('main.admin_whatsapp_qr') }}");
       const payload = await response.json();
       if (payload.qr) {
-        qrBox.innerHTML = `<img src="${payload.qr}" alt="QR code WhatsApp">`;
+        qrBox.innerHTML = `<img src="${payload.qr}" alt="QR code WhatsApp" class="wa-qr-img">`;
       } else if (payload.connected) {
-        qrBox.innerHTML = '<p class="muted">Session deja connectee.</p>';
+        qrBox.innerHTML = `
+          <div class="wa-connected-box">
+            <span class="wa-connected-symbol">✅</span>
+            <strong>Session déjà connectée</strong>
+            <small class="wa-ready-tag">Prête à diffuser les devis</small>
+          </div>
+        `;
       } else {
         qrBox.innerHTML = `<p class="muted">${payload.error || "QR non disponible pour le moment."}</p>`;
       }
@@ -159,16 +290,17 @@
 
   document.getElementById("wa-refresh")?.addEventListener("click", loadStatus);
   document.getElementById("wa-logout")?.addEventListener("click", async () => {
-    if (!confirm("Deconnecter la session WhatsApp ?")) return;
+    if (!confirm("Déconnecter la session WhatsApp ?")) return;
     await fetch("{{ url_for('main.admin_whatsapp_logout') }}", { method: "POST", headers: csrfHeaders() });
     window.setTimeout(loadStatus, 600);
   });
+
   const retryOutbox = async (reload = true) => {
     if (outboxResult) outboxResult.textContent = "Rejeu en cours...";
     try {
       const response = await fetch("{{ url_for('main.admin_whatsapp_retry_outbox') }}", { method: "POST", headers: csrfHeaders() });
       const payload = await response.json();
-      if (outboxResult) outboxResult.textContent = `${payload.sent || 0} envoye(s), ${payload.failed || 0} echec(s).`;
+      if (outboxResult) outboxResult.textContent = `${payload.sent || 0} envoyé(s), ${payload.failed || 0} échec(s).`;
       if (reload) window.setTimeout(() => window.location.reload(), 900);
     } catch (_) {
       if (outboxResult) outboxResult.textContent = "Passerelle injoignable.";
@@ -178,7 +310,7 @@
 
   document.getElementById("wa-test-form")?.addEventListener("submit", async (event) => {
     event.preventDefault();
-    result.textContent = "Envoi en cours...";
+    if (result) result.textContent = "Envoi en cours...";
     const data = Object.fromEntries(new FormData(event.currentTarget).entries());
     try {
       const response = await fetch("{{ url_for('main.admin_whatsapp_test') }}", {
@@ -187,9 +319,15 @@
         body: JSON.stringify(data),
       });
       const payload = await response.json();
-      result.textContent = payload.success ? "Message envoye." : "Echec envoi. Verifiez la passerelle.";
+      if (result) {
+        result.textContent = payload.success ? "Message envoyé avec succès." : "Échec envoi. Vérifiez la passerelle.";
+        result.className = payload.success ? "wa-test-feedback success" : "wa-test-feedback error";
+      }
     } catch (_) {
-      result.textContent = "Passerelle injoignable.";
+      if (result) {
+        result.textContent = "Passerelle injoignable.";
+        result.className = "wa-test-feedback error";
+      }
     }
   });
 
