@@ -30,6 +30,7 @@ from .db import (
     dashboard_stats,
     authenticate_user,
     get_product,
+    get_db,
     get_quote,
     get_primary_admin_user,
     get_user,
@@ -42,6 +43,9 @@ from .db import (
     list_users,
     list_vat_rates,
     list_whatsapp_outbox,
+    delete_whatsapp_outbox_item,
+    retry_whatsapp_outbox_item,
+    purge_whatsapp_outbox,
     load_calculation_context,
     save_user,
     save_product,
@@ -1551,6 +1555,51 @@ def admin_prospects():
     return redirect(url_for("main.admin_quotes", **filters))
 
 
+def _catalog_is_ajax():
+    return (
+        request.headers.get("X-Requested-With") == "XMLHttpRequest"
+        or request.accept_mimetypes.best == "application/json"
+        or request.is_json
+    )
+
+
+def _catalog_counts():
+    row = get_db().execute(
+        """SELECT COUNT(*) AS total, COALESCE(SUM(active = 1), 0) AS active,
+                  COALESCE(SUM(stock > 0), 0) AS in_stock FROM products"""
+    ).fetchone()
+    return {key: int(row[key]) for key in ("total", "active", "in_stock")}
+
+
+def _catalog_product_json(product):
+    view = _catalog_form_view_product(product)
+    price_ht = money(product.get("sale_price") or 0)
+    project = "pumping" if product.get("category") == "pumps" else "photovoltaic"
+    tax = vat_rate_for_component(load_calculation_context(), project, product.get("category"))
+    view.update(
+        designation=" ".join(filter(None, (product.get("brand"), product.get("model")))),
+        price_ht=float(price_ht),
+        price_ttc=float(money(price_ht * (1 + tax))),
+        en_stock=bool((product.get("stock") or 0) > 0),
+        is_active=bool(product.get("active")),
+        tech_specs=view.get("technical_specs") or {},
+    )
+    return view
+
+
+def _catalog_saved_response(product_id, action):
+    product = get_product(product_id)
+    decorated = _decorate_catalog_product(product)
+    return jsonify(
+        success=True,
+        ok=True,
+        action=action,
+        product=_catalog_product_json(product),
+        html_row=render_template("admin/_catalog_row.html", p=decorated),
+        counts=_catalog_counts(),
+    )
+
+
 @bp.get("/admin/catalogue")
 def admin_catalog():
     filters = {
@@ -1572,15 +1621,10 @@ def admin_catalog():
             sort=filters["sort"],
         )
     ]
-    products_data_map = {
-        str(item["id"]): _catalog_form_view_product(item)
-        for item in products
-        if item.get("id")
-    }
     return render_template(
         "admin/catalog.html",
         products=products,
-        products_data_map=products_data_map,
+        counts=_catalog_counts(),
         filters=filters,
         category_options=category_options(),
         technical_fields=technical_fields_by_category(),
@@ -1592,15 +1636,16 @@ def admin_catalog():
 def admin_catalog_new():
     product = _catalog_form_defaults()
     errors = {}
-    is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.accept_mimetypes.best == "application/json"
+    is_ajax = _catalog_is_ajax()
     if request.method == "POST":
         product = _product_from_form(request.form)
         try:
-            save_product(product, submitted_fields=request.form)
+            product_id = save_product(product, submitted_fields=request.form)
         except ProductValidationError as exc:
             errors = exc.errors
             if is_ajax:
                 return jsonify({
+                    "success": False,
                     "ok": False,
                     "errors": errors,
                     "message": "La fiche produit n'a pas été enregistrée. Corrigez les champs signalés."
@@ -1608,11 +1653,7 @@ def admin_catalog_new():
             flash("La fiche produit n'a pas été enregistrée. Corrigez les champs signalés.", "error")
         else:
             if is_ajax:
-                return jsonify({
-                    "ok": True,
-                    "reference": product.get("reference"),
-                    "redirect": url_for("main.admin_catalog", saved=product.get("reference"))
-                })
+                return _catalog_saved_response(product_id, "created")
             return redirect(url_for("main.admin_catalog", saved=product.get("reference")))
     return render_template(
         "admin/catalog_form.html",
@@ -1629,11 +1670,12 @@ def admin_catalog_edit(product_id):
     if not product:
         abort(404)
     errors = {}
-    is_ajax = request.headers.get("X-Requested-With") == "XMLHttpRequest" or request.accept_mimetypes.best == "application/json"
+    is_ajax = _catalog_is_ajax()
     if request.method == "GET" and (is_ajax or request.args.get("format") == "json"):
         return jsonify({
             "ok": True,
-            "product": _catalog_form_view_product(product),
+            "success": True,
+            "product": _catalog_product_json(product),
         })
     if request.method == "POST":
         product = _product_from_form(request.form, existing_product=product)
@@ -1643,6 +1685,7 @@ def admin_catalog_edit(product_id):
             errors = exc.errors
             if is_ajax:
                 return jsonify({
+                    "success": False,
                     "ok": False,
                     "errors": errors,
                     "message": "La fiche produit n'a pas été enregistrée. Corrigez les champs signalés."
@@ -1650,11 +1693,7 @@ def admin_catalog_edit(product_id):
             flash("La fiche produit n'a pas été enregistrée. Corrigez les champs signalés.", "error")
         else:
             if is_ajax:
-                return jsonify({
-                    "ok": True,
-                    "reference": product.get("reference"),
-                    "redirect": url_for("main.admin_catalog", saved=product.get("reference"))
-                })
+                return _catalog_saved_response(product_id, "updated")
             return redirect(url_for("main.admin_catalog", saved=product.get("reference")))
     return render_template(
         "admin/catalog_form.html",
@@ -1673,8 +1712,22 @@ def admin_catalog_toggle(product_id):
     try:
         set_product_active(product_id, not bool(product.get("active")))
     except ProductValidationError as exc:
+        if _catalog_is_ajax():
+            return jsonify(success=False, errors=exc.errors), 400
         for message in exc.errors.values():
             flash(message, "error")
+    else:
+        if _catalog_is_ajax():
+            updated = get_product(product_id)
+            decorated = _decorate_catalog_product(updated)
+            return jsonify(
+                success=True,
+                product_id=product_id,
+                is_active=bool(updated.get("active")),
+                badge_html=render_template("admin/_catalog_toggle.html", p=decorated),
+                html_row=render_template("admin/_catalog_row.html", p=decorated),
+                counts=_catalog_counts(),
+            )
     return redirect(url_for("main.admin_catalog"))
 
 
@@ -1943,8 +1996,20 @@ def admin_settings():
 @bp.get("/admin/whatsapp")
 def admin_whatsapp():
     settings = _whatsapp_admin_settings()
-    outbox_items = list_whatsapp_outbox(limit=10)
-    return render_template("admin/whatsapp.html", settings=settings, outbox_items=outbox_items)
+    view = request.args.get("view", "failed").strip().lower()
+    if view == "all":
+        outbox_items = list_whatsapp_outbox(limit=50)
+    elif view == "sent":
+        outbox_items = list_whatsapp_outbox(status="SENT", limit=50)
+    else:
+        # Vue par defaut : affiche seulement les echecs et messages en attente (exclut les envoyes)
+        outbox_items = list_whatsapp_outbox(limit=50, exclude_sent=True)
+    return render_template(
+        "admin/whatsapp.html",
+        settings=settings,
+        outbox_items=outbox_items,
+        view_mode=view,
+    )
 
 
 @bp.get("/admin/whatsapp/status")
@@ -1980,6 +2045,28 @@ def admin_whatsapp_test():
 def admin_whatsapp_retry_outbox():
     settings = _whatsapp_admin_settings()
     return jsonify(process_outbox(gateway_url=settings["gateway_url"]))
+
+
+@bp.post("/admin/whatsapp/outbox/<int:item_id>/delete")
+def admin_whatsapp_delete_outbox_item(item_id):
+    success = delete_whatsapp_outbox_item(item_id)
+    return jsonify(success=success)
+
+
+@bp.post("/admin/whatsapp/outbox/<int:item_id>/retry")
+def admin_whatsapp_retry_outbox_item(item_id):
+    retry_whatsapp_outbox_item(item_id)
+    settings = _whatsapp_admin_settings()
+    result = process_outbox(limit=10, gateway_url=settings["gateway_url"])
+    return jsonify(success=True, result=result)
+
+
+@bp.post("/admin/whatsapp/outbox/purge")
+def admin_whatsapp_purge_outbox():
+    data = request.get_json(silent=True) or request.form or {}
+    status_filter = data.get("status", "SENT")
+    deleted = purge_whatsapp_outbox(status=status_filter)
+    return jsonify(success=True, count=deleted)
 
 
 @bp.route("/admin/utilisateurs", methods=["GET", "POST"])

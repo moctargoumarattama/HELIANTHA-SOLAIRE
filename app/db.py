@@ -1394,7 +1394,7 @@ def enqueue_whatsapp_message(
     return int(cursor.lastrowid)
 
 
-def list_whatsapp_outbox(status=None, limit=10, newest=True):
+def list_whatsapp_outbox(status=None, limit=10, newest=True, exclude_sent=False):
     db = get_db()
     _ensure_database_initialized(db)
     limit = max(1, min(int(limit or 10), 100))
@@ -1406,6 +1406,14 @@ def list_whatsapp_outbox(status=None, limit=10, newest=True):
             ORDER BY created_at {order}, id {order}
             LIMIT ?""",
             (status, limit),
+        ).fetchall()
+    elif exclude_sent:
+        rows = db.execute(
+            f"""SELECT * FROM whatsapp_outbox
+            WHERE status != 'SENT'
+            ORDER BY created_at {order}, id {order}
+            LIMIT ?""",
+            (limit,),
         ).fetchall()
     else:
         rows = db.execute(
@@ -1451,6 +1459,40 @@ def mark_whatsapp_outbox_failed(item_id, attempts, error_message="", *, expected
         (next_status, int(attempts or 0), str(error_message or "").strip(), item_id, *values),
     )
     db.commit()
+
+
+def delete_whatsapp_outbox_item(item_id: int) -> bool:
+    db = get_db()
+    _ensure_database_initialized(db)
+    cur = db.execute("DELETE FROM whatsapp_outbox WHERE id = ?", (int(item_id),))
+    db.commit()
+    return cur.rowcount > 0
+
+
+def retry_whatsapp_outbox_item(item_id: int) -> bool:
+    db = get_db()
+    _ensure_database_initialized(db)
+    cur = db.execute(
+        """UPDATE whatsapp_outbox
+        SET status = 'PENDING', attempts = 0, error_message = NULL
+        WHERE id = ?""",
+        (int(item_id),),
+    )
+    db.commit()
+    return cur.rowcount > 0
+
+
+def purge_whatsapp_outbox(status: str = "SENT") -> int:
+    db = get_db()
+    _ensure_database_initialized(db)
+    if status == "ALL":
+        cur = db.execute("DELETE FROM whatsapp_outbox")
+    elif status:
+        cur = db.execute("DELETE FROM whatsapp_outbox WHERE status = ?", (status,))
+    else:
+        cur = db.execute("DELETE FROM whatsapp_outbox WHERE status = 'SENT'")
+    db.commit()
+    return cur.rowcount
 
 
 def dashboard_stats():

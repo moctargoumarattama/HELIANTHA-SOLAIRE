@@ -127,31 +127,46 @@
           <div class="wa-card-head-title">
             <span class="wa-head-icon">📤</span>
             <div>
-              <h2 class="wa-card-title">File d'attente des messages</h2>
-              <small class="muted">Les devis restent ici tant que WhatsApp n'a pas confirmé l'envoi.</small>
+              <h2 class="wa-card-title">File d'attente &amp; Échecs</h2>
+              <small class="muted">{% if view_mode == 'sent' %}Historique des messages envoyés avec succès.{% elif view_mode == 'all' %}Tous les messages (archivés et en cours).{% else %}Messages non envoyés, échecs ou en attente d'expédition.{% endif %}</small>
             </div>
           </div>
           <div class="wa-outbox-header-right">
-            <span class="badge wa-outbox-count-badge">{{ outbox_items|length }} message(s)</span>
+            <div class="wa-outbox-tabs" role="tablist">
+              <a href="{{ url_for('main.admin_whatsapp', view='failed') }}" class="wa-tab-chip {{ 'active' if view_mode not in ['all', 'sent'] else '' }}" title="Afficher uniquement les messages échoués et en attente">
+                🔴 À traiter
+              </a>
+              <a href="{{ url_for('main.admin_whatsapp', view='sent') }}" class="wa-tab-chip {{ 'active' if view_mode == 'sent' else '' }}" title="Afficher les messages envoyés avec succès">
+                ✅ Envoyés
+              </a>
+              <a href="{{ url_for('main.admin_whatsapp', view='all') }}" class="wa-tab-chip {{ 'active' if view_mode == 'all' else '' }}" title="Afficher l'ensemble de la file">
+                Tous
+              </a>
+            </div>
+            <button class="wa-btn-purge" type="button" id="wa-btn-purge-sent" title="Supprimer définitivement les messages envoyés pour libérer l'espace">
+              🧹 Purger envoyés
+            </button>
+            <span class="badge wa-outbox-count-badge" id="wa-count-badge">{{ outbox_items|length }} msg</span>
             <span class="wa-outbox-feedback" id="wa-outbox-result"></span>
           </div>
         </div>
 
         <div class="table-wrap whatsapp-outbox-table wa-table-wrap">
-          <table class="wa-table">
+          <table class="wa-table" id="wa-outbox-table">
             <thead>
               <tr>
-                <th style="width: 130px;">Date &amp; Heure</th>
-                <th style="width: 140px;">Destinataire</th>
-                <th style="width: 85px;">Type</th>
-                <th style="width: 105px;">Statut</th>
-                <th style="width: 65px;">Essais</th>
+                <th style="width: 120px;">Date &amp; Heure</th>
+                <th style="width: 130px;">Destinataire</th>
+                <th style="width: 75px;">Type</th>
+                <th style="width: 95px;">Statut</th>
+                <th style="width: 55px;">Essais</th>
                 <th>Détail / Erreur</th>
+                <th style="width: 85px; text-align: center;">Actions</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody id="wa-outbox-tbody">
               {% for item in outbox_items %}
-              <tr>
+              <tr id="wa-row-{{ item.id }}" data-id="{{ item.id }}">
                 <td class="wa-td-date">
                   <span class="wa-date-val">{{ item.created_at }}</span>
                 </td>
@@ -183,17 +198,33 @@
                   {% elif item.status == "SENT" %}
                     <span class="wa-ok-text">Envoyé avec succès</span>
                   {% else %}
-                    <span class="muted">-</span>
+                    <span class="muted">En file de traitement</span>
                   {% endif %}
+                </td>
+                <td class="wa-td-actions">
+                  <div class="wa-row-actions">
+                    <button type="button" class="wa-btn-row-retry" data-id="{{ item.id }}" title="Relancer l'envoi immédiatement">
+                      🔄
+                    </button>
+                    <button type="button" class="wa-btn-row-delete" data-id="{{ item.id }}" title="Supprimer ce message de la file">
+                      🗑️
+                    </button>
+                  </div>
                 </td>
               </tr>
               {% else %}
-              <tr>
-                <td colspan="6" class="wa-empty-td">
+              <tr class="wa-empty-row">
+                <td colspan="7" class="wa-empty-td">
                   <div class="wa-empty-state">
-                    <span class="wa-empty-icon">📭</span>
-                    <strong>Aucun message dans la file.</strong>
-                    <p class="muted">Dès qu'un devis est créé, il sera automatiquement mis en file pour transmission au client.</p>
+                    {% if view_mode == 'sent' %}
+                      <span class="wa-empty-icon">📭</span>
+                      <strong>Aucun message envoyé pour le moment.</strong>
+                      <p class="muted">Les messages transmis s'afficheront dans cet historique.</p>
+                    {% else %}
+                      <span class="wa-empty-icon">✨</span>
+                      <strong>Aucun message en échec ni en attente</strong>
+                      <p class="muted">Tous les messages ont été transmis avec succès. La file est propre et légère !</p>
+                    {% endif %}
                   </div>
                 </td>
               </tr>
@@ -328,6 +359,121 @@
         result.textContent = "Passerelle injoignable.";
         result.className = "wa-test-feedback error";
       }
+    }
+  });
+
+  // Relance unitaire d'un message
+  document.querySelectorAll(".wa-btn-row-retry").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const id = btn.getAttribute("data-id");
+      if (!id) return;
+      btn.disabled = true;
+      btn.textContent = "⏳";
+      if (outboxResult) outboxResult.textContent = `Relance #${id}...`;
+      try {
+        const resp = await fetch(`/admin/whatsapp/outbox/${id}/retry`, {
+          method: "POST",
+          headers: csrfHeaders(),
+        });
+        const data = await resp.json();
+        if (data.success) {
+          if (outboxResult) {
+            const sent = data.result?.sent || 0;
+            outboxResult.textContent = sent > 0 ? `Message #${id} envoyé !` : `Message #${id} replacé en file.`;
+          }
+          window.setTimeout(() => window.location.reload(), 700);
+        } else {
+          if (outboxResult) outboxResult.textContent = "Échec du rejeu.";
+          btn.disabled = false;
+          btn.textContent = "🔄";
+        }
+      } catch (_) {
+        if (outboxResult) outboxResult.textContent = "Erreur de connexion.";
+        btn.disabled = false;
+        btn.textContent = "🔄";
+      }
+    });
+  });
+
+  // Suppression unitaire d'un message
+  document.querySelectorAll(".wa-btn-row-delete").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const id = btn.getAttribute("data-id");
+      if (!id) return;
+      if (!confirm(`Supprimer définitivement le message #${id} de la file ?`)) return;
+      btn.disabled = true;
+      try {
+        const resp = await fetch(`/admin/whatsapp/outbox/${id}/delete`, {
+          method: "POST",
+          headers: csrfHeaders(),
+        });
+        const data = await resp.json();
+        if (data.success) {
+          const row = document.getElementById(`wa-row-${id}`);
+          if (row) {
+            row.style.transition = "opacity 0.25s ease, transform 0.25s ease";
+            row.style.opacity = "0";
+            row.style.transform = "translateX(20px)";
+            setTimeout(() => {
+              row.remove();
+              const tbody = document.getElementById("wa-outbox-tbody");
+              if (tbody && tbody.querySelectorAll("tr:not(.wa-empty-row)").length === 0) {
+                tbody.innerHTML = `
+                  <tr class="wa-empty-row">
+                    <td colspan="7" class="wa-empty-td">
+                      <div class="wa-empty-state">
+                        <span class="wa-empty-icon">✨</span>
+                        <strong>Aucun message en échec ni en attente</strong>
+                        <p class="muted">Tous les messages ont été transmis avec succès. La file est propre et légère !</p>
+                      </div>
+                    </td>
+                  </tr>
+                `;
+              }
+              const countBadge = document.getElementById("wa-count-badge");
+              if (countBadge) {
+                const currentCount = parseInt(countBadge.textContent) || 1;
+                countBadge.textContent = `${Math.max(0, currentCount - 1)} msg`;
+              }
+            }, 250);
+          }
+          if (outboxResult) outboxResult.textContent = `Message #${id} supprimé.`;
+        } else {
+          alert("Erreur lors de la suppression.");
+          btn.disabled = false;
+        }
+      } catch (_) {
+        alert("Erreur réseau lors de la suppression.");
+        btn.disabled = false;
+      }
+    });
+  });
+
+  // Purge globale des messages envoyés
+  document.getElementById("wa-btn-purge-sent")?.addEventListener("click", async () => {
+    if (!confirm("Purger définitivement tous les messages déjà marqués comme 'Envoyé' pour alléger la base de données ?")) return;
+    const purgeBtn = document.getElementById("wa-btn-purge-sent");
+    if (purgeBtn) purgeBtn.disabled = true;
+    if (outboxResult) outboxResult.textContent = "Purge en cours...";
+    try {
+      const resp = await fetch("{{ url_for('main.admin_whatsapp_purge_outbox') }}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...csrfHeaders() },
+        body: JSON.stringify({ status: "SENT" }),
+      });
+      const data = await resp.json();
+      if (data.success) {
+        if (outboxResult) outboxResult.textContent = `${data.count || 0} message(s) purgé(s).`;
+        window.setTimeout(() => window.location.reload(), 800);
+      } else {
+        if (outboxResult) outboxResult.textContent = "Erreur lors de la purge.";
+        if (purgeBtn) purgeBtn.disabled = false;
+      }
+    } catch (_) {
+      if (outboxResult) outboxResult.textContent = "Erreur réseau.";
+      if (purgeBtn) purgeBtn.disabled = false;
     }
   });
 
