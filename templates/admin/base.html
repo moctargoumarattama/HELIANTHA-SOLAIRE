@@ -28,7 +28,7 @@
       <a class="admin-nav-link{% if request.endpoint == 'main.admin_pumping_method' %} active{% endif %}" href="{{ url_for('main.admin_pumping_method') }}">Méthode Pompage</a>
       <a class="admin-nav-link{% if request.endpoint == 'main.admin_pumping_rules' %} active{% endif %}" href="{{ url_for('main.admin_pumping_rules') }}">Règles Pompage solaire</a>
       <a class="admin-nav-link{% if request.endpoint == 'main.admin_ongrid_rules' %} active{% endif %}" href="{{ url_for('main.admin_ongrid_rules') }}">Règles On-Grid</a>
-      <a class="admin-nav-link{% if request.endpoint == 'main.admin_tva' %} active{% endif %}" href="{{ url_for('main.admin_tva') }}"><span aria-hidden="true">%</span> TVA</a>
+      <a class="admin-nav-link{% if request.endpoint == 'main.admin_tva' %} active{% endif %}" href="{{ url_for('main.admin_tva') }}"><span aria-hidden="true">%</span> TVA &amp; Transport</a>
       <a class="admin-nav-link{% if request.endpoint and request.endpoint.startswith('main.admin_whatsapp') %} active{% endif %}" href="{{ url_for('main.admin_whatsapp') }}">WhatsApp</a>
       <a class="admin-nav-link{% if request.endpoint == 'main.admin_users' %} active{% endif %}" href="{{ url_for('main.admin_users') }}">Utilisateurs</a>
       <a class="admin-nav-link{% if request.endpoint == 'main.admin_settings' %} active{% endif %}" href="{{ url_for('main.admin_settings') }}">Paramètres</a>

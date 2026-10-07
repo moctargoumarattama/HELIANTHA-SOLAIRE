@@ -115,22 +115,22 @@ def client(app):
 
 
 def settings_fields(app, client):
-    response = client.get("/admin/parametres")
+    response = client.get("/admin/tva")
     assert response.status_code == 200
     soup = BeautifulSoup(response.data, "html.parser")
     with app.app_context():
-        ids = {row["key"]: f"value_{row['id']}" for row in list_company_settings()}
-    return ids, soup.select_one('form.panel input[name="csrf_token"]')["value"]
+        ids = {row["key"]: row["key"] for row in list_company_settings()}
+    return ids, soup.select_one('#transport-form input[name="csrf_token"]')["value"]
 
 
 def test_admin_tariffs_update_immediately_and_stored_quote_keeps_previous_tariff(app, client):
     ids, token = settings_fields(app, client)
-    assert client.post("/admin/parametres", data={ids["transport_pumping_rate"]: "50", "csrf_token": token}).status_code == 302
+    assert client.post("/admin/tva", data={"action": "save_transport", ids["transport_pumping_rate"]: "50", "csrf_token": token}).status_code == 302
     first = client.post("/api/calculate", json={"project": "pumping", "data": PUMP_DATA})
     assert first.status_code == 200
     first = first.get_json()
     assert transport_line(first)["total_price_ht"] == 600
-    response = client.post("/admin/parametres", data={ids["transport_pumping_rate"]: "75", "csrf_token": token}, follow_redirects=True)
+    response = client.post("/admin/tva", data={"action": "save_transport", ids["transport_pumping_rate"]: "75", "csrf_token": token}, follow_redirects=True)
     assert response.status_code == 200
     assert "enregistrés avec succès" in response.get_data(as_text=True)
     second = client.post("/api/calculate", json={"project": "pumping", "data": PUMP_DATA})
@@ -148,8 +148,9 @@ def test_admin_invalid_tariff_is_atomic_and_preserves_other_settings(app, client
     ids, token = settings_fields(app, client)
     with app.app_context():
         previous = {row["key"]: row["value"] for row in list_company_settings()}
-    response = client.post("/admin/parametres", data={
-        ids["transport_pumping_rate"]: raw, ids["company_name"]: "Should not be saved", "csrf_token": token,
+    response = client.post("/admin/tva", data={
+        "action": "save_transport", ids["transport_pumping_rate"]: raw,
+        ids["transport_ongrid_rate"]: "999", "csrf_token": token,
     })
     assert response.status_code == 400
     with app.app_context():
@@ -158,13 +159,19 @@ def test_admin_invalid_tariff_is_atomic_and_preserves_other_settings(app, client
 
 def test_admin_transport_csrf_and_single_settings_block(app, client):
     ids, _ = settings_fields(app, client)
-    response = client.post("/admin/parametres", data={ids["transport_pumping_rate"]: "75"})
+    response = client.post("/admin/tva", data={"action": "save_transport", ids["transport_pumping_rate"]: "75"})
     assert response.status_code == 400
-    soup = BeautifulSoup(client.get("/admin/parametres").data, "html.parser")
+    soup = BeautifulSoup(client.get("/admin/tva").data, "html.parser")
     assert len(soup.select("#transport-heading")) == 1
     for key in ("transport_ongrid_rate", "transport_pumping_rate"):
         fields = soup.select(f'input[name="{ids[key]}"]')
         assert len(fields) == 1 and fields[0]["min"] == "0"
+    general = BeautifulSoup(client.get("/admin/parametres").data, "html.parser")
+    assert not general.select("#transport-heading")
+    with app.app_context():
+        transport_settings = [row for row in list_company_settings() if row["category"] == "transport"]
+    for row in transport_settings:
+        assert not general.select(f'[name="value_{row["id"]}"]')
 
 
 def test_ongrid_and_hybrid_tariffs_are_independent_from_pumping(app, client):

@@ -107,7 +107,7 @@ from .services.whatsapp_service import (
     send_whatsapp_raw,
 )
 from .wizard_projects import engine_project_for, normalize_wizard_project
-from .transport import TRANSPORT_DESCRIPTION, TransportValidationError
+from .transport import TRANSPORT_DESCRIPTION, TRANSPORT_KEYS, TransportValidationError
 
 
 bp = Blueprint("main", __name__)
@@ -1800,8 +1800,21 @@ def admin_ongrid_rules():
 @bp.route("/admin/tva", methods=["GET", "POST"])
 def admin_tva():
     values = {row["key"]: row["value"] for row in list_vat_rates()}
+    transport_settings = [row for row in list_company_settings() if row["key"] in TRANSPORT_KEYS]
     errors = {}
-    if request.method == "POST":
+    transport_error = ""
+    if request.method == "POST" and request.form.get("action") == "save_transport":
+        submitted = {key: request.form[key] for key in TRANSPORT_KEYS if key in request.form}
+        try:
+            update_company_settings(submitted)
+        except TransportValidationError as exc:
+            transport_error = str(exc)
+            flash(transport_error, "error")
+            transport_settings = [{**row, "value": submitted.get(row["key"], row["value"])} for row in transport_settings]
+        else:
+            flash("Tarifs de transport enregistrés avec succès.", "success")
+            return redirect(url_for("main.admin_tva", _anchor="transport-heading"))
+    elif request.method == "POST":
         values = {field["key"]: request.form.get(field["key"], "") for field in VAT_FIELDS}
         for field in VAT_FIELDS:
             key = field["key"]
@@ -1822,7 +1835,8 @@ def admin_tva():
         fields=VAT_FIELDS,
         values=values,
         errors=errors,
-    ), 400 if errors else 200
+        transport_settings=transport_settings,
+    ), 400 if errors or transport_error else 200
 
 
 @bp.route("/admin/parametres", methods=["GET", "POST"])
@@ -1830,7 +1844,7 @@ def admin_settings():
     settings = [
         setting
         for setting in list_company_settings()
-        if setting.get("key") not in HIDDEN_COMPANY_SETTING_KEYS
+        if setting.get("key") not in HIDDEN_COMPANY_SETTING_KEYS | TRANSPORT_KEYS
     ]
     if request.method == "POST":
         submitted = {
@@ -1843,7 +1857,7 @@ def admin_settings():
             flash(str(exc), "error")
             settings = [{**setting, "value": submitted.get(setting["key"], setting["value"])} for setting in settings]
             return render_template("admin/settings.html", settings=settings), 400
-        flash("Paramètres et tarifs de transport enregistrés avec succès.", "success")
+        flash("Paramètres enregistrés avec succès.", "success")
         return redirect(url_for("main.admin_settings"))
     return render_template("admin/settings.html", settings=settings)
 
