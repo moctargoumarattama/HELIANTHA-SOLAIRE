@@ -1,25 +1,363 @@
 {% extends "admin/base.html" %}
-{% block title %}Paramètres - HeliAntha Admin{% endblock %}
-{% block page_title %}Paramètres généraux{% endblock %}
+{% block title %}Paramètres Généraux - HeliAntha Admin{% endblock %}
+{% block page_title %}Paramètres Généraux{% endblock %}
+
 {% block content %}
-{% for category, message in get_flashed_messages(with_categories=True) %}
-  <div class="{{ 'admin-success' if category == 'success' else 'admin-alert' }}" role="alert">{{ message }}</div>
+{# Partitionnement des paramètres par univers métier #}
+{% set cat_general = [] %}
+{% set cat_quote = [] %}
+{% set cat_gateway = [] %}
+
+{% for s in settings %}
+  {% if s.key in ['company_name', 'phone', 'email', 'website', 'city', 'address', 'location_url'] %}
+    {% set _ = cat_general.append(s) %}
+  {% elif s.key in ['whatsapp', 'admin_whatsapp', 'whatsapp_gateway_url', 'app_base_url'] %}
+    {% set _ = cat_gateway.append(s) %}
+  {% else %}
+    {% set _ = cat_quote.append(s) %}
+  {% endif %}
 {% endfor %}
-<form class="panel" method="post">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
-  <div class="form-grid">
-    {% for s in settings %}
-    {% set long_field = s.key in ['pdf_social_links', 'pdf_legal_footer'] or (s.value and s.value|length > 120) %}
-    <label class="{% if long_field %}full{% endif %}">
-      {{ s.label }} <small>{{ s.key }}</small>
-      {% if long_field %}
-        <textarea name="value_{{ s.id }}" rows="{% if s.key in ['pdf_legal_footer', 'pdf_social_links'] %}4{% else %}2{% endif %}">{{ s.value }}</textarea>
-      {% else %}
-        <input name="value_{{ s.id }}" value="{{ s.value }}">
-      {% endif %}
-    </label>
-    {% endfor %}
-  </div>
-  <button class="admin-button" type="submit">Enregistrer les paramètres</button>
-</form>
+
+{% set field_meta = {
+  'company_name': {'icon': '🏢', 'label': 'Nom de l\'entreprise', 'hint': 'Raison sociale officielle'},
+  'phone': {'icon': '📞', 'label': 'Téléphone fixe', 'hint': 'Standard de contact'},
+  'email': {'icon': '✉️', 'label': 'Adresse email', 'hint': 'Email de correspondance'},
+  'website': {'icon': '🌐', 'label': 'Site internet', 'hint': 'Site web public'},
+  'city': {'icon': '📍', 'label': 'Ville principale', 'hint': 'Ville d\'implantation'},
+  'address': {'icon': '🗺️', 'label': 'Adresse physique', 'hint': 'Siège social ou bureau'},
+  'location_url': {'icon': '📌', 'label': 'Lien Google Maps', 'hint': 'URL de localisation'},
+  'currency': {'icon': '💰', 'label': 'Devise des devis', 'hint': 'Unité (ex: DH)'},
+  'pdf_contact_name': {'icon': '👤', 'label': 'Interlocuteur devis', 'hint': 'Nom affiché sur les offres'},
+  'pdf_bank_name': {'icon': '🏦', 'label': 'Établissement bancaire', 'hint': 'Nom de la banque'},
+  'pdf_rib': {'icon': '💳', 'label': 'Numéro RIB', 'hint': 'Relevé d\'Identité Bancaire (24 chiffres)'},
+  'pdf_iban': {'icon': '🌍', 'label': 'Code IBAN', 'hint': 'Identifiant bancaire international'},
+  'pdf_social_links': {'icon': '📱', 'label': 'Réseaux sociaux', 'hint': 'Liens LinkedIn, Instagram, etc.'},
+  'pdf_legal_footer': {'icon': '📜', 'label': 'Mentions légales PDF', 'hint': 'R.C., Patente, I.F., CNSS, ICE'},
+  'whatsapp': {'icon': '💬', 'label': 'WhatsApp commercial', 'hint': 'Numéro de contact commercial'},
+  'admin_whatsapp': {'icon': '📲', 'label': 'WhatsApp alertes admin', 'hint': 'Numéro recevant les notifications'},
+  'whatsapp_gateway_url': {'icon': '🔌', 'label': 'URL passerelle WhatsApp', 'hint': 'Point d\'API local /send-message'},
+  'app_base_url': {'icon': '🔗', 'label': 'URL publique des devis', 'hint': 'Racine web pour liens de téléchargement'}
+} %}
+
+<div class="settings-cockpit" id="settings-cockpit">
+  <!-- Notifications flash -->
+  {% for category, message in get_flashed_messages(with_categories=True) %}
+    <div class="settings-flash {{ 'success' if category == 'success' else 'error' }}" role="alert">
+      <span class="settings-flash-icon">{{ '✅' if category == 'success' else '⚠️' }}</span>
+      <span>{{ message }}</span>
+    </div>
+  {% endfor %}
+
+  <form method="post" id="settings-form" class="settings-form-wrapper" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() if csrf_token is defined else '' }}">
+
+    <!-- ========================================================== -->
+    <!-- 1. BARRE DE COMMANDE SUPÉRIEURE (ACTIONS SANS SCROLL)      -->
+    <!-- ========================================================== -->
+    <header class="settings-cockpit-bar">
+      <div class="settings-cockpit-left">
+        <div class="settings-title-wrap">
+          <span class="settings-app-icon">⚙️</span>
+          <div>
+            <h2 class="settings-cockpit-heading">Paramètres Généraux</h2>
+            <span class="settings-status-text-sub">Coordonnées, informations bancaires, PDF et passerelle</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-cockpit-chips">
+        <div class="settings-chip" title="Nombre total de clés de configuration">
+          <span class="settings-chip-label">Configuration :</span>
+          <strong>{{ settings|length }} paramètres</strong>
+        </div>
+        <div class="settings-chip" title="Devise appliquée sur tous les chiffrages">
+          <span class="settings-chip-label">Devise :</span>
+          <strong>DH (MAD)</strong>
+        </div>
+      </div>
+
+      <div class="settings-cockpit-actions">
+        <button class="admin-button settings-btn-save-top" type="submit" id="btn-save-top">
+          <span>💾 Enregistrer les paramètres</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- ========================================================== -->
+    <!-- 2. SÉLECTEUR D'ONGLETS COMPACTS                           -->
+    <!-- ========================================================== -->
+    <nav class="settings-tabs-nav" role="tablist" aria-label="Catégories de paramètres">
+      <button type="button" class="settings-tab-btn active" data-tab="tab-general" role="tab" aria-selected="true">
+        <span class="tab-icon">🏢</span>
+        <span class="tab-text">Entreprise &amp; Contact</span>
+        <span class="tab-count">{{ cat_general|length }}</span>
+      </button>
+
+      <button type="button" class="settings-tab-btn" data-tab="tab-quote" role="tab" aria-selected="false">
+        <span class="tab-icon">📄</span>
+        <span class="tab-text">Devis, Banque &amp; PDF</span>
+        <span class="tab-count">{{ cat_quote|length }}</span>
+      </button>
+
+      <button type="button" class="settings-tab-btn" data-tab="tab-gateway" role="tab" aria-selected="false">
+        <span class="tab-icon">💬</span>
+        <span class="tab-text">Passerelle &amp; URLs</span>
+        <span class="tab-count">{{ cat_gateway|length }}</span>
+      </button>
+
+      <button type="button" class="settings-tab-btn tab-btn-all" data-tab="tab-all" role="tab" aria-selected="false">
+        <span class="tab-icon">📋</span>
+        <span class="tab-text">Vue d'ensemble</span>
+        <span class="tab-count">Tous</span>
+      </button>
+    </nav>
+
+    <!-- ========================================================== -->
+    <!-- 3. CONTENUS DES ONGLETS (COMPACTS & FIT-TO-SCREEN)          -->
+    <!-- ========================================================== -->
+    <div class="settings-tabs-content">
+
+      <!-- ==================== ONGLET 1 : ENTREPRISE & CONTACT ==================== -->
+      <section class="settings-tab-panel active" id="tab-general" role="tabpanel">
+        <article class="panel settings-card">
+          <div class="panel-head settings-card-head">
+            <div class="settings-card-head-title">
+              <span class="settings-head-icon">🏢</span>
+              <div>
+                <h3 class="settings-card-title">Identité de l'entreprise &amp; Coordonnées</h3>
+                <small class="muted">Ces informations apparaissent sur l'en-tête de vos devis et documents légaux.</small>
+              </div>
+            </div>
+            <span class="badge settings-count-badge">{{ cat_general|length }} champs</span>
+          </div>
+
+          <div class="settings-fields-grid">
+            {% for s in cat_general %}
+            {% set meta = field_meta.get(s.key, {'icon': '🔹', 'label': s.label, 'hint': s.key}) %}
+            <div class="settings-field-box {{ 'full-width' if s.key in ['company_name', 'address', 'location_url'] else '' }}">
+              <label class="settings-label" for="setting_{{ s.id }}">
+                <span class="settings-label-header">
+                  <span class="settings-field-icon">{{ meta.icon }}</span>
+                  <strong class="settings-label-name">{{ meta.label }}</strong>
+                  <span class="settings-key-code">{{ s.key }}</span>
+                </span>
+                <input class="settings-input" id="setting_{{ s.id }}" name="value_{{ s.id }}" value="{{ s.value or '' }}" placeholder="{{ meta.hint }}">
+                <span class="settings-hint">{{ meta.hint }}</span>
+              </label>
+            </div>
+            {% endfor %}
+          </div>
+        </article>
+      </section>
+
+      <!-- ==================== ONGLET 2 : DEVIS, BANQUE & PDF ==================== -->
+      <section class="settings-tab-panel" id="tab-quote" role="tabpanel">
+        <article class="panel settings-card">
+          <div class="panel-head settings-card-head">
+            <div class="settings-card-head-title">
+              <span class="settings-head-icon">📄</span>
+              <div>
+                <h3 class="settings-card-title">Facturation, Banque &amp; Mentions PDF</h3>
+                <small class="muted">Coordonnées bancaires pour virement et pied de page légal des devis clients.</small>
+              </div>
+            </div>
+            <span class="badge settings-count-badge">{{ cat_quote|length }} champs</span>
+          </div>
+
+          <div class="settings-fields-grid">
+            {% for s in cat_quote %}
+            {% set meta = field_meta.get(s.key, {'icon': '🔹', 'label': s.label, 'hint': s.key}) %}
+            {% set is_textarea = s.key in ['pdf_social_links', 'pdf_legal_footer'] %}
+            <div class="settings-field-box {{ 'full-width' if is_textarea or s.key in ['pdf_iban', 'pdf_rib'] else '' }}">
+              <label class="settings-label" for="setting_{{ s.id }}">
+                <span class="settings-label-header">
+                  <span class="settings-field-icon">{{ meta.icon }}</span>
+                  <strong class="settings-label-name">{{ meta.label }}</strong>
+                  <span class="settings-key-code">{{ s.key }}</span>
+                </span>
+                {% if is_textarea %}
+                  <textarea class="settings-textarea" id="setting_{{ s.id }}" name="value_{{ s.id }}" rows="2" placeholder="{{ meta.hint }}">{{ s.value or '' }}</textarea>
+                {% else %}
+                  <input class="settings-input" id="setting_{{ s.id }}" name="value_{{ s.id }}" value="{{ s.value or '' }}" placeholder="{{ meta.hint }}">
+                {% endif %}
+                <span class="settings-hint">{{ meta.hint }}</span>
+              </label>
+            </div>
+            {% endfor %}
+          </div>
+        </article>
+      </section>
+
+      <!-- ==================== ONGLET 3 : PASSERELLE & URLS ==================== -->
+      <section class="settings-tab-panel" id="tab-gateway" role="tabpanel">
+        <article class="panel settings-card">
+          <div class="panel-head settings-card-head">
+            <div class="settings-card-head-title">
+              <span class="settings-head-icon">💬</span>
+              <div>
+                <h3 class="settings-card-title">Passerelle WhatsApp &amp; Liens Système</h3>
+                <small class="muted">Paramètres de synchronisation de la passerelle WhatsApp et URL de diffusion.</small>
+              </div>
+            </div>
+            <span class="badge settings-count-badge">{{ cat_gateway|length }} champs</span>
+          </div>
+
+          <div class="settings-fields-grid">
+            {% for s in cat_gateway %}
+            {% set meta = field_meta.get(s.key, {'icon': '🔹', 'label': s.label, 'hint': s.key}) %}
+            <div class="settings-field-box {{ 'full-width' if s.key in ['whatsapp_gateway_url', 'app_base_url'] else '' }}">
+              <label class="settings-label" for="setting_{{ s.id }}">
+                <span class="settings-label-header">
+                  <span class="settings-field-icon">{{ meta.icon }}</span>
+                  <strong class="settings-label-name">{{ meta.label }}</strong>
+                  <span class="settings-key-code">{{ s.key }}</span>
+                </span>
+                <input class="settings-input" id="setting_{{ s.id }}" name="value_{{ s.id }}" value="{{ s.value or '' }}" placeholder="{{ meta.hint }}">
+                <span class="settings-hint">{{ meta.hint }}</span>
+              </label>
+            </div>
+            {% endfor %}
+          </div>
+        </article>
+      </section>
+
+      <!-- ==================== ONGLET 4 : VUE D'ENSEMBLE (TOUT EN 3 COLONNES) ==================== -->
+      <section class="settings-tab-panel" id="tab-all" role="tabpanel">
+        <div class="settings-overview-grid">
+          <!-- Carte 1 -->
+          <article class="panel settings-card">
+            <div class="panel-head settings-card-head">
+              <div class="settings-card-head-title">
+                <span class="settings-head-icon">🏢</span>
+                <h4 class="settings-card-title-sm">Entreprise &amp; Contact</h4>
+              </div>
+            </div>
+            <div class="settings-overview-list">
+              {% for s in cat_general %}
+              {% set meta = field_meta.get(s.key, {'icon': '🔹', 'label': s.label, 'hint': s.key}) %}
+              <div class="settings-ov-item">
+                <span class="settings-ov-icon">{{ meta.icon }}</span>
+                <div class="settings-ov-content">
+                  <small>{{ meta.label }}</small>
+                  <strong>{{ s.value or '(non défini)' }}</strong>
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          </article>
+
+          <!-- Carte 2 -->
+          <article class="panel settings-card">
+            <div class="panel-head settings-card-head">
+              <div class="settings-card-head-title">
+                <span class="settings-head-icon">📄</span>
+                <h4 class="settings-card-title-sm">Devis, Banque &amp; PDF</h4>
+              </div>
+            </div>
+            <div class="settings-overview-list">
+              {% for s in cat_quote %}
+              {% set meta = field_meta.get(s.key, {'icon': '🔹', 'label': s.label, 'hint': s.key}) %}
+              <div class="settings-ov-item">
+                <span class="settings-ov-icon">{{ meta.icon }}</span>
+                <div class="settings-ov-content">
+                  <small>{{ meta.label }}</small>
+                  <strong class="truncate">{{ s.value or '(non défini)' }}</strong>
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          </article>
+
+          <!-- Carte 3 -->
+          <article class="panel settings-card">
+            <div class="panel-head settings-card-head">
+              <div class="settings-card-head-title">
+                <span class="settings-head-icon">💬</span>
+                <h4 class="settings-card-title-sm">Passerelle &amp; URLs</h4>
+              </div>
+            </div>
+            <div class="settings-overview-list">
+              {% for s in cat_gateway %}
+              {% set meta = field_meta.get(s.key, {'icon': '🔹', 'label': s.label, 'hint': s.key}) %}
+              <div class="settings-ov-item">
+                <span class="settings-ov-icon">{{ meta.icon }}</span>
+                <div class="settings-ov-content">
+                  <small>{{ meta.label }}</small>
+                  <strong class="truncate">{{ s.value or '(non défini)' }}</strong>
+                </div>
+              </div>
+              {% endfor %}
+            </div>
+          </article>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- ========================================================== -->
+    <!-- 4. PIED DE PAGE D'ACTION SECONDAIRE                        -->
+    <!-- ========================================================== -->
+    <div class="settings-footer-actions">
+      <div class="settings-footer-hint">
+        <span>💡 <b>Astuce :</b> Tous les paramètres des différents onglets sont sauvegardés simultanément en un seul clic.</span>
+      </div>
+      <button class="admin-button settings-btn-save-bottom" type="submit">
+        <span>💾 Enregistrer les paramètres</span>
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block page_scripts %}
+<script>
+(() => {
+  const tabs = document.querySelectorAll(".settings-tab-btn");
+  const panels = document.querySelectorAll(".settings-tab-panel");
+  const STORAGE_KEY = "heliantha_settings_active_tab";
+
+  const activateTab = (tabId) => {
+    tabs.forEach(btn => {
+      const isActive = btn.getAttribute("data-tab") === tabId;
+      btn.classList.toggle("active", isActive);
+      btn.setAttribute("aria-selected", isActive ? "true" : "false");
+    });
+
+    panels.forEach(panel => {
+      const isActive = panel.id === tabId;
+      panel.classList.toggle("active", isActive);
+    });
+
+    try {
+      localStorage.setItem(STORAGE_KEY, tabId);
+    } catch (_) {}
+  };
+
+  tabs.forEach(btn => {
+    btn.addEventListener("click", () => {
+      const tabId = btn.getAttribute("data-tab");
+      if (tabId) activateTab(tabId);
+    });
+  });
+
+  // Restaurer l'onglet actif au chargement
+  let initialTab = "tab-general";
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved && document.getElementById(saved)) {
+      initialTab = saved;
+    }
+  } catch (_) {}
+
+  // Si l'URL a un hash (ex: #tab-gateway)
+  if (window.location.hash) {
+    const hashId = window.location.hash.replace("#", "");
+    if (document.getElementById(hashId)) {
+      initialTab = hashId;
+    }
+  }
+
+  activateTab(initialTab);
+})();
+</script>
 {% endblock %}
