@@ -1,46 +1,301 @@
 {% extends "admin/base.html" %}
-{% block title %}Dashboard - HeliAntha Admin{% endblock %}
-{% block page_title %}Tableau de bord{% endblock %}
+{% block title %}Tableau de bord - HeliAntha Admin{% endblock %}
+{% block page_title %}Tableau de bord commercial & technique{% endblock %}
 {% block content %}
-<section class="stat-grid">
-  <article><small>Prospects</small><b>{{ stats.total_prospects }}</b></article>
-  <article><small>Nouveaux aujourd'hui</small><b>{{ stats.new_today }}</b></article>
-  <article><small>Simulations</small><b>{{ stats.simulations }}</b></article>
-  <article><small>Devis générés</small><b>{{ stats.quotes_generated }}</b></article>
-  <article><small>En attente</small><b>{{ stats.pending_quotes }}</b></article>
-  <article><small>Acceptés</small><b>{{ stats.accepted_quotes }}</b></article>
-  <article><small>Refusés</small><b>{{ stats.refused_quotes }}</b></article>
-  <article><small>En installation</small><b>{{ stats.installing_projects }}</b></article>
-</section>
-
-<section class="admin-grid two">
-  <article class="panel">
-    <h2>Répartition des projets</h2>
-    <div class="bars">
-      {% for item in stats.project_breakdown %}
-      <div><span>{{ item.label }}</span><b>{{ item.count }}</b><i style="width: {{ item.count * 20 if item.count < 5 else 100 }}%"></i></div>
-      {% else %}<p class="muted">Aucune simulation pour le moment.</p>{% endfor %}
+<div class="db-cockpit">
+  <!-- En-tête Cockpit & Raccourcis directes -->
+  <header class="db-hero">
+    <div class="db-hero-text">
+      <div class="db-hero-title-row">
+        <span class="db-hero-badge" aria-hidden="true">📊</span>
+        <div>
+          <h2>Vue d'ensemble commerciale &amp; chantiers</h2>
+          <p>Indicateurs de performance, état d'avancement des devis et raccourcis de calcul en temps réel.</p>
+        </div>
+      </div>
     </div>
-  </article>
-</section>
+    <div class="db-hero-actions">
+      <a class="db-chip db-chip-primary" href="{{ url_for('main.admin_quotes') }}">
+        <span aria-hidden="true">📋</span> Gérer les devis
+      </a>
+      <a class="db-chip" href="{{ url_for('main.admin_catalog') }}">
+        <span aria-hidden="true">📦</span> Catalogue
+      </a>
+      <a class="db-chip" href="{{ url_for('main.admin_whatsapp') }}">
+        <span aria-hidden="true">💬</span> Passerelle WhatsApp
+      </a>
+      <a class="db-chip" href="{{ url_for('main.admin_settings') }}">
+        <span aria-hidden="true">⚙️</span> Paramètres
+      </a>
+    </div>
+  </header>
 
-<section class="panel">
-  <div class="panel-head"><h2>Derniers devis</h2><a class="text-button" href="{{ url_for('main.admin_quotes') }}">Tout afficher</a></div>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>Numéro</th><th>Client</th><th>Projet</th><th>TTC</th><th>Statut</th></tr></thead>
-      <tbody>
-        {% for q in stats.latest_quotes %}
-        <tr>
-          <td><a href="{{ url_for('main.admin_quote_detail', quote_id=q.id) }}">{{ q.quote_number }}</a></td>
-          <td>{{ q.customer_name or "-" }}</td>
-          <td>{{ project_labels.get(q.project, q.project) }}</td>
-          <td>{{ (q.amount_ttc or 0)|format_currency }}</td>
-          <td><span class="status">{{ display_quote_status(q.status) }}</span></td>
-        </tr>
-        {% else %}<tr><td colspan="5">Aucun devis enregistré.</td></tr>{% endfor %}
-      </tbody>
-    </table>
-  </div>
-</section>
+  <!-- Grille des indicateurs clés (KPIs) -->
+  <section class="db-kpi-grid" aria-label="Indicateurs clés">
+    <!-- Total Prospects -->
+    <article class="db-kpi-card kpi-emerald">
+      <div class="db-kpi-top">
+        <span class="db-kpi-label">Prospects</span>
+        <span class="db-kpi-icon" aria-hidden="true">👥</span>
+      </div>
+      <div class="db-kpi-num">{{ stats.get('total_prospects', 0) }}</div>
+      <div class="db-kpi-meta">
+        <span class="db-kpi-pill kpi-pill-emerald">
+          +{{ stats.get('new_today', 0) }} aujourd'hui
+        </span>
+      </div>
+    </article>
+
+    <!-- Devis générés -->
+    <article class="db-kpi-card kpi-blue">
+      <div class="db-kpi-top">
+        <span class="db-kpi-label">Devis générés</span>
+        <span class="db-kpi-icon" aria-hidden="true">📄</span>
+      </div>
+      <div class="db-kpi-num">{{ stats.get('quotes_generated', 0) }}</div>
+      <div class="db-kpi-meta">
+        <span class="db-kpi-sub">{{ stats.get('simulations', 0) }} simulations</span>
+      </div>
+    </article>
+
+    <!-- En attente -->
+    <article class="db-kpi-card kpi-amber">
+      <div class="db-kpi-top">
+        <span class="db-kpi-label">En attente</span>
+        <span class="db-kpi-icon" aria-hidden="true">⏳</span>
+      </div>
+      <div class="db-kpi-num">{{ stats.get('pending_quotes', 0) }}</div>
+      <div class="db-kpi-meta">
+        <span class="db-kpi-pill kpi-pill-amber">À qualifier</span>
+      </div>
+    </article>
+
+    <!-- Acceptés -->
+    <article class="db-kpi-card kpi-green">
+      <div class="db-kpi-top">
+        <span class="db-kpi-label">Devis acceptés</span>
+        <span class="db-kpi-icon" aria-hidden="true">✅</span>
+      </div>
+      <div class="db-kpi-num">{{ stats.get('accepted_quotes', 0) }}</div>
+      <div class="db-kpi-meta">
+        <span class="db-kpi-pill kpi-pill-green">Validés client</span>
+      </div>
+    </article>
+
+    <!-- En installation -->
+    <article class="db-kpi-card kpi-purple">
+      <div class="db-kpi-top">
+        <span class="db-kpi-label">En installation</span>
+        <span class="db-kpi-icon" aria-hidden="true">🚀</span>
+      </div>
+      <div class="db-kpi-num">{{ stats.get('installing_projects', 0) }}</div>
+      <div class="db-kpi-meta">
+        <span class="db-kpi-pill kpi-pill-purple">Chantiers en cours</span>
+      </div>
+    </article>
+
+    <!-- Refusés -->
+    <article class="db-kpi-card kpi-slate">
+      <div class="db-kpi-top">
+        <span class="db-kpi-label">Refusés</span>
+        <span class="db-kpi-icon" aria-hidden="true">❌</span>
+      </div>
+      <div class="db-kpi-num">{{ stats.get('refused_quotes', 0) }}</div>
+      <div class="db-kpi-meta">
+        <span class="db-kpi-sub">Sans suite / clos</span>
+      </div>
+    </article>
+  </section>
+
+  <!-- Grille intermédiaire : Répartition des projets & Raccourcis cockpit -->
+  <section class="db-mid-grid">
+    <!-- Colonne 1 : Répartition des projets -->
+    <article class="db-panel">
+      <div class="db-panel-head">
+        <div class="db-panel-head-title">
+          <span class="db-panel-icon" aria-hidden="true">☀️</span>
+          <div>
+            <h3>Répartition des simulations par type de projet</h3>
+            <small>Ventilation des demandes formulées par les clients</small>
+          </div>
+        </div>
+        <span class="db-panel-badge">{{ stats.get('project_breakdown', [])|length }} filières</span>
+      </div>
+      <div class="db-panel-body">
+        {% set breakdown = stats.get('project_breakdown', []) %}
+        {% if breakdown %}
+          {% set total_breakdown = namespace(val=0) %}
+          {% for b in breakdown %}
+            {% set total_breakdown.val = total_breakdown.val + (b.count or 0) %}
+          {% endfor %}
+          <div class="db-breakdown-list">
+            {% for item in breakdown %}
+              {% set pct = ((item.count / (total_breakdown.val if total_breakdown.val > 0 else 1)) * 100)|round|int %}
+              <div class="db-breakdown-row">
+                <div class="db-breakdown-info">
+                  <div class="db-breakdown-title">
+                    <span class="db-breakdown-dot db-dot-{{ item.key }}"></span>
+                    <b>{{ item.label }}</b>
+                  </div>
+                  <div class="db-breakdown-counts">
+                    <span class="db-count-num">{{ item.count }}</span>
+                    <span class="db-count-pct">({{ pct }}%)</span>
+                  </div>
+                </div>
+                <div class="db-progress-track">
+                  <div class="db-progress-bar db-bar-{{ item.key }}" style="width: {{ pct if pct > 4 else 4 }}%"></div>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="db-empty-state">
+            <span class="db-empty-icon" aria-hidden="true">🌾</span>
+            <p>Aucune simulation pour le moment.</p>
+            <small>Les prochaines demandes générées apparaîtront ici automatiquement.</small>
+          </div>
+        {% endif %}
+      </div>
+    </article>
+
+    <!-- Colonne 2 : Raccourcis et règles de dimensionnement -->
+    <article class="db-panel">
+      <div class="db-panel-head">
+        <div class="db-panel-head-title">
+          <span class="db-panel-icon" aria-hidden="true">⚡</span>
+          <div>
+            <h3>Accès rapides &amp; Moteurs de dimensionnement</h3>
+            <small>Configurations métier, abaques et règles de calcul</small>
+          </div>
+        </div>
+        <span class="db-panel-badge">Système</span>
+      </div>
+      <div class="db-panel-body">
+        <div class="db-shortcuts-grid">
+          <a class="db-shortcut-card" href="{{ url_for('main.admin_pumping_rules') }}">
+            <div class="db-shortcut-icon s-pump">💧</div>
+            <div class="db-shortcut-body">
+              <b>Pompage solaire</b>
+              <p>Abaques HMT/débit, coefficients et prix pompe</p>
+            </div>
+            <span class="db-shortcut-arrow" aria-hidden="true">→</span>
+          </a>
+
+          <a class="db-shortcut-card" href="{{ url_for('main.admin_ongrid_rules') }}">
+            <div class="db-shortcut-icon s-ongrid">☀️</div>
+            <div class="db-shortcut-body">
+              <b>Solaire On-Grid</b>
+              <p>PSH par région, autoconsommation et règles réseau</p>
+            </div>
+            <span class="db-shortcut-arrow" aria-hidden="true">→</span>
+          </a>
+
+          <a class="db-shortcut-card" href="{{ url_for('main.admin_tva') }}">
+            <div class="db-shortcut-icon s-tva">%</div>
+            <div class="db-shortcut-body">
+              <b>TVA &amp; Transport</b>
+              <p>Taux 0%/10%/20% et barème transport par région</p>
+            </div>
+            <span class="db-shortcut-arrow" aria-hidden="true">→</span>
+          </a>
+
+          <a class="db-shortcut-card" href="{{ url_for('main.admin_whatsapp') }}">
+            <div class="db-shortcut-icon s-wa">💬</div>
+            <div class="db-shortcut-body">
+              <b>Passerelle WhatsApp</b>
+              <p>File de notification, statuts d'envoi et relances</p>
+            </div>
+            <span class="db-shortcut-arrow" aria-hidden="true">→</span>
+          </a>
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <!-- Derniers devis enregistrés -->
+  <section class="db-panel db-quotes-panel">
+    <div class="db-panel-head">
+      <div class="db-panel-head-title">
+        <span class="db-panel-icon" aria-hidden="true">📋</span>
+        <div>
+          <h3>Derniers devis enregistrés</h3>
+          <small>Historique récent des demandes avec accès direct aux dossiers</small>
+        </div>
+      </div>
+      <a class="db-btn-link" href="{{ url_for('main.admin_quotes') }}">
+        Voir l'ensemble des devis &rarr;
+      </a>
+    </div>
+
+    <div class="table-wrap db-table-wrap">
+      <table class="db-table">
+        <thead>
+          <tr>
+            <th scope="col">Numéro</th>
+            <th scope="col">Client &amp; Contact</th>
+            <th scope="col">Type de projet</th>
+            <th scope="col" class="db-th-num">Montant TTC</th>
+            <th scope="col" class="db-th-status">Statut</th>
+            <th scope="col" class="db-th-action">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% set latest = stats.get('latest_quotes', []) %}
+          {% for q in latest %}
+            {% set cname = q.customer_name or "-" %}
+            {% set cinitial = (q.customer_name or "C")[:1]|upper %}
+            {% set status_label = display_quote_status(q.status) %}
+            <tr class="db-quote-row">
+              <td class="db-td-ref">
+                <a class="db-ref-pill" href="{{ url_for('main.admin_quote_detail', quote_id=q.id) }}">
+                  {{ q.quote_number }}
+                </a>
+              </td>
+              <td class="db-td-client">
+                <div class="db-client-group">
+                  <span class="crm-avatar db-avatar-sm">{{ cinitial }}</span>
+                  <div class="db-client-meta">
+                    <span class="db-client-name">{{ cname }}</span>
+                    {% if q.company or q.city %}
+                      <small class="db-client-sub">{{ [q.company, q.city]|select|join(' · ') }}</small>
+                    {% elif q.phone %}
+                      <small class="db-client-sub">{{ q.phone }}</small>
+                    {% endif %}
+                  </div>
+                </div>
+              </td>
+              <td class="db-td-project">
+                <span class="db-project-tag tag-{{ q.project }}">
+                  {% if q.project == 'pumping' %}💧 Pompage
+                  {% elif q.project == 'ongrid' %}☀️ On-Grid
+                  {% elif q.project == 'hybrid' %}🔋 Hybride
+                  {% else %}{{ project_labels.get(q.project, q.project) }}{% endif %}
+                </span>
+              </td>
+              <td class="db-td-amount db-th-num">
+                <b>{{ (q.amount_ttc or 0)|format_currency }}</b>
+              </td>
+              <td class="db-td-status db-th-status">
+                <span class="status db-status-tag status-{{ q.status|lower|replace(' ', '-') }}">
+                  {{ status_label }}
+                </span>
+              </td>
+              <td class="db-td-action db-th-action">
+                <a class="ghost-button db-btn-sm" href="{{ url_for('main.admin_quote_detail', quote_id=q.id) }}">
+                  Ouvrir
+                </a>
+              </td>
+            </tr>
+          {% else %}
+            <tr>
+              <td colspan="6" class="db-empty-td">
+                <p class="muted">Aucun devis enregistré pour le moment.</p>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
 {% endblock %}

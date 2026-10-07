@@ -9922,3 +9922,688 @@ tbody tr:hover{
 @media (max-width: 560px) {
   .pr-dialog-body { grid-template-columns: 1fr; }
 }
+
+/* ==========================================================================
+   Tableau de bord HeliAntha (Dashboard Cockpit)
+   ========================================================================== */
+
+.db-cockpit {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+/* En-tête Cockpit */
+.db-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #ffffff 0%, #f7faf8 100%);
+  border: 1px solid #dbe6df;
+  border-radius: 14px;
+  box-shadow: 0 2px 8px rgba(17, 58, 47, 0.04);
+}
+
+.db-hero-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.db-hero-badge {
+  font-size: 26px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  background: #eef6f1;
+  border: 1px solid #cce3d4;
+  border-radius: 12px;
+  flex-shrink: 0;
+}
+
+.db-hero-title-row h2 {
+  margin: 0;
+  font-size: 16.5px;
+  font-weight: 800;
+  color: #113a2f;
+  letter-spacing: -0.01em;
+}
+
+.db-hero-title-row p {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  color: #556b61;
+}
+
+.db-hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.db-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #21382f;
+  background: #f1f6f3;
+  border: 1px solid #d0ded6;
+  text-decoration: none;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.db-chip:hover {
+  background: #e2ede6;
+  border-color: #b5ccbf;
+  color: #113a2f;
+  transform: translateY(-1px);
+}
+
+.db-chip-primary {
+  background: #113a2f;
+  border-color: #113a2f;
+  color: #ffffff;
+}
+
+.db-chip-primary:hover {
+  background: #0c2b23;
+  border-color: #0c2b23;
+  color: #ffffff;
+}
+
+/* Grille KPIs */
+.db-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.db-kpi-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 13px 15px;
+  background: #ffffff;
+  border: 1px solid #e1ebe5;
+  border-radius: 12px;
+  box-shadow: 0 1px 4px rgba(17, 58, 47, 0.03);
+  position: relative;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.db-kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(17, 58, 47, 0.08);
+}
+
+.db-kpi-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.db-kpi-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #62786e;
+}
+
+.db-kpi-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.db-kpi-num {
+  font-size: 25px;
+  font-weight: 900;
+  line-height: 1.1;
+  color: #113a2f;
+  margin-bottom: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.db-kpi-meta {
+  display: flex;
+  align-items: center;
+  font-size: 11.5px;
+}
+
+.db-kpi-sub {
+  color: #72847c;
+  font-weight: 500;
+  font-size: 11px;
+}
+
+.db-kpi-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+.kpi-pill-emerald {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.kpi-pill-amber {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.kpi-pill-green {
+  background: #d1fae5;
+  color: #047857;
+}
+
+.kpi-pill-purple {
+  background: #f3e8ff;
+  color: #7e22ce;
+}
+
+/* Thèmes de bordures pour les KPI */
+.db-kpi-card.kpi-emerald { border-top: 3px solid #10b981; }
+.db-kpi-card.kpi-blue { border-top: 3px solid #3b82f6; }
+.db-kpi-card.kpi-amber { border-top: 3px solid #f59e0b; }
+.db-kpi-card.kpi-green { border-top: 3px solid #059669; }
+.db-kpi-card.kpi-purple { border-top: 3px solid #8b5cf6; }
+.db-kpi-card.kpi-slate { border-top: 3px solid #94a3b8; }
+
+/* Panels de contenu */
+.db-mid-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.db-panel {
+  background: #ffffff;
+  border: 1px solid #dce8e1;
+  border-radius: 14px;
+  box-shadow: 0 1px 4px rgba(17, 58, 47, 0.03);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.db-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px;
+  background: #fafcfb;
+  border-bottom: 1px solid #edf3ef;
+}
+
+.db-panel-head-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.db-panel-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.db-panel-head-title h3 {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 800;
+  color: #113a2f;
+}
+
+.db-panel-head-title small {
+  display: block;
+  font-size: 11px;
+  color: #6c8077;
+  margin-top: 1px;
+}
+
+.db-panel-badge {
+  font-size: 11px;
+  font-weight: 700;
+  color: #3b584d;
+  background: #eaf3ee;
+  border: 1px solid #d1e3d8;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.db-panel-body {
+  padding: 14px 18px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Répartition des projets */
+.db-breakdown-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  justify-content: center;
+  height: 100%;
+}
+
+.db-breakdown-row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.db-breakdown-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.db-breakdown-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: #20362e;
+}
+
+.db-breakdown-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.db-dot-pumping { background: #0284c7; }
+.db-dot-photovoltaic { background: #d97706; }
+.db-dot-hybrid { background: #059669; }
+
+.db-breakdown-counts {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.db-count-num {
+  font-size: 13.5px;
+  font-weight: 800;
+  color: #113a2f;
+}
+
+.db-count-pct {
+  font-size: 11px;
+  font-weight: 600;
+  color: #6e8278;
+}
+
+.db-progress-track {
+  width: 100%;
+  height: 7px;
+  background: #edf2ee;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.db-progress-bar {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.4s ease;
+}
+
+.db-bar-pumping { background: linear-gradient(90deg, #38bdf8, #0284c7); }
+.db-bar-photovoltaic { background: linear-gradient(90deg, #fbbf24, #d97706); }
+.db-bar-hybrid { background: linear-gradient(90deg, #34d399, #059669); }
+
+/* Raccourcis Grid */
+.db-shortcuts-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  height: 100%;
+}
+
+.db-shortcut-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  background: #f8faf9;
+  border: 1px solid #e1ebe5;
+  border-radius: 10px;
+  text-decoration: none;
+  color: inherit;
+  transition: all 0.15s ease;
+}
+
+.db-shortcut-card:hover {
+  background: #eef6f1;
+  border-color: #b9d8c4;
+  transform: translateY(-1px);
+}
+
+.db-shortcut-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.s-pump { background: #e0f2fe; color: #0369a1; }
+.s-ongrid { background: #fef3c7; color: #b45309; }
+.s-tva { background: #f0fdf4; color: #15803d; }
+.s-wa { background: #dcfce7; color: #166534; }
+
+.db-shortcut-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.db-shortcut-body b {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  color: #113a2f;
+  line-height: 1.2;
+}
+
+.db-shortcut-body p {
+  margin: 2px 0 0;
+  font-size: 10.5px;
+  color: #5d7369;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+}
+
+.db-shortcut-arrow {
+  color: #94a89e;
+  font-weight: 700;
+  font-size: 13px;
+  transition: transform 0.15s ease;
+}
+
+.db-shortcut-card:hover .db-shortcut-arrow {
+  transform: translateX(2px);
+  color: #113a2f;
+}
+
+/* Panel Devis récents */
+.db-quotes-panel {
+  margin-top: 0;
+}
+
+.db-btn-link {
+  font-size: 12px;
+  font-weight: 700;
+  color: #113a2f;
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+.db-btn-link:hover {
+  color: #047857;
+  text-decoration: underline;
+}
+
+.db-table-wrap {
+  overflow-x: auto;
+  border: none;
+  border-radius: 0;
+  margin: 0;
+}
+
+.db-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.db-table thead th {
+  background: #f8faf9;
+  color: #556c61;
+  font-weight: 700;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 9px 14px;
+  border-bottom: 1px solid #e5ede8;
+  white-space: nowrap;
+}
+
+.db-table tbody td {
+  padding: 8px 14px;
+  border-bottom: 1px solid #edf3ef;
+  vertical-align: middle;
+}
+
+.db-quote-row:hover td {
+  background: #fbfdfc;
+}
+
+.db-ref-pill {
+  font-family: monospace;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #113a2f;
+  background: #eef5f1;
+  border: 1px solid #d2e4d9;
+  padding: 3px 8px;
+  border-radius: 6px;
+  text-decoration: none;
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.db-ref-pill:hover {
+  background: #e0eee5;
+  border-color: #b7d6c3;
+  color: #0c2b23;
+}
+
+.db-client-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.db-avatar-sm {
+  width: 28px;
+  height: 28px;
+  font-size: 11.5px;
+}
+
+.db-client-meta {
+  display: flex;
+  flex-direction: column;
+}
+
+.db-client-name {
+  font-weight: 700;
+  color: #1e352b;
+  line-height: 1.2;
+}
+
+.db-client-sub {
+  font-size: 10.5px;
+  color: #6c8077;
+  line-height: 1.2;
+}
+
+.db-project-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tag-pumping { background: #e0f2fe; color: #0369a1; }
+.tag-ongrid, .tag-photovoltaic { background: #fef3c7; color: #b45309; }
+.tag-hybrid { background: #d1fae5; color: #047857; }
+
+.db-th-num, .db-td-amount {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.db-td-amount b {
+  font-size: 13px;
+  color: #113a2f;
+}
+
+.db-th-status, .db-td-status {
+  text-align: center;
+  white-space: nowrap;
+}
+
+.db-status-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+.status-nouveau, .status-a-contacter {
+  background: #fffbeb !important;
+  color: #b45309 !important;
+  border: 1px solid #fde68a !important;
+}
+
+.status-contacte, .status-etude {
+  background: #eff6ff !important;
+  color: #1d4ed8 !important;
+  border: 1px solid #bfdbfe !important;
+}
+
+.status-devis-prepare, .status-devis-envoye {
+  background: #f0fdf4 !important;
+  color: #15803d !important;
+  border: 1px solid #bbf7d0 !important;
+}
+
+.status-accepte, .status-termine {
+  background: #ecfdf5 !important;
+  color: #047857 !important;
+  border: 1px solid #a7f3d0 !important;
+}
+
+.status-refuse {
+  background: #fef2f2 !important;
+  color: #b91c1c !important;
+  border: 1px solid #fecaca !important;
+}
+
+.status-installation {
+  background: #faf5ff !important;
+  color: #7e22ce !important;
+  border: 1px solid #e9d5ff !important;
+}
+
+.db-th-action, .db-td-action {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.db-btn-sm {
+  padding: 3px 9px !important;
+  font-size: 11px !important;
+  border-radius: 6px !important;
+}
+
+.db-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 24px 16px;
+  color: #64748b;
+}
+
+.db-empty-icon {
+  font-size: 32px;
+  margin-bottom: 6px;
+}
+
+.db-empty-state p {
+  margin: 0;
+  font-weight: 700;
+  font-size: 13px;
+  color: #334155;
+}
+
+.db-empty-state small {
+  font-size: 11.5px;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+.db-empty-td {
+  text-align: center;
+  padding: 24px !important;
+}
+
+/* Responsiveness */
+@media (max-width: 1200px) {
+  .db-kpi-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 860px) {
+  .db-hero {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .db-mid-grid {
+    grid-template-columns: 1fr;
+  }
+  .db-shortcuts-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 600px) {
+  .db-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .db-hero-actions {
+    width: 100%;
+  }
+  .db-chip {
+    flex: 1 1 calc(50% - 8px);
+    justify-content: center;
+  }
+}
