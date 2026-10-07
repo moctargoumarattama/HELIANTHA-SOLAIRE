@@ -345,24 +345,42 @@
       <div class="og-psh-box">
         <div class="og-psh-input-col">
           <label class="og-field-label" for="input-{{ p_psh.key }}">
-            <strong>{{ p_psh.label }}</strong>
+            <span class="og-psh-title">{{ p_psh.label }}</span>
             <div class="og-input-group og-psh-input-group">
               <input type="number" name="value_{{ p_psh.key }}" id="input-{{ p_psh.key }}"
                      value="{{ p_psh.value }}" step="0.01" min="0.1" required class="og-num-input"
                      data-og-target="kpi-psh">
-              <span class="og-input-unit">{{ p_psh.suffix or 'heures / jour' }}</span>
+              <span class="og-input-unit">{{ p_psh.suffix or 'heures' }}</span>
             </div>
             <small class="og-field-help">{{ p_psh.help }}</small>
           </label>
         </div>
+
         <div class="og-psh-formula-col">
-          <span class="og-math-badge">📐 Formule de dimensionnement</span>
-          <div class="og-math-box">
-            $$\text{Puissance crête cible (kWc)} = \frac{\text{Consommation mensuelle (kWh)}}{30 \times \text{PSH}}$$
+          <div class="og-math-card">
+            <div class="og-math-header">
+              <span class="og-math-badge">📐 Formule de dimensionnement</span>
+              <span class="og-math-sub">Calcul de la puissance crête cible</span>
+            </div>
+
+            <div class="og-formula-display">
+              <div class="og-formula-lhs">
+                <strong>Puissance crête cible</strong>
+                <small>(kWc)</small>
+              </div>
+              <div class="og-formula-equal">=</div>
+              <div class="og-formula-fraction">
+                <div class="og-frac-numerator">Consommation mensuelle (kWh)</div>
+                <div class="og-frac-bar"></div>
+                <div class="og-frac-denominator">30 jours × PSH (heures)</div>
+              </div>
+            </div>
+
+            <div class="og-psh-example-box">
+              <span class="og-ex-badge">Exemple chiffré :</span>
+              <span class="og-ex-calc">1 000 kWh/mois ÷ (30 × 5,00 h) = <strong class="og-ex-result">6,67 kWc cible</strong></span>
+            </div>
           </div>
-          <p class="og-psh-math-note">
-            Exemple : 1 000 kWh/mois ÷ (30 × 5,00 h) = <strong>6,67 kWc cible</strong>.
-          </p>
         </div>
       </div>
     </section>

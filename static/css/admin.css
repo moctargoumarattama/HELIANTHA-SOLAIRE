@@ -6618,45 +6618,164 @@ tbody tr:hover{
   color: #b91c1c !important;
 }
 
-/* Boîte PSH */
+/* Boîte PSH & Formule Mathématique Visuelle */
 .og-psh-box {
   display: grid !important;
-  grid-template-columns: 1fr 1.2fr !important;
+  grid-template-columns: minmax(260px, 1fr) minmax(360px, 1.4fr) !important;
   gap: 20px !important;
-  align-items: center !important;
+  align-items: stretch !important;
   background: #fffbeb !important;
   border: 1px solid #fde68a !important;
-  border-radius: 12px !important;
-  padding: 18px !important;
+  border-radius: 14px !important;
+  padding: 20px !important;
+}
+
+.og-psh-input-col {
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+}
+
+.og-psh-title {
+  font-size: 14px !important;
+  font-weight: 800 !important;
+  color: #0f172a !important;
 }
 
 .og-psh-formula-col {
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.og-math-card {
   background: #ffffff !important;
   border: 1px solid #fef3c7 !important;
-  border-radius: 10px !important;
-  padding: 14px !important;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03) !important;
+  border-radius: 12px !important;
+  padding: 16px 18px !important;
+  box-shadow: 0 2px 8px rgba(180, 83, 9, 0.05) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 12px !important;
+  height: 100% !important;
+  justify-content: space-between !important;
+}
+
+.og-math-header {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  flex-wrap: wrap !important;
+  gap: 6px !important;
+  border-bottom: 1px solid #fef3c7 !important;
+  padding-bottom: 8px !important;
 }
 
 .og-math-badge {
-  display: inline-block !important;
-  font-size: 11px !important;
+  font-size: 12px !important;
   font-weight: 800 !important;
   color: #b45309 !important;
-  margin-bottom: 6px !important;
 }
 
-.og-math-box {
-  font-family: monospace !important;
-  font-size: 12.5px !important;
+.og-math-sub {
+  font-size: 11.5px !important;
+  color: #92400e !important;
+  font-weight: 600 !important;
+}
+
+.og-formula-display {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 14px !important;
+  background: linear-gradient(180deg, #fffdf7 0%, #fffbeb 100%) !important;
+  border: 1px dashed #fde68a !important;
+  border-radius: 10px !important;
+  padding: 12px 18px !important;
+  flex-wrap: wrap !important;
+}
+
+.og-formula-lhs {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  text-align: center !important;
+}
+
+.og-formula-lhs strong {
+  font-size: 13.5px !important;
+  font-weight: 800 !important;
   color: #0f172a !important;
-  margin-bottom: 6px !important;
+  white-space: nowrap !important;
 }
 
-.og-psh-math-note {
-  font-size: 12px !important;
-  color: #78350f !important;
-  margin: 0 !important;
+.og-formula-lhs small {
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  color: #0284c7 !important;
+}
+
+.og-formula-equal {
+  font-size: 20px !important;
+  font-weight: 800 !important;
+  color: #b45309 !important;
+}
+
+.og-formula-fraction {
+  display: inline-flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  text-align: center !important;
+}
+
+.og-frac-numerator {
+  font-size: 12.5px !important;
+  font-weight: 800 !important;
+  color: #0284c7 !important;
+  padding-bottom: 4px !important;
+  white-space: nowrap !important;
+}
+
+.og-frac-bar {
+  width: 100% !important;
+  min-width: 170px !important;
+  height: 2px !important;
+  background: #0f172a !important;
+  border-radius: 2px !important;
+}
+
+.og-frac-denominator {
+  font-size: 12.5px !important;
+  font-weight: 800 !important;
+  color: #d97706 !important;
+  padding-top: 4px !important;
+  white-space: nowrap !important;
+}
+
+.og-psh-example-box {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  font-size: 12.5px !important;
+  color: #475569 !important;
+  background: #f8fafc !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 8px !important;
+  padding: 8px 12px !important;
+  flex-wrap: wrap !important;
+}
+
+.og-ex-badge {
+  font-weight: 800 !important;
+  color: #334155 !important;
+}
+
+.og-ex-calc {
+  color: #475569 !important;
+}
+
+.og-ex-result {
+  color: #059669 !important;
+  font-weight: 800 !important;
 }
 
 /* Banc de Test / Simulateur Interactif On-Grid */
