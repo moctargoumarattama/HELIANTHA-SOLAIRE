@@ -4,60 +4,9 @@
   const shell = document.getElementById("catalog-tech-shell");
   if (!form || !categorySelect || !shell) return;
 
-  const CATEGORY_FIELDS = {
-    panels: [
-      { key: "power_w", label: "Puissance du panneau", kind: "number", unit: "W", required: true },
-    ],
-    batteries: [
-      { key: "capacity_kwh", label: "Capacité", kind: "number", unit: "kWh", required: true },
-    ],
-    inverters: [
-      { key: "type", label: "Type", kind: "choice", choices: ["on_grid", "off_grid", "hybrid"], required: true },
-      { key: "power_kw", label: "Puissance", kind: "number", unit: "kW", required: true },
-      { key: "phases", label: "Phase", kind: "choice", choices: ["monophase", "triphase"], required: true },
-    ],
-    pumps: [
-      { key: "power_hp", label: "Puissance", kind: "number", unit: "CV", required: true },
-      { key: "power_kw", label: "Puissance", kind: "number", unit: "kW" },
-      { key: "outlet_diameter", label: "Sortie de refoulement", kind: "choice", choices: ['1" 1/4', '1" 1/2', '2"', '2" 1/2', '3"'] },
-      { key: "phases", label: "Phase", kind: "choice", choices: ["monophase", "triphase"] },
-      { key: "voltage_v", label: "Tension", kind: "number", unit: "V" },
-      { key: "current_a", label: "Courant", kind: "number", unit: "A" },
-      {
-        key: "curve_points",
-        label: "Courbe Débit / HMT",
-        kind: "pump_curve",
-        required: true,
-        help: "Une ligne par point, au format débit:HMT.",
-      },
-    ],
-    drives: [
-      { key: "power_kw", label: "Puissance", kind: "number", unit: "kW", required: true },
-      { key: "phases", label: "Phase", kind: "choice", choices: ["monophase", "triphase"], required: true },
-    ],
-    ev_chargers: [
-      { key: "power_kw", label: "Puissance", kind: "number", unit: "kW", required: true },
-      { key: "phases", label: "Phase", kind: "choice", choices: ["monophase", "triphase"] },
-      { key: "connector", label: "Connecteur", kind: "choice", choices: ["Type 1", "Type 2", "CCS", "CHAdeMO"] },
-    ],
-    protections: [
-      { key: "protection_type", label: "Type", kind: "choice", choices: ["Disjoncteur", "Parafoudre", "Fusible", "Sectionneur", "Coffret", "Autre"], required: true },
-      { key: "current_a", label: "Courant", kind: "number", unit: "A" },
-      { key: "dc_or_ac", label: "Courant électrique", kind: "choice", choices: ["dc", "ac"] },
-    ],
-    cables: [
-      { key: "dc_or_ac", label: "Type", kind: "choice", choices: ["dc", "ac"] },
-      { key: "section_mm2", label: "Section", kind: "number", unit: "mm²", required: true },
-    ],
-    structures: [
-      { key: "structure_type", label: "Type de structure", kind: "text", required: true },
-    ],
-    accessories: [],
-    thermal: [
-      { key: "tank_volume_l", label: "Volume du ballon", kind: "number", unit: "L", required: true },
-    ],
-    other: [],
-  };
+  const definitions = document.getElementById("catalog-field-definitions");
+  if (!definitions) return;
+  const CATEGORY_FIELDS = JSON.parse(definitions.textContent);
 
   const CHOICE_LABELS = {
     on_grid: "On-Grid",
@@ -82,7 +31,7 @@
     return escapeHtml(CHOICE_LABELS[value] || value);
   };
 
-  const fieldName = (field) => `spec_${field.key}`;
+  const fieldName = (field) => field.form_name || `spec_${field.key}`;
 
   const fieldMarkup = (field, values = {}) => {
     const rawValue = values[field.key] ?? "";
@@ -106,6 +55,8 @@
           ${field.kind === "number" || field.kind === "integer" || field.kind === "percent" ? `type="number" step="${field.kind === "integer" ? "1" : "any"}"` : ""}
           name="${fieldName(field)}"
           value="${escapeHtml(rawValue)}"
+          ${field.min !== undefined ? `min="${escapeHtml(field.min)}"` : ""}
+          ${field.max !== undefined ? `max="${escapeHtml(field.max)}"` : ""}
           ${required}
           ${field.key === "power_hp" ? 'placeholder="ex. 15"' : ""}
         >`;
@@ -137,8 +88,8 @@
     const values = {};
     if (!container) return values;
     container.querySelectorAll("input, select, textarea").forEach((field) => {
-      if (!field.name || !field.name.startsWith("spec_")) return;
-      const key = field.name.slice(5);
+      if (!field.name || (field.name !== "power_w" && !field.name.startsWith("spec_"))) return;
+      const key = field.name === "power_w" ? "power_w" : field.name.slice(5);
       values[key] = field.value;
     });
     return values;

@@ -87,7 +87,8 @@ CATALOG_CATEGORIES = {
 
 TECHNICAL_FIELDS = {
     "panels": [
-        {"key": "power_w", "label": "Puissance du panneau", "kind": "number", "unit": "W", "required": True},
+        {"key": "power_w", "form_name": "power_w", "label": "Puissance du panneau", "kind": "number", "unit": "W", "required": True,
+         "min": 50, "max": 1500, "help": "Puissance réelle en Watts utilisée par le calculateur de dimensionnement."},
     ],
     "batteries": [
         {"key": "capacity_kwh", "label": "Capacité", "kind": "number", "unit": "kWh", "required": True},
@@ -376,6 +377,25 @@ def normalize_technical_specs(
     return specs
 
 
+def normalize_panel_power(value: Any) -> float:
+    """Accept a numeric rating in W/Wc, never guess another unit."""
+    text = str(value or "").strip()
+    text = re.sub(r"\s*(?:wc|w|watts?(?:[- ]cr[eê]te)?)\s*$", "", text, flags=re.IGNORECASE)
+    power = normalize_number(text, field_label="Puissance du panneau")
+    if power is None or not 50 <= power <= 1500:
+        raise ValueError("La puissance du panneau doit être comprise entre 50 et 1500 W.")
+    return power
+
+
+def _merge_specs(existing: Mapping[str, Any], updates: Mapping[str, Any]) -> dict[str, Any]:
+    merged = dict(existing)
+    for key, value in updates.items():
+        if isinstance(value, Mapping) and isinstance(merged.get(key), Mapping):
+            value = _merge_specs(merged[key], value)
+        merged[key] = value
+    return merged
+
+
 def validate_product(
     product: Mapping[str, Any],
     *,
@@ -383,7 +403,7 @@ def validate_product(
     submitted_fields: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     existing = dict(existing or {})
-    candidate = dict(product)
+    candidate = {**existing, **product}
     errors: dict[str, str] = {}
 
     try:
@@ -398,16 +418,19 @@ def validate_product(
     elif len(reference) > 100:
         errors["reference"] = "La reference ne peut pas depasser 100 caracteres."
 
-    normalized: dict[str, Any] = {"reference": reference, "category": category}
+    # Retain SQL columns not exposed by the editor (description, warranty, etc.).
+    normalized: dict[str, Any] = {**candidate, "reference": reference, "category": category}
     for key in ("brand", "model"):
         normalized[key] = str(candidate.get(key) or "").strip()
     if not normalized["brand"] and category != "pumps":
         errors["brand"] = "La marque est obligatoire."
-    datasheet_url = str(candidate.get("datasheet_url") or existing.get("datasheet_url") or "").strip()
+    datasheet_url = str(candidate.get("datasheet_url") or "").strip()
     normalized["datasheet_url"] = datasheet_url
 
     for key, label in COMMON_NUMERIC_FIELDS.items():
         try:
+            if key == "power_w" and category == "panels":
+                continue  # Resolved below with explicit form/spec precedence.
             normalized[key] = normalize_number(candidate.get(key), field_label=label)
         except ValueError as exc:
             errors[key] = str(exc)
@@ -443,8 +466,44 @@ def validate_product(
     except ValueError as exc:
         errors["priority"] = str(exc)
 
-    raw_specs = candidate.get("technical_specs", existing.get("technical_specs", {}))
     try:
+        raw_specs = _merge_specs(
+            parse_technical_specs(existing.get("technical_specs")),
+            parse_technical_specs(product.get("technical_specs")),
+        )
+        if category == "panels":
+            explicit = submitted_fields if submitted_fields is not None else product
+            power = candidate.get("power_w")
+            if "power_w" in explicit:
+                power = explicit.get("power_w")
+            elif submitted_fields is not None and "spec_power_w" in submitted_fields:
+                power = submitted_fields.get("spec_power_w")
+            elif "power_w" in parse_technical_specs(product.get("technical_specs")) and (
+                submitted_fields is None and "power_w" not in product
+            ):
+                power = raw_specs.get("power_w")
+            elif power is None:
+                power = raw_specs.get("power_w")
+            try:
+                power = normalize_panel_power(power)
+                if submitted_fields is not None and all(key in submitted_fields for key in ("power_w", "spec_power_w")):
+                    if power != normalize_panel_power(submitted_fields.get("spec_power_w")):
+                        raise ValueError("Les puissances soumises sont contradictoires.")
+                # A changed commercial title must not silently keep its old rating.
+                if existing and candidate.get("model") != existing.get("model") and not (
+                    "power_w" in explicit or "spec_power_w" in explicit
+                ):
+                    ratings = re.findall(r"(?<![\w.])([0-9]+(?:[.,][0-9]+)?)\s*(?:wc|w)\b", str(candidate.get("model") or ""), re.IGNORECASE)
+                    if ratings and any(normalize_panel_power(rating) != power for rating in ratings):
+                        raise ValueError("Le titre indique une nouvelle puissance : renseignez explicitement la puissance du panneau.")
+                normalized["power_w"] = power
+                raw_specs["power_w"] = power
+            except ValueError as exc:
+                errors["power_w"] = str(exc)
+            # The resolved numeric value is authoritative; don't reparse a Wc string.
+            submitted_fields = dict(submitted_fields) if submitted_fields is not None else None
+            if submitted_fields is not None:
+                submitted_fields.pop("spec_power_w", None)
         normalized["technical_specs"] = normalize_technical_specs(
             category,
             raw_specs,
@@ -493,6 +552,26 @@ def validate_product(
     elif category == "thermal":
         if normalized.get("capacity_l") is None and specs.get("tank_volume_l") is not None:
             normalized["capacity_l"] = specs["tank_volume_l"]
+
+    # Explicit edits to a technical field must refresh its SQL counterpart too.
+    spec_columns = {
+        "batteries": {"capacity_kwh": "capacity_kwh", "nominal_voltage_v": "voltage"},
+        "inverters": {"power_kw": "power_kw", "nominal_battery_voltage_v": "voltage"},
+        "pumps": {"power_kw": "power_kw", "voltage_v": "voltage", "current_a": "current_amp"},
+        "drives": {"power_kw": "power_kw", "output_voltage_v": "voltage"},
+        "ev_chargers": {"power_kw": "power_kw", "nominal_voltage_v": "voltage", "max_current_a": "current_amp"},
+        "thermal": {"tank_volume_l": "capacity_l"},
+    }
+    for spec_key, column in spec_columns.get(category, {}).items():
+        if submitted_fields is not None and f"spec_{spec_key}" in submitted_fields:
+            normalized[column] = specs.get(spec_key)
+    if category == "pumps" and submitted_fields is not None and (
+        "spec_power_hp" in submitted_fields or "spec_power_kw" in submitted_fields
+    ) and specs.get("power_kw") is None:
+        normalized["power_kw"] = round(float(specs["power_hp"]) * 0.7355, 3) if specs.get("power_hp") is not None else None
+
+    if normalized.get("active") and not errors.get("sale_price") and not (normalized.get("sale_price") or 0) > 0:
+        errors["sale_price"] = "Un produit actif doit avoir un prix supérieur à 0 DH. Renseignez son prix ou désactivez-le."
 
     if errors:
         raise ProductValidationError(errors)

@@ -1474,7 +1474,6 @@ def get_product(product_id):
 
 
 def save_product(product, product_id=None, submitted_fields=None):
-    invalidate_calculation_context()
     db = get_db()
     ensure_schema(db)
     existing = get_product(product_id) if product_id else None
@@ -1526,49 +1525,55 @@ def save_product(product, product_id=None, submitted_fields=None):
         utc_now(),
     )
     try:
-        saved_product_id = product_id
-        if product_id:
-            db.execute(
-                """UPDATE products SET reference=?, category=?, subcategory=?, brand=?, model=?,
-                description=?, power_kw=?, power_w=?, voltage=?, current_amp=?, capacity_kwh=?,
-                capacity_l=?, efficiency=?, technology=?, technical_specs_json=?, purchase_price=?,
-                sale_price=?, supplier=?, stock=?, unit=?, warranty=?, vat_rate=?, currency=?,
-                datasheet_url=?, demo=?, preferred=?, priority=?, active=?, updated_at=?
-                WHERE id=?""",
-                values + (product_id,),
-            )
-        else:
-            cursor = db.execute(
-                """INSERT INTO products
-                (reference, category, subcategory, brand, model, description, power_kw, power_w,
-                 voltage, current_amp, capacity_kwh, capacity_l, efficiency, technology,
-                 technical_specs_json, purchase_price, sale_price, supplier, stock, unit, warranty,
-                 vat_rate, currency, datasheet_url, demo, preferred, priority, active, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                values,
-            )
-            saved_product_id = cursor.lastrowid
+        with db:
+            saved_product_id = product_id
+            if product_id:
+                db.execute(
+                    """UPDATE products SET reference=?, category=?, subcategory=?, brand=?, model=?,
+                    description=?, power_kw=?, power_w=?, voltage=?, current_amp=?, capacity_kwh=?,
+                    capacity_l=?, efficiency=?, technology=?, technical_specs_json=?, purchase_price=?,
+                    sale_price=?, supplier=?, stock=?, unit=?, warranty=?, vat_rate=?, currency=?,
+                    datasheet_url=?, demo=?, preferred=?, priority=?, active=?, updated_at=?
+                    WHERE id=?""",
+                    values + (product_id,),
+                )
+            else:
+                cursor = db.execute(
+                    """INSERT INTO products
+                    (reference, category, subcategory, brand, model, description, power_kw, power_w,
+                     voltage, current_amp, capacity_kwh, capacity_l, efficiency, technology,
+                     technical_specs_json, purchase_price, sale_price, supplier, stock, unit, warranty,
+                     vat_rate, currency, datasheet_url, demo, preferred, priority, active, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    values,
+                )
+                saved_product_id = cursor.lastrowid
+            if curve_was_submitted and saved_product_id:
+                db.execute("DELETE FROM pump_curve_points WHERE pump_id = ?", (saved_product_id,))
+                db.executemany(
+                    """INSERT INTO pump_curve_points (pump_id, flow_m3_h, hmt_m)
+                    VALUES (?, ?, ?)""",
+                    [
+                        (saved_product_id, point["flow_m3_h"], point["hmt_m"])
+                        for point in curve_points
+                    ],
+                )
     except sqlite3.IntegrityError as exc:
         raise ProductValidationError({"reference": "Cette reference existe deja dans le catalogue."}) from exc
-    if curve_was_submitted and saved_product_id:
-        db.execute("DELETE FROM pump_curve_points WHERE pump_id = ?", (saved_product_id,))
-        db.executemany(
-            """INSERT INTO pump_curve_points (pump_id, flow_m3_h, hmt_m)
-            VALUES (?, ?, ?)""",
-            [
-                (saved_product_id, point["flow_m3_h"], point["hmt_m"])
-                for point in curve_points
-            ],
-        )
-    db.commit()
+    invalidate_calculation_context()
     return saved_product_id
 
 
 def set_product_active(product_id, active):
     db = get_db()
     ensure_schema(db)
+    if active:
+        product = get_product(product_id)
+        if product:
+            validate_product({"active": 1}, existing=product)
     db.execute("UPDATE products SET active = ?, updated_at = ? WHERE id = ?", (1 if active else 0, utc_now(), product_id))
     db.commit()
+    invalidate_calculation_context()
 
 
 def list_calculation_parameters(admin_visible_only=False):

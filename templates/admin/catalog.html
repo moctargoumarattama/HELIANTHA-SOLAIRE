@@ -2,6 +2,9 @@
 {% block title %}Catalogue - HeliAntha Admin{% endblock %}
 {% block page_title %}Catalogue{% endblock %}
 {% block content %}
+{% for message in get_flashed_messages(category_filter=['error']) %}
+<div class="admin-alert">{{ message }}</div>
+{% endfor %}
 <section class="learning-panel">
   <h2>Catalogue produits</h2>
   <p>Recherchez, filtrez et modifiez les equipements utilises par HeliAntha Smart Quote.</p>

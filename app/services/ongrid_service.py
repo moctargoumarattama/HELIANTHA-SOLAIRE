@@ -123,13 +123,19 @@ def _product_phase(product: dict[str, Any]) -> str:
 
 
 def select_panel(products: list[dict[str, Any]], power_w: int) -> dict[str, Any]:
-    candidates = [
+    available = [
         deepcopy(product)
         for product in products
         if product.get("category") == "panels"
         and int(product.get("active", 1) or 0) == 1
-        and int(float(product.get("power_w") or (product.get("technical_specs") or {}).get("power_w") or 0)) == int(power_w)
+        and Decimal("50") <= _decimal(product.get("power_w") or (product.get("technical_specs") or {}).get("power_w")) <= Decimal("1500")
+        and _decimal(product.get("sale_price")) > 0
     ]
+    # A preset identifies a catalogue SKU. Its editable rating is not its identity.
+    candidates = [item for item in available if (
+        item.get("reference") == f"ONGRID-PV-{power_w}"
+        or _decimal(item.get("power_w") or (item.get("technical_specs") or {}).get("power_w")) == power_w
+    )]
     if not candidates:
         raise ValueError(f"Aucun panneau actif {power_w} W n'est disponible au catalogue.")
     candidates.sort(key=lambda item: (
@@ -286,13 +292,13 @@ def calculate_ongrid(data: dict[str, Any], context: dict[str, Any] | None) -> di
 
     daily = monthly / Decimal("30")
     target_kw = daily / psh
-    panel_power_w = choose_panel_power(phase, target_kw)
+    panel = select_panel(products, choose_panel_power(phase, target_kw))
+    panel_power_w = _decimal(panel.get("power_w") or (panel.get("technical_specs") or {}).get("power_w"))
     raw_panels = (monthly * Decimal("1000")) / (Decimal("30") * Decimal(panel_power_w) * psh)
     strings = balance_strings(raw_panels, phase)
     panel_count = Decimal(strings["panel_count"])
     dc_kw = (panel_count * Decimal(panel_power_w)) / Decimal("1000")
 
-    panel = select_panel(products, panel_power_w)
     inverter = select_inverter(products, phase, dc_kw, meter_type)
     structure = select_structure(products)
     inverter_brand = str(inverter.get("brand") or "").strip()
@@ -332,7 +338,7 @@ def calculate_ongrid(data: dict[str, Any], context: dict[str, Any] | None) -> di
             "daily_consumption_kwh": float(daily.quantize(Decimal("0.01"), rounding=ROUND_HALF_EVEN)),
             "psh_hours": float(psh),
             "target_kwp": float(target_kw.quantize(Decimal("0.01"), rounding=ROUND_HALF_EVEN)),
-            "panel_power_w": panel_power_w,
+            "panel_power_w": float(panel_power_w),
             "raw_panel_count": float(raw_panels.quantize(Decimal("0.01"), rounding=ROUND_HALF_EVEN)),
             "panel_count": int(panel_count),
             "string_count": strings["string_count"],

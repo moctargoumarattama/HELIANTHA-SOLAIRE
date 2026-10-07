@@ -1399,6 +1399,7 @@ def admin_catalog_new():
             save_product(product, submitted_fields=request.form)
         except ProductValidationError as exc:
             errors = exc.errors
+            flash("La fiche produit n'a pas été enregistrée. Corrigez les champs signalés.", "error")
         else:
             return redirect(url_for("main.admin_catalog", saved=product.get("reference")))
     return render_template(
@@ -1422,6 +1423,7 @@ def admin_catalog_edit(product_id):
             save_product(product, product_id=product_id, submitted_fields=request.form)
         except ProductValidationError as exc:
             errors = exc.errors
+            flash("La fiche produit n'a pas été enregistrée. Corrigez les champs signalés.", "error")
         else:
             return redirect(url_for("main.admin_catalog", saved=product.get("reference")))
     return render_template(
@@ -1438,7 +1440,11 @@ def admin_catalog_toggle(product_id):
     product = get_product(product_id)
     if not product:
         abort(404)
-    set_product_active(product_id, not bool(product.get("active")))
+    try:
+        set_product_active(product_id, not bool(product.get("active")))
+    except ProductValidationError as exc:
+        for message in exc.errors.values():
+            flash(message, "error")
     return redirect(url_for("main.admin_catalog"))
 
 
@@ -1809,33 +1815,24 @@ def _product_from_form(form, existing_product=None):
     product = _catalog_form_defaults()
     if existing_product:
         product.update(dict(existing_product))
-    product.update({
-        "reference": form.get("reference", "").strip(),
-        "category": form.get("category", "").strip(),
-        "brand": form.get("brand", "").strip(),
-        "model": form.get("model", "").strip(),
-        "sale_price": form.get("sale_price", "").strip(),
-        "stock": (
-            (existing_product or {}).get("stock", 0)
-            if form.get("category", "").strip() == "pumps"
-            else form.get("stock", "").strip()
-        ),
-        "vat_rate": form.get("vat_rate", "").strip(),
-        "currency": form.get("currency", "DH").strip(),
-        "active": 1 if form.get("active") == "on" else 0,
-    })
-    technical_specs = {}
-    for fields in technical_fields_by_category().values():
-        for field in fields:
-            form_key = f"spec_{field['key']}"
-            if form_key not in form:
-                continue
-            raw_value = form.get(form_key, "")
-            if raw_value in (None, ""):
-                technical_specs.pop(field["key"], None)
-            else:
-                technical_specs[field["key"]] = raw_value
-    product["technical_specs"] = technical_specs
+    # Absent fields are not edits. Technical JSON is merged/validated by save_product.
+    for key in ("reference", "category", "brand", "model", "sale_price", "vat_rate", "currency", "power_w"):
+        if key in form:
+            product[key] = form.get(key, "").strip()
+    if "power_w" not in form and "spec_power_w" in form:
+        product["power_w"] = form.get("spec_power_w", "").strip()
+    if "stock" in form and product.get("category") != "pumps":
+        product["stock"] = form.get("stock", "").strip()
+    if "active" in form:
+        product["active"] = form.get("active")
+    elif "active_submitted" in form or not existing_product:
+        product["active"] = 0
+    specs = dict(product.get("technical_specs") or {})
+    for field in technical_fields_by_category().get(product.get("category"), []):
+        key = f"spec_{field['key']}"
+        if key in form:
+            specs[field["key"]] = form.get(key, "")
+    product["technical_specs"] = specs
     return product
 
 
@@ -1843,7 +1840,7 @@ def _catalog_form_view_product(product: dict | None) -> dict:
     view = dict(product or {})
     specs = dict(view.get("technical_specs") or {})
     for key in ("power_w", "power_kw", "capacity_kwh", "capacity_l", "voltage", "current_amp"):
-        if view.get(key) not in (None, "") and key not in specs:
+        if view.get(key) not in (None, "") and (key == "power_w" or key not in specs):
             specs[key] = view.get(key)
     if view.get("category") == "pumps" and "power_hp" not in specs:
         power_kw = view.get("power_kw")
