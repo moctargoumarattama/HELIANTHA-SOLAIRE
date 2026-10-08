@@ -12,8 +12,10 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <link rel="icon" href="{{ url_for('main.brand_image') }}" type="image/jpeg">
   <link rel="apple-touch-icon" href="{{ url_for('main.brand_image') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}?v=20261007-no-stock">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}?v=20261007-responsive">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/admin_ajax.css') }}?v=20261007-toasts">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/admin_responsive.css') }}?v=20261007-responsive">
+  {% block page_styles %}{% endblock %}
 </head>
 <body class="admin-app">
   <div class="admin-backdrop" id="admin-backdrop" aria-hidden="true"></div>
@@ -63,6 +65,12 @@
         <span class="admin-nav-icon" aria-hidden="true">🔧</span>
         <span>Paramètres</span>
       </a>
+      {% if maintenance_available|default(false) %}
+      <a class="admin-nav-link{% if request.endpoint and request.endpoint.startswith('maintenance.') %} active{% endif %}" href="{{ url_for('maintenance.page') }}">
+        <span class="admin-nav-icon" aria-hidden="true">🛠</span>
+        <span>Maintenance</span>
+      </a>
+      {% endif %}
     </nav>
 
     <div class="admin-sidebar-footer">
@@ -143,7 +151,7 @@
   </dialog>
 
   <div id="admin-toast-container" aria-live="polite"></div>
-  <script src="{{ url_for('static', filename='js/admin_ajax.js') }}?v=20261007-toasts"></script>
+  <script src="{{ url_for('static', filename='js/admin_ajax.js') }}?v=20261008-maintenance"></script>
   <script>
     (() => {
       const toggle = document.getElementById("admin-menu-toggle");

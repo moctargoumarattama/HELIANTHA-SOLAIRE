@@ -72,6 +72,17 @@ from .tax import VAT_FIELDS, TaxValidationError, get_vat_rates, parse_vat_percen
 
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS maintenance_state (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS maintenance_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    action TEXT NOT NULL,
+    message TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS quote_requests (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     quote_number TEXT NOT NULL UNIQUE,

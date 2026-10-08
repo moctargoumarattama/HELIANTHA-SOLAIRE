@@ -220,6 +220,7 @@
 
       const onConfirm = () => { cleanup(); resolve(true); dialog.close(); };
       const onCancel = () => { cleanup(); resolve(false); dialog.close(); };
+      const onDismiss = () => { cleanup(); resolve(false); };
       const onBackdrop = (e) => {
         const rect = dialog.getBoundingClientRect();
         const isIn = rect.top <= e.clientY && e.clientY <= rect.top + rect.height &&
@@ -231,11 +232,15 @@
         okBtn?.removeEventListener("click", onConfirm);
         cancelBtn?.removeEventListener("click", onCancel);
         dialog.removeEventListener("click", onBackdrop);
+        dialog.removeEventListener("cancel", onDismiss);
+        dialog.removeEventListener("close", onDismiss);
       }
 
       okBtn?.addEventListener("click", onConfirm);
       cancelBtn?.addEventListener("click", onCancel);
       dialog.addEventListener("click", onBackdrop);
+      dialog.addEventListener("cancel", onDismiss);
+      dialog.addEventListener("close", onDismiss);
 
       dialog.showModal();
     });

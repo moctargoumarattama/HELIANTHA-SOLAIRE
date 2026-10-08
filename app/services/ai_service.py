@@ -17,6 +17,10 @@ import requests
 from flask import current_app, has_app_context
 
 
+from time import perf_counter
+from .maintenance_service import record_ai_observation
+
+
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "heliantha-ai")
 ASSISTANT_FALLBACK_MESSAGE = (
@@ -1853,6 +1857,7 @@ def offline_fallback_response(
 def chat_with_ollama(
     messages: list[dict[str, str]], products: list[dict[str, Any]] | None = None
 ) -> dict[str, str]:
+    started = perf_counter()
     products = find_catalog_products(messages) if products is None else products
     payload = {
         "model": OLLAMA_MODEL,
@@ -1866,16 +1871,20 @@ def chat_with_ollama(
         response.raise_for_status()
         data = response.json()
     except (requests.RequestException, ValueError):
+        record_ai_observation(False, started)
         return offline_fallback_response(messages, products)
 
     message = data.get("message") if isinstance(data, dict) else None
     content = str((message or {}).get("content") or "").strip()
     if not content:
+        record_ai_observation(False, started)
         return offline_fallback_response(messages, products)
+    record_ai_observation(True, started)
     return {"role": "assistant", "content": _guard_technical_content(messages, content, products)}
 
 
 def stream_ollama_chat(messages: list[dict[str, str]], products: list[dict[str, Any]] | None = None):
+    started = perf_counter()
     products = find_catalog_products(messages) if products is None else products
     payload = {
         "model": OLLAMA_MODEL,
@@ -1885,6 +1894,7 @@ def stream_ollama_chat(messages: list[dict[str, str]], products: list[dict[str, 
         "options": OLLAMA_OPTIONS,
     }
     pending = ""
+    received_content = False
     quote_started = False
     canonical_catalog = is_catalog_query(messages) and (
         not products or _COMMERCIAL_RE.search(_normalize_text(_latest_user_content(messages)))
@@ -1902,6 +1912,7 @@ def stream_ollama_chat(messages: list[dict[str, str]], products: list[dict[str, 
                 message = data.get("message") if isinstance(data, dict) else None
                 content = str((message or {}).get("content") or "")
                 if content:
+                    received_content = True
                     pending += content
                     # Commercial facts are rendered once, rather than repeated per sentence.
                     if canonical_catalog:
@@ -1921,11 +1932,13 @@ def stream_ollama_chat(messages: list[dict[str, str]], products: list[dict[str, 
                         end = boundaries[-1].end()
                         yield _guard_technical_content(messages, pending[:end], products)
                         pending = pending[end:]
+            record_ai_observation(received_content, started)
             if pending:
                 yield _guard_technical_content(messages, pending, products)
             elif not quote_started:
                 offline = offline_fallback_response(messages, products)
                 yield offline.get("content", ASSISTANT_FALLBACK_MESSAGE)
     except (requests.RequestException, ValueError):
+        record_ai_observation(False, started)
         offline = offline_fallback_response(messages, products)
         yield offline.get("content", ASSISTANT_FALLBACK_MESSAGE)

@@ -1,0 +1,60 @@
+{% extends "admin/base.html" %}
+{% block title %}Maintenance - HELIANTHA Admin{% endblock %}
+{% block page_title %}Maintenance{% endblock %}
+{% block page_styles %}<link rel="stylesheet" href="{{ url_for('static', filename='css/admin_maintenance.css') }}?v=20261008-deployment">{% endblock %}
+{% block content %}
+<section class="mt-workspace" id="maintenance-workspace"
+  data-snapshot-url="{{ url_for('maintenance.snapshot') }}"
+  data-temporary-url="{{ url_for('maintenance.temporary_files') }}"
+  data-can-manage="{{ 'true' if can_manage else 'false' }}">
+  <header class="mt-heading">
+    <div><h2>État du système</h2><p id="mt-server">Serveur : …</p></div>
+    <button type="button" class="ghost-button" id="mt-refresh">Actualiser</button>
+  </header>
+  <div class="mt-stats" aria-live="polite">
+    <article><span class="mt-dot" aria-hidden="true"></span><small>Services disponibles</small><strong id="mt-count-services">— / 5</strong><span id="mt-services-time">Pas encore vérifiés</span></article>
+    <article><span class="mt-dot amber" aria-hidden="true"></span><small>Points à vérifier</small><strong id="mt-count-issues">—</strong><span id="mt-integrity-time">Analyse non effectuée</span></article>
+    <article><span class="mt-dot blue" aria-hidden="true"></span><small>Dernière réponse IA</small><strong id="mt-ai-latency">—</strong><span id="mt-ai-time">Aucune mesure disponible</span></article>
+    <article><span class="mt-dot" id="mt-mode-dot" aria-hidden="true"></span><small>API publiques Flask</small><strong id="mt-mode-label">—</strong><span id="mt-mode-time">Lecture de l’état…</span></article>
+  </div>
+  <div class="mt-sections">
+    {% for key, icon, title, description in [
+      ('services', '◉', 'État général', 'Connexions et disponibilité.'),
+      ('ai', '✦', 'Assistant IA', 'Modèle, réponse et incidents.'),
+      ('integrity', '✓', 'Catalogue & devis', 'Prix, puissances et totaux.'),
+      ('operations', '⚙', 'Actions techniques', 'Cache, nettoyage et maintenance.')
+    ] %}
+    <button class="mt-section" type="button" data-open-maintenance="{{ key }}" aria-haspopup="dialog" aria-controls="mt-dialog-{{ key }}">
+      <span class="mt-section-icon {{ key }}" aria-hidden="true">{{ icon }}</span>
+      <span class="mt-section-copy"><strong>{{ title }}</strong><span>{{ description }}</span></span>
+      <span class="mt-section-arrow" aria-hidden="true">↗</span>
+    </button>
+    {% endfor %}
+  </div>
+  <p class="mt-footnote" id="mt-feedback" role="status"></p>
+</section>
+
+{% for key, title, subtitle, action_label in [
+  ('services', 'État général', 'Contrôle depuis ce serveur.', 'Vérifier les connexions'),
+  ('ai', 'Assistant IA', 'Test de disponibilité du modèle.', 'Tester une réponse'),
+  ('integrity', 'Catalogue & devis', 'Analyse en lecture seule.', 'Lancer l’analyse'),
+  ('operations', 'Actions techniques', 'Actions journalisées.', '')
+] %}
+<dialog class="mt-dialog" id="mt-dialog-{{ key }}" aria-labelledby="mt-title-{{ key }}">
+  <header class="mt-dialog-head"><div><span class="mt-eyebrow">Maintenance</span><h2 id="mt-title-{{ key }}">{{ title }}</h2><p>{{ subtitle }}</p></div><button type="button" class="mt-close" data-close-maintenance aria-label="Fermer {{ title }}">×</button></header>
+  <div class="mt-dialog-body">
+    {% if key == 'operations' %}
+    {% if not can_manage %}<p class="mt-notice">Actions réservées à la Direction.</p>{% endif %}
+    <article class="mt-operation"><div><h3>Cache de calcul</h3><p>Recharger les données de calcul.</p></div><button type="button" class="ghost-button" data-maintenance-action="cache" data-url="{{ url_for('maintenance.action', action='cache') }}" {% if not can_manage %}disabled{% endif %}>Vider ce cache</button></article>
+    <article class="mt-operation"><div><h3>Fichiers temporaires</h3><p>Temporaires de plus de 24 h. Documents conservés.</p><small id="mt-temporary-count">Inventaire…</small></div><button type="button" class="ghost-button" data-maintenance-action="cleanup" data-url="{{ url_for('maintenance.action', action='cleanup') }}" {% if not can_manage %}disabled{% endif %}>Nettoyer</button></article>
+    <article class="mt-operation mt-operation-mode"><div><h3>Mode maintenance</h3><p>Pause des API Flask. Admin et API mobile indépendante disponibles.</p><small id="mt-mode-detail">—</small></div><button type="button" class="admin-button" id="mt-mode-button" data-maintenance-action="mode" data-url="{{ url_for('maintenance.action', action='mode') }}" aria-pressed="false" {% if not can_manage %}disabled{% endif %}>Activer la maintenance</button></article>
+    <h3 class="mt-journal-title">Dernières interventions</h3><div id="mt-operation-history" class="mt-results"></div>
+    {% else %}
+    <div id="mt-results-{{ key }}" class="mt-results"><p class="mt-empty">Chargement de l’état…</p></div>
+    {% endif %}
+  </div>
+  <footer class="mt-dialog-footer"><span data-dialog-feedback role="status"></span><button type="button" class="ghost-button" data-close-maintenance>Fermer</button>{% if action_label %}<button type="button" class="admin-button" data-maintenance-check="{{ key }}" data-url="{{ url_for('maintenance.check', kind=key) }}">{{ action_label }}</button>{% endif %}</footer>
+</dialog>
+{% endfor %}
+{% endblock %}
+{% block page_scripts %}<script src="{{ url_for('static', filename='js/admin_maintenance.js') }}?v=20261008-deployment"></script>{% endblock %}

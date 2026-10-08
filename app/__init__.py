@@ -42,6 +42,7 @@ def create_app(test_config=None):
         WTF_CSRF_ENABLED=True,
         WTF_CSRF_CHECK_DEFAULT=False,
         JSON_SORT_KEYS=False,
+        MOBILE_API_BASE_URL=os.environ.get("MOBILE_API_BASE_URL", "").strip() or "http://127.0.0.1:8011",
         DATABASE=os.path.join(app.instance_path, "heliantha.db"),
         ADMIN_PASSWORD=os.environ.get("HELIANTHA_ADMIN_PASSWORD", "heliantha2026"),
         TRUSTED_PROXY_HOPS=int(os.environ.get("TRUSTED_PROXY_HOPS", "0")),
@@ -101,6 +102,8 @@ def create_app(test_config=None):
     from .db import close_db, init_db
 
     app.register_blueprint(bp)
+    from .admin_maintenance import init_app as init_maintenance
+    init_maintenance(app)
     app.teardown_appcontext(close_db)
     os.makedirs(app.instance_path, exist_ok=True)
     with app.app_context():
