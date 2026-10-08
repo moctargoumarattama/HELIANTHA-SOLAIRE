@@ -9,6 +9,27 @@ from .services import maintenance_service as maintenance
 
 
 bp = Blueprint("maintenance", __name__, url_prefix="/admin/maintenance")
+public_bp = Blueprint("maintenance_public", __name__)
+
+
+def public_status():
+    mode = maintenance.read_state("mode", {})
+    # A client account / forged role header must never bypass maintenance.
+    username = session.get("admin_user")
+    admin = bool(username and get_db().execute(
+        "SELECT 1 FROM users WHERE username=? AND active=1", (username,)
+    ).fetchone())
+    enabled = mode.get("enabled") is True
+    return {"maintenance": enabled and not admin,
+            "message": "Nous améliorons votre expérience solaire. Nous serons bientôt de retour."}
+
+
+@public_bp.get("/api/maintenance/status")
+def status():
+    response = jsonify(public_status())
+    response.headers["Cache-Control"] = "private, no-store, max-age=0"
+    response.vary.add("Cookie")
+    return response
 
 
 @bp.app_context_processor
@@ -31,12 +52,17 @@ def no_cache(response):
 
 @bp.before_app_request
 def public_maintenance_gate():
-    if not request.path.startswith("/api/"):
+    if (request.method == "OPTIONS" or request.path == "/health"
+            or request.path == "/admin" or request.path.startswith("/admin/")
+            or request.endpoint in {"static", "main.brand_image", "maintenance_public.status"}):
         return None
-    mode = maintenance.read_state("mode", {})
-    if mode.get("enabled") is True:
-        response = jsonify(error="Le service est en maintenance. Merci de réessayer dans quelques instants.",
-                           error_code="maintenance", maintenance=True)
+    state = public_status()
+    if state["maintenance"]:
+        if request.path.startswith("/api/") or request.accept_mimetypes.best == "application/json":
+            response = jsonify(**state, error="Le service est en maintenance. Merci de réessayer dans quelques instants.",
+                               error_code="maintenance")
+        else:
+            response = current_app.make_response(render_template("maintenance.html"))
         response.status_code = 503
         response.headers["Retry-After"] = "60"
         response.headers["Cache-Control"] = "no-store"
@@ -108,7 +134,7 @@ def action(action):
             result = maintenance.clean_temporary_files()
             message = f"{result['removed']} fichier(s) temporaire(s) nettoyé(s), {result['skipped']} ignoré(s)."
         else:
-            message = "Mode maintenance activé." if payload["enabled"] else "API publiques Flask remises en service."
+            message = "Maintenance activée pour le site et l’application." if payload["enabled"] else "Site et application remis en service."
         with get_db():
             if action == "mode":
                 maintenance.write_state("mode", {"enabled": payload["enabled"], "updated_at": maintenance.now(), "actor": actor})
@@ -123,3 +149,4 @@ def action(action):
 def init_app(app):
     app.extensions["maintenance_lock"] = threading.Lock()
     app.register_blueprint(bp)
+    app.register_blueprint(public_bp)

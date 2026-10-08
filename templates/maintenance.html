@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex"><title>À bientôt — HeliAntha</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;min-height:100svh;display:grid;place-items:center;padding:24px;background:radial-gradient(ellipse at top right,#214966,#0b2239 65%);color:#fff;font:16px/1.65 system-ui,sans-serif}
+    main{max-width:520px;text-align:center;padding:clamp(24px,6vw,48px);border:1px solid #ffffff26;border-radius:28px;background:#ffffff09;box-shadow:0 24px 80px #0003}
+    .sun{display:grid;place-items:center;width:88px;height:88px;margin:0 auto 24px;border-radius:28px;background:#f4c33d18;color:#f4c33d;font-size:56px;line-height:1}
+    .brand{letter-spacing:3px;font-size:13px;font-weight:700}.badge{display:inline-block;margin:24px 0 4px;padding:4px 14px;border:1px solid #f4c33d50;border-radius:24px;color:#f4c33d;font-size:13px}
+    h1{font-size:clamp(24px,6vw,34px);line-height:1.2;letter-spacing:-.8px}p{color:#c4d5e2}a{display:block;text-decoration:none;border-radius:14px;padding:12px;color:#0b2239;background:#f4c33d;font-weight:700;margin-top:24px}small{display:block;color:#a9bdcc;margin-top:20px}
+  </style>
+</head>
+<body><main data-status-url="{{ url_for('maintenance_public.status') }}">
+  <div class="sun" aria-hidden="true">☀</div><div class="brand">HELIANTHA</div>
+  <span class="badge">Maintenance en cours</span>
+  <h1>Une pause pour mieux vous accompagner</h1>
+  <p>Nous améliorons votre expérience solaire.<br>Nous serons bientôt de retour.</p>
+  <a href="https://wa.me/212661575128" rel="noopener" target="_blank">Contacter un conseiller</a>
+  <small>Cette page se réouvrira automatiquement.</small>
+</main>
+<script>
+(() => {
+  const statusUrl = document.querySelector('main[data-status-url]').dataset.statusUrl;
+  let timer, pending = false;
+  async function check() {
+    clearTimeout(timer);
+    if (pending || document.hidden) return;
+    pending = true;
+    try {
+      const response = await fetch(statusUrl, {cache:'no-store', headers:{Accept:'application/json'}});
+      if (response.ok && (await response.json()).maintenance === false) { location.reload(); return; }
+    } catch (_) {} finally { pending = false; if (!document.hidden) timer = setTimeout(check, 2000); }
+  }
+  document.addEventListener('visibilitychange', () => { clearTimeout(timer); if (!document.hidden) void check(); });
+  void check();
+})();
+</script></body></html>

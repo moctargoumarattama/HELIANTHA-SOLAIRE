@@ -149,7 +149,7 @@
     const messages = {
       cache: 'Recharger les données du catalogue et des barèmes lors des prochains calculs ?',
       cleanup: 'Supprimer les fichiers temporaires éligibles de plus de 24 heures ? Les documents et sauvegardes sont conservés.',
-      mode: enabled ? 'Suspendre les API publiques Flask, notamment les devis et l’assistant ? L’administration restera accessible.' : 'Remettre les API publiques Flask en service ?',
+      mode: enabled ? 'Mettre le site et l’application en maintenance pour les clients ? Les administrateurs garderont leur accès.' : 'Rouvrir le site et l’application aux clients ?',
     };
     const confirmed = await window.confirmAdminAction({title: 'Confirmer l’intervention', message: messages[action], confirmText: 'Confirmer', danger: action === 'cleanup' || (action === 'mode' && enabled)});
     if (!confirmed) return;

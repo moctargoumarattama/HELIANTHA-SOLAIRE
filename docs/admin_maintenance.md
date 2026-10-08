@@ -29,11 +29,24 @@ reste une décision explicite enregistrée en base.
   `.tmp`, `.part` et `.temp`, âgés de plus de 24 heures. Pas de parcours récursif,
   de liens suivis, de suppression de PDF, de bases ou de sauvegardes.
   Les PDF de devis actuellement générés en mémoire ne produisent pas de fichiers à nettoyer.
-- Le mode maintenance renvoie HTTP 503 avec `Retry-After: 60` pour les routes
-  publiques `/api/*` de Flask. L’administration, les ressources statiques et `/health`
-  restent accessibles. La passerelle WhatsApp et l’API mobile indépendante continuent
-  à fonctionner ; leurs points de santé ne constituent pas un contrôle de tous leurs parcours.
-  Ce mode n’est jamais activé par le déploiement : il faut le confirmer dans l’interface.
+- Le mode maintenance protège les pages publiques et API Flask avec HTTP 503.
+  Les navigateurs reçoivent une page dédiée ; les API reçoivent `maintenance: true`.
+  L’administration, ses ressources et `/health` restent disponibles. Une session
+  administrateur signée correspondant à un compte actif permet de tester le site.
+  Le statut public `/api/maintenance/status` reste accessible, sans cache, sans
+  exposer l’auteur de l’action ni les diagnostics internes.
+- L’API mobile lit ce même statut avant chaque requête métier, via
+  `FLASK_INTERNAL_URL` dans son propre environnement. Elle refuse l’opération avant
+  tout appel PrestaShop si la maintenance est active ou si le statut est inconnu.
+  Ses webhooks signés de notification et sa santé restent disponibles.
+- Flutter surveille `/v1/maintenance/status` par requête longue (25 s maximum).
+  Le serveur renvoie un changement dès sa détection, normalement sous une seconde
+  plus le temps réseau. Les vérifications anonymes sont mutualisées par worker.
+  Pas de rechargement : écran dédié, WhatsApp, retour automatique, panier et
+  formulaires conservés. Surveillance suspendue en arrière-plan, contrôle au retour.
+- Les services Flask, FastAPI et le build Flutter doivent tous être déployés pour
+  ce comportement. PrestaShop n’est pas mis en maintenance et n’est pas modifié.
+  Le mode ne s’active jamais automatiquement au déploiement.
 - Les actions sont réservées aux comptes actifs `Direction`, protégées par CSRF,
   confirmées dans l’interface et journalisées avec l’auteur et la date.
 

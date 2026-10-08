@@ -1,7 +1,7 @@
 {% extends "admin/base.html" %}
 {% block title %}Maintenance - HELIANTHA Admin{% endblock %}
 {% block page_title %}Maintenance{% endblock %}
-{% block page_styles %}<link rel="stylesheet" href="{{ url_for('static', filename='css/admin_maintenance.css') }}?v=20261008-deployment">{% endblock %}
+{% block page_styles %}<link rel="stylesheet" href="{{ url_for('static', filename='css/admin_maintenance.css') }}?v=20261008-global">{% endblock %}
 {% block content %}
 <section class="mt-workspace" id="maintenance-workspace"
   data-snapshot-url="{{ url_for('maintenance.snapshot') }}"
@@ -15,7 +15,7 @@
     <article><span class="mt-dot" aria-hidden="true"></span><small>Services disponibles</small><strong id="mt-count-services">— / 5</strong><span id="mt-services-time">Pas encore vérifiés</span></article>
     <article><span class="mt-dot amber" aria-hidden="true"></span><small>Points à vérifier</small><strong id="mt-count-issues">—</strong><span id="mt-integrity-time">Analyse non effectuée</span></article>
     <article><span class="mt-dot blue" aria-hidden="true"></span><small>Dernière réponse IA</small><strong id="mt-ai-latency">—</strong><span id="mt-ai-time">Aucune mesure disponible</span></article>
-    <article><span class="mt-dot" id="mt-mode-dot" aria-hidden="true"></span><small>API publiques Flask</small><strong id="mt-mode-label">—</strong><span id="mt-mode-time">Lecture de l’état…</span></article>
+    <article><span class="mt-dot" id="mt-mode-dot" aria-hidden="true"></span><small>Site & application</small><strong id="mt-mode-label">—</strong><span id="mt-mode-time">Lecture de l’état…</span></article>
   </div>
   <div class="mt-sections">
     {% for key, icon, title, description in [
@@ -47,7 +47,7 @@
     {% if not can_manage %}<p class="mt-notice">Actions réservées à la Direction.</p>{% endif %}
     <article class="mt-operation"><div><h3>Cache de calcul</h3><p>Recharger les données de calcul.</p></div><button type="button" class="ghost-button" data-maintenance-action="cache" data-url="{{ url_for('maintenance.action', action='cache') }}" {% if not can_manage %}disabled{% endif %}>Vider ce cache</button></article>
     <article class="mt-operation"><div><h3>Fichiers temporaires</h3><p>Temporaires de plus de 24 h. Documents conservés.</p><small id="mt-temporary-count">Inventaire…</small></div><button type="button" class="ghost-button" data-maintenance-action="cleanup" data-url="{{ url_for('maintenance.action', action='cleanup') }}" {% if not can_manage %}disabled{% endif %}>Nettoyer</button></article>
-    <article class="mt-operation mt-operation-mode"><div><h3>Mode maintenance</h3><p>Pause des API Flask. Admin et API mobile indépendante disponibles.</p><small id="mt-mode-detail">—</small></div><button type="button" class="admin-button" id="mt-mode-button" data-maintenance-action="mode" data-url="{{ url_for('maintenance.action', action='mode') }}" aria-pressed="false" {% if not can_manage %}disabled{% endif %}>Activer la maintenance</button></article>
+    <article class="mt-operation mt-operation-mode"><div><h3>Mode maintenance</h3><p>Site et application en pause. Accès administrateur conservé.</p><small id="mt-mode-detail">—</small></div><button type="button" class="admin-button" id="mt-mode-button" data-maintenance-action="mode" data-url="{{ url_for('maintenance.action', action='mode') }}" aria-pressed="false" {% if not can_manage %}disabled{% endif %}>Activer la maintenance</button></article>
     <h3 class="mt-journal-title">Dernières interventions</h3><div id="mt-operation-history" class="mt-results"></div>
     {% else %}
     <div id="mt-results-{{ key }}" class="mt-results"><p class="mt-empty">Chargement de l’état…</p></div>
@@ -57,4 +57,4 @@
 </dialog>
 {% endfor %}
 {% endblock %}
-{% block page_scripts %}<script src="{{ url_for('static', filename='js/admin_maintenance.js') }}?v=20261008-deployment"></script>{% endblock %}
+{% block page_scripts %}<script src="{{ url_for('static', filename='js/admin_maintenance.js') }}?v=20261008-global"></script>{% endblock %}
