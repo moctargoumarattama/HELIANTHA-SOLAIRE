@@ -129,13 +129,18 @@ def test_restarting_preserves_catalogue_and_three_historical_quotes(tmp_path):
         connection.execute("UPDATE products SET sale_price=1234, stock=7 WHERE reference='ONGRID-PV-590'")
         connection.executemany("INSERT INTO quote_requests (quote_number, project, customer_name, request_json, result_json) VALUES (?, 'photovoltaic', 'Client test', '{}', '{}')", [(f'HISTORY-{i}',) for i in range(3)])
         connection.commit()
-        before = {table: [tuple(row) for row in connection.execute(f'SELECT * FROM {table} ORDER BY id')] for table in ("products", "quote_requests", "users")}
+        before = {table: [dict(row) for row in connection.execute(f'SELECT * FROM {table} ORDER BY id')] for table in ("products", "quote_requests", "users")}
     with patch.object(dbmod, "generate_password_hash") as hashing:
         restarted = application(database, ADMIN_PASSWORD="different-startup-password")
     hashing.assert_not_called()
     with restarted.app_context():
         connection = dbmod.get_db()
-        after = {table: [tuple(row) for row in connection.execute(f'SELECT * FROM {table} ORDER BY id')] for table in before}
+        after = {table: [dict(row) for row in connection.execute(f'SELECT * FROM {table} ORDER BY id')] for table in before}
+    # Startup adds credentials to legacy quotes; every historical value stays intact.
+    for old_quote, migrated_quote in zip(before["quote_requests"], after["quote_requests"]):
+        assert old_quote["access_token"] is None
+        assert len(migrated_quote["access_token"]) == 32
+        migrated_quote["access_token"] = None
     assert after == before
     assert len(after["quote_requests"]) == 3
 

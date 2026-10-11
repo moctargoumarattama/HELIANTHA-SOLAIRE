@@ -43,6 +43,7 @@ def _get_redis_version():
     return None
 
 import json
+import secrets
 from copy import deepcopy
 import sqlite3
 from datetime import UTC, datetime
@@ -330,6 +331,7 @@ CREATE TABLE IF NOT EXISTS whatsapp_outbox (
 """
 
 QUOTE_COLUMNS = {
+    "access_token": "TEXT",
     "company": "TEXT",
     "city": "TEXT",
     "solution_name": "TEXT",
@@ -482,6 +484,18 @@ def _migrate_quote_requests(db):
     for column, column_type in QUOTE_COLUMNS.items():
         if column not in existing:
             db.execute(f"ALTER TABLE quote_requests ADD COLUMN {column} {column_type}")
+    # Upgrade historical quotes without modifying any saved customer or price data.
+    for row in db.execute(
+        "SELECT id FROM quote_requests WHERE access_token IS NULL OR access_token = ''"
+    ).fetchall():
+        db.execute(
+            "UPDATE quote_requests SET access_token = ? WHERE id = ?",
+            (secrets.token_urlsafe(24), row["id"]),
+        )
+    db.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_quote_requests_access_token "
+        "ON quote_requests(access_token)"
+    )
 
 
 def _migrate_products(db):
@@ -1154,6 +1168,7 @@ def load_calculation_context():
 def save_quote(quote_number, project, data, contact, result):
     db = get_db()
     _ensure_database_initialized(db)
+    access_token = secrets.token_urlsafe(24)
     # Normalize only a new record, never a historical quote on read.
     result = deepcopy(result)
     financial = result.get("financial_breakdown") or {}
@@ -1177,8 +1192,8 @@ def save_quote(quote_number, project, data, contact, result):
          confidence, reliability_json, calculation_detail_json, financial_breakdown_json,
          selected_equipment_json, calculator_versions_json, technical_parameters_json,
          quote_snapshot_json, technical_reference_json, bom_json, technical_configuration_json,
-         compatibility_json, product_selections_json, selected_offer_level, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+         compatibility_json, product_selections_json, selected_offer_level, updated_at, access_token)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             quote_number,
             project,
@@ -1209,6 +1224,7 @@ def save_quote(quote_number, project, data, contact, result):
             dumps(result.get("product_selections") or {}),
             selected_offer_level,
             utc_now(),
+            access_token,
         ),
     )
     db.commit()
@@ -1314,6 +1330,15 @@ def get_quote(quote_id):
     _ensure_database_initialized(db)
     row = db.execute("SELECT * FROM quote_requests WHERE id = ?", (quote_id,)).fetchone()
     return _hydrate_quote(row)
+
+
+def get_quote_access_token(quote_id):
+    db = get_db()
+    _ensure_database_initialized(db)
+    row = db.execute(
+        "SELECT access_token FROM quote_requests WHERE id = ?", (quote_id,)
+    ).fetchone()
+    return row["access_token"] if row else None
 
 
 def get_quote_by_number(quote_number):

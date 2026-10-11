@@ -56,15 +56,16 @@ def test_public_pdf_routes_return_pdf_without_public_html(tmp_path):
     )
     assert response.status_code == 200
     quote_number = response.get_json()["quote_number"]
+    access_token = response.get_json()["access_token"]
     with app.app_context():
         quote_id = get_quote_by_number(quote_number)["id"]
 
-    legacy_pdf_response = client.get(f"/devis/{quote_id}/pdf", follow_redirects=True)
+    legacy_pdf_response = client.get(f"/devis/{quote_id}/pdf", query_string={"token": access_token}, follow_redirects=True)
     assert legacy_pdf_response.status_code == 200
     assert legacy_pdf_response.mimetype == "application/pdf"
     assert legacy_pdf_response.data.startswith(b"%PDF-1.4")
 
-    document_response = client.get(f"/devis/{quote_id}/document.pdf")
+    document_response = client.get(f"/devis/{quote_id}/document.pdf", query_string={"token": access_token})
     assert document_response.status_code == 200
     assert document_response.mimetype == "application/pdf"
     assert document_response.data.startswith(b"%PDF-1.4")

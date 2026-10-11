@@ -110,13 +110,14 @@ def test_route_whatsapp_pdf_filename_uses_quote_number(tmp_path):
                 data={"city": "Rabat"},
                 result={
                     "quote_number": "HSQ-20261004-1234",
+                    "access_token": "test-quote-access-token",
                     "financial_breakdown": {"total_ttc": 35810},
                 },
             )
 
     payload = notify.call_args.args[0]
     assert payload["pdf_filename"] == "Devis_HSQ-20261004-1234.pdf"
-    assert payload["pdf_url"] == "/devis/12/document.pdf"
+    assert payload["pdf_url"] == "/devis/12/document.pdf?token=test-quote-access-token"
 
 
 def test_route_whatsapp_pdf_filename_falls_back_to_quote_id(tmp_path):
@@ -130,7 +131,7 @@ def test_route_whatsapp_pdf_filename_falls_back_to_quote_id(tmp_path):
                 project="photovoltaic",
                 contact={"name": "Client Test", "phone": "0611111111"},
                 data={"city": "Rabat"},
-                result={"financial_breakdown": {"total_ttc": 35810}},
+                result={"financial_breakdown": {"total_ttc": 35810}, "access_token": "test-quote-access-token"},
             )
 
     payload = notify.call_args.args[0]

@@ -176,8 +176,8 @@ def test_assistant_chat_generates_ongrid_quote_from_tag(tmp_path):
     assert "<<<DEVIS_DATA" not in payload["content"]
     assert payload["quote"]["total_ttc"].endswith("DH")
     assert payload["quote"]["system_summary"].startswith("Systeme solaire")
-    assert payload["quote"]["download_url"] == f"/api/quotes/{payload['quote']['id']}/document.pdf"
-    assert payload["quote"]["view_url"] == f"/api/quotes/{payload['quote']['id']}"
+    assert payload["quote"]["download_url"] == f"/api/quotes/{payload['quote']['id']}/document.pdf?token={payload['quote']['access_token']}"
+    assert payload["quote"]["view_url"] == f"/api/quotes/{payload['quote']['id']}?token={payload['quote']['access_token']}"
 
     with app.app_context():
         quote = get_quote(payload["quote"]["id"])
@@ -233,7 +233,7 @@ def test_assistant_devis_manager_generates_ongrid_quote_without_ollama(tmp_path)
     assert payload["quote"]["total_ttc"].endswith("DH")
     assert payload["quote"]["kwc"] > 0
     assert payload["quote"]["panels"] > 0
-    assert payload["quote"]["download_url"] == f"/api/quotes/{payload['quote']['id']}/document.pdf"
+    assert payload["quote"]["download_url"] == f"/api/quotes/{payload['quote']['id']}/document.pdf?token={payload['quote']['access_token']}"
     post.assert_not_called()
 
     with app.app_context():

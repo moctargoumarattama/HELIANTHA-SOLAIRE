@@ -4,6 +4,7 @@ from json import dumps as json_dumps
 from pathlib import Path
 from random import randint
 import re
+import secrets
 from urllib.parse import quote_plus
 from uuid import uuid4
 
@@ -32,6 +33,7 @@ from .db import (
     get_product,
     get_db,
     get_quote,
+    get_quote_access_token,
     get_primary_admin_user,
     get_user,
     get_quote_by_number,
@@ -136,6 +138,58 @@ HIDDEN_COMPANY_SETTING_KEYS = {
     "pdf_payment_terms",
     "quote_validity_days",
 }
+
+# JSON reads expose PDF links, so they need the same protection as every PDF alias.
+QUOTE_ACCESS_ENDPOINTS = {
+    "main.api_quote_by_id", "main.api_quote_by_number",
+    "main.api_quote_document_by_id", "main.public_quote_by_id",
+    "main.public_quote_print_by_id", "main.public_quote_document_by_id",
+    "main.public_quote", "main.public_quote_print", "main.admin_quote_pdf",
+}
+
+
+def _has_admin_quote_session():
+    username = session.get("admin_user")
+    if not isinstance(username, str) or not username:
+        return False
+    return get_db().execute(
+        "SELECT 1 FROM users WHERE username = ? AND active = 1 "
+        "AND role IN ('Direction', 'Commercial', 'Administrateur')",
+        (username,),
+    ).fetchone() is not None
+
+
+@bp.before_request
+def _protect_quote_access():
+    if request.endpoint not in QUOTE_ACCESS_ENDPOINTS or _has_admin_quote_session():
+        return None
+    supplied = request.args.get("token")
+    if not supplied:
+        abort(403)
+    values = request.view_args or {}
+    if "quote_id" in values:
+        stored = get_quote_access_token(values["quote_id"])
+    else:
+        row = get_db().execute(
+            "SELECT access_token FROM quote_requests WHERE quote_number = ?",
+            (values.get("quote_number"),),
+        ).fetchone()
+        stored = row["access_token"] if row else None
+    if not stored or not secrets.compare_digest(
+        supplied.encode("utf-8"), stored.encode("utf-8")
+    ):
+        abort(403)
+    return None
+
+
+@bp.after_request
+def _private_quote_response(response):
+    if request.endpoint in QUOTE_ACCESS_ENDPOINTS:
+        response.headers.setdefault("Cache-Control", "private, no-store, max-age=0")
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.vary.add("Cookie")
+    return response
+
 
 def _is_placeholder_equipment_line(item: dict) -> bool:
     text_blob = " ".join(
@@ -317,7 +371,10 @@ def _notify_quote_created_safely(
                 "city": data.get("city") or contact.get("location") or "",
                 "project_type": _project_label_for_notification(project),
                 "total_ttc": _money_label((result.get("financial_breakdown") or {}).get("total_ttc")),
-                "pdf_url": url_for("main.public_quote_document_by_id", quote_id=quote_id),
+                "pdf_url": url_for(
+                    "main.public_quote_document_by_id", quote_id=quote_id,
+                    token=result.get("access_token") or get_quote_access_token(quote_id),
+                ),
                 "pdf_filename": _quote_pdf_filename(result.get("quote_number") or result.get("reference"), quote_id),
                 "whatsapp_gateway_url": settings.get("whatsapp_gateway_url"),
                 "admin_whatsapp": settings.get("admin_whatsapp"),
@@ -350,9 +407,10 @@ def _quote_json_response(quote: dict):
     company = company_profile(list_company_settings())
     payload = build_public_quote_payload(quote, company)
     payload["quote_id"] = quote.get("id")
-    payload["pdf_url"] = url_for("main.api_quote_document_by_id", quote_id=quote["id"])
+    payload["access_token"] = quote["access_token"]
+    payload["pdf_url"] = url_for("main.api_quote_document_by_id", quote_id=quote["id"], token=quote["access_token"])
     payload["document_url"] = payload["pdf_url"]
-    payload["api_url"] = url_for("main.api_quote_by_id", quote_id=quote["id"])
+    payload["api_url"] = url_for("main.api_quote_by_id", quote_id=quote["id"], token=quote["access_token"])
     return jsonify(payload)
 
 
@@ -420,6 +478,7 @@ def calculate():
     result["created_at"] = datetime.now().strftime("%d/%m/%Y à %H:%M")
     result["project_type"] = project
     quote_id = save_quote(result["quote_number"], engine_project, data, contact, result)
+    result["access_token"] = get_quote_access_token(quote_id)
     _notify_quote_created_safely(
         quote_id=quote_id,
         project=engine_project,
@@ -428,8 +487,8 @@ def calculate():
         result=result,
     )
     result["quote_id"] = quote_id
-    result["quote_url"] = url_for("main.api_quote_by_id", quote_id=quote_id)
-    result["pdf_url"] = url_for("main.api_quote_document_by_id", quote_id=quote_id)
+    result["quote_url"] = url_for("main.api_quote_by_id", quote_id=quote_id, token=result["access_token"])
+    result["pdf_url"] = url_for("main.api_quote_document_by_id", quote_id=quote_id, token=result["access_token"])
     result["public_url"] = result["quote_url"]
     public_result = sanitize_calculation_result_for_public(result)
     return jsonify(public_result)
@@ -539,6 +598,8 @@ def _create_official_quote(project: str, data: dict, contact: dict) -> dict:
     result["created_at"] = datetime.now().strftime("%d/%m/%Y a %H:%M")
     result["project_type"] = project
     quote_id = save_quote(quote_number, project, data, contact, result)
+    access_token = get_quote_access_token(quote_id)
+    result["access_token"] = access_token
     _notify_quote_created_safely(
         quote_id=quote_id,
         project=project,
@@ -552,14 +613,15 @@ def _create_official_quote(project: str, data: dict, contact: dict) -> dict:
         "id": quote_id,
         "ref": quote_number,
         "quote_number": quote_number,
+        "access_token": access_token,
         "total_ttc": _money_label(financial.get("total_ttc")),
         "kwc": _result_kwc(final),
         "panels": _result_panel_count(final),
         "inverter": _result_inverter_label(project, final),
         "system_summary": _quote_summary(project, result),
-        "download_url": url_for("main.api_quote_document_by_id", quote_id=quote_id),
-        "pdf_url": url_for("main.api_quote_document_by_id", quote_id=quote_id),
-        "view_url": url_for("main.api_quote_by_id", quote_id=quote_id),
+        "download_url": url_for("main.api_quote_document_by_id", quote_id=quote_id, token=access_token),
+        "pdf_url": url_for("main.api_quote_document_by_id", quote_id=quote_id, token=access_token),
+        "view_url": url_for("main.api_quote_by_id", quote_id=quote_id, token=access_token),
     }
 
 
@@ -643,6 +705,7 @@ def _quote_from_ready_marker(payload: dict) -> dict | None:
         "id": payload.get("id"),
         "ref": payload.get("ref"),
         "quote_number": payload.get("ref"),
+        "access_token": payload.get("access_token"),
         "total_ttc": str(payload.get("total_ttc") or ""),
         "kwc": payload.get("kwc", ""),
         "panels": payload.get("panels", ""),

@@ -356,7 +356,7 @@ def test_ollama_stream_keeps_fragmented_quote_marker_for_existing_parser(tmp_pat
     assert final["quote_ready"] is True
     assert final["quote"]["total_ttc"].endswith("DH")
     assert final["quote"]["system_summary"].startswith("Systeme solaire")
-    assert final["quote"]["download_url"] == f"/api/quotes/{final['quote']['id']}/document.pdf"
+    assert final["quote"]["download_url"] == f"/api/quotes/{final['quote']['id']}/document.pdf?token={final['quote']['access_token']}"
     assert "<<<DEVIS_DATA" not in final["content"]
     token_text = "".join(event.get("content", "") for event in events if event["type"] == "token")
     assert "Voici votre estimation solaire." in token_text

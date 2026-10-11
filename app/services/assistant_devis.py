@@ -644,6 +644,7 @@ def quote_marker_payload(quote: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": quote.get("id"),
         "ref": quote.get("ref") or quote.get("quote_number"),
+        "access_token": quote.get("access_token"),
         "total_ttc": quote.get("total_ttc"),
         "kwc": quote.get("kwc", ""),
         "panels": quote.get("panels", ""),
