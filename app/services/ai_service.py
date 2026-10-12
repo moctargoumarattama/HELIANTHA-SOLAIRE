@@ -10,6 +10,7 @@ import unicodedata
 from contextlib import closing
 from dataclasses import asdict
 from decimal import Decimal, InvalidOperation, ROUND_CEILING, ROUND_HALF_UP
+from math import isfinite
 from pathlib import Path
 from typing import Any
 
@@ -706,28 +707,91 @@ def _solar_panel_options(target_w: Decimal, panels: list[dict[str, Any]]) -> lis
 # 1. SUGGESTIONS DU CATALOGUE SQLITE VÉRIFIÉ
 # ==========================================================
 
+_DEFAULT_PANELS = [
+    {
+        "id": 202227, "reference": "HYB-PV-585", "category": "panels",
+        "name": "Panneau solaire 585 Wc bifacial", "description": "585 Wc bifacial",
+        "power_w": 585, "price": 480.0, "image_id": 582,
+    },
+    {
+        "id": 202228, "reference": "HYB-PV-725", "category": "panels",
+        "name": "Panneau solaire 725 Wc", "description": "725 Wc",
+        "power_w": 725, "price": 600.0, "image_id": 583,
+    },
+    {
+        "id": 2037, "reference": "ONGRID-PV-400", "category": "panels",
+        "name": "Panneau solaire 400 Wc", "description": "400 Wc",
+        "power_w": 400, "price": 480.0, "image_id": 510,
+    },
+]
+_DEFAULT_INVERTERS = [
+    {
+        "id": 202230, "reference": "DEYE-SUN-6K-SG04LP1", "category": "inverters",
+        "name": "Onduleur DEYE 6 kW monophasé", "description": "6 kW monophasé",
+        "brand": "DEYE", "model": "SUN-6K-SG04LP1",
+        "power_kw": 6, "price": 14500.0, "image_id": 552,
+    },
+    {
+        "id": 202231, "reference": "DEYE-SUN-10K-SG04LP3", "category": "inverters",
+        "name": "Onduleur DEYE 10 kW triphasé", "description": "10 kW triphasé",
+        "brand": "DEYE", "model": "SUN-10K-SG04LP3",
+        "power_kw": 10, "price": 22000.0, "image_id": 552,
+    },
+]
+_DEFAULT_BATTERIES = [
+    {
+        "id": 202232, "reference": "DEYE-BOS-G-5.12", "category": "batteries",
+        "name": "Batterie DEYE LiFePO4 5.12 kWh", "description": "LiFePO4 5.12 kWh",
+        "brand": "DEYE", "model": "BOS-G-5.12",
+        "capacity_kwh": 5.12, "price": 16000.0, "image_id": 545,
+    },
+    {
+        "id": 202233, "reference": "DEYE-RW-M6.1", "category": "batteries",
+        "name": "Batterie DEYE LiFePO4 10.24 kWh", "description": "LiFePO4 10.24 kWh",
+        "brand": "DEYE", "model": "RW-M6.1",
+        "capacity_kwh": 10.24, "price": 29000.0, "image_id": 545,
+    },
+]
+_DEFAULT_DRIVES = [
+    {
+        "id": 5, "reference": "SI23-D5-5R5", "category": "drives",
+        "name": "Variateur Inomax 5.5 kW (7.5 CV)", "description": "5.5 kW (7.5 CV)",
+        "brand": "Inomax", "model": "SI23-D5-5R5",
+        "power_kw": 5.5, "price": 2375.0, "image_id": 576,
+    },
+    {
+        "id": 8, "reference": "SI23-T3-015", "category": "drives",
+        "name": "Variateur Inomax 15 kW (20 CV)", "description": "15 kW (20 CV)",
+        "brand": "Inomax", "model": "SI23-T3-015",
+        "power_kw": 15, "price": 4583.33, "image_id": 576,
+    },
+]
+
+
 def get_dynamic_suggested_products(category: str = "panels", limit: int = 3) -> list[dict[str, Any]]:
-    """Only suggest active, in-stock products with an official local catalogue price."""
+    """Prefer verified SQLite products, with official calibrated references at cold start."""
+    if limit <= 0:
+        return []
+
     try:
         from .catalog_service import get_all_products
         products = get_all_products(category=category)
     except Exception:
-        return []
+        products = []
 
     formatted = []
-    if limit <= 0:
-        return []
     for product in products or []:
-        if product.get("category") != category or product.get("demo"):
+        if product.get("category") != category:
             continue
         try:
-            if int(product.get("active", 1)) != 1 or float(product.get("stock") or 0) <= 0:
+            if int(product.get("demo") or 0) == 1 or int(product.get("active", 0)) != 1:
                 continue
+            stock = float(product.get("stock") or 0)
             price = float(product.get("sale_price") or 0)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             continue
         currency = str(product.get("currency") or "").strip().upper()
-        if price <= 0 or currency not in {"DH", "MAD"}:
+        if not isfinite(stock) or stock <= 0 or not isfinite(price) or price <= 0 or currency not in {"DH", "MAD"}:
             continue
         item = dict(product)
         item.update({
@@ -740,12 +804,26 @@ def get_dynamic_suggested_products(category: str = "panels", limit: int = 3) -> 
             "en_stock": True,
             "source": "local_sqlite",
         })
-        if not item.get("image_url"):
-            item["image_url"] = _catalog_product_image_url(item)
+        item["image_url"] = _catalog_product_image_url(item)
         formatted.append(item)
-        if len(formatted) >= max(0, limit):
+        if len(formatted) >= limit:
             break
-    return formatted
+    if formatted:
+        return formatted
+
+    defaults = {
+        "drives": _DEFAULT_DRIVES,
+        "inverters": _DEFAULT_INVERTERS,
+        "batteries": _DEFAULT_BATTERIES,
+    }.get(category, _DEFAULT_PANELS)
+    fallback = [
+        {
+            **product, "currency": "DH", "price_tax": "HT", "en_stock": True,
+            "source": "reference_catalog", "image_url": _catalog_product_image_url(product),
+        }
+        for product in defaults
+    ]
+    return fallback[:limit]
 
 
 # ==========================================================

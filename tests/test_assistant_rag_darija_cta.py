@@ -23,44 +23,120 @@ def assistant(text: str) -> dict[str, str]:
 
 
 class TestDynamicProductsRAG:
-    def test_dynamic_suggested_products_panels_have_valid_structure_and_images(self):
-        products = get_dynamic_suggested_products("panels", limit=3)
-        assert len(products) <= 3
-        assert len(products) > 0
-        for p in products:
-            assert p["category"] == "panels"
-            assert p["currency"] == "DH"
-            assert p["price_tax"] == "HT"
-            assert "image_url" in p and p["image_url"].startswith("/v1/products/")
-            assert p["price"] > 0
-            assert p["en_stock"] is True
+    @pytest.mark.parametrize(("category", "expected"), [
+        ("panels", [
+            (202227, "HYB-PV-585", 480.0, 582),
+            (202228, "HYB-PV-725", 600.0, 583),
+            (2037, "ONGRID-PV-400", 480.0, 510),
+        ]),
+        ("inverters", [
+            (202230, "DEYE-SUN-6K-SG04LP1", 14500.0, 552),
+            (202231, "DEYE-SUN-10K-SG04LP3", 22000.0, 552),
+        ]),
+        ("batteries", [
+            (202232, "DEYE-BOS-G-5.12", 16000.0, 545),
+            (202233, "DEYE-RW-M6.1", 29000.0, 545),
+        ]),
+        ("drives", [
+            (5, "SI23-D5-5R5", 2375.0, 576),
+            (8, "SI23-T3-015", 4583.33, 576),
+        ]),
+    ])
+    def test_missing_catalog_uses_official_reference_equipment(self, monkeypatch, category, expected):
+        from app.services import catalog_service
 
-    def test_dynamic_suggested_products_inverters_fallback(self):
-        inverters = get_dynamic_suggested_products("inverters", limit=2)
-        assert len(inverters) <= 2
-        assert len(inverters) > 0
-        for inv in inverters:
-            assert inv["category"] == "inverters"
-            assert inv["currency"] == "DH"
-            assert inv["image_url"].startswith("/v1/products/")
+        monkeypatch.setattr(catalog_service, "get_all_products", lambda **kwargs: [])
+        products = get_dynamic_suggested_products(category, limit=3)
+        assert [(item["id"], item["reference"], item["price"], item["image_id"])
+                for item in products] == expected
+        for item in products:
+            assert item["category"] == category
+            assert item["currency"] == "DH"
+            assert item["price_tax"] == "HT"
+            assert item["en_stock"] is True
+            assert item["source"] == "reference_catalog"
+            assert item["name"]
+            assert item["image_url"].startswith("/v1/products/")
+            assert f"image_id={item['image_id']}" in item["image_url"]
 
-    def test_dynamic_suggested_products_batteries_fallback(self):
-        batteries = get_dynamic_suggested_products("batteries", limit=2)
-        assert len(batteries) <= 2
-        assert len(batteries) > 0
-        for bat in batteries:
-            assert bat["category"] == "batteries"
-            assert bat["currency"] == "DH"
-            assert bat["image_url"].startswith("/v1/products/")
+    def test_suggestions_use_only_verified_catalog_rows(self, monkeypatch):
+        from app.services import catalog_service
 
-    def test_dynamic_suggested_products_drives_fallback(self):
-        drives = get_dynamic_suggested_products("drives", limit=2)
-        assert len(drives) <= 2
-        assert len(drives) > 0
-        for drv in drives:
-            assert drv["category"] == "drives"
-            assert drv["currency"] == "DH"
-            assert drv["image_url"].startswith("/v1/products/")
+        rows = [
+            {"id": 12, "category": "panels", "reference": "REAL-590",
+             "brand": "LONGI", "model": "590 Wc", "sale_price": 1250.75,
+             "currency": "DH", "stock": 4, "active": 1, "demo": 0},
+            {"id": 13, "category": "panels", "reference": "EMPTY",
+             "sale_price": 999, "currency": "DH", "stock": 0, "active": 1},
+            {"id": 14, "category": "panels", "reference": "OTHER-CURRENCY",
+             "sale_price": 99, "currency": "EUR", "stock": 4, "active": 1},
+        ]
+        monkeypatch.setattr(catalog_service, "get_all_products", lambda **kwargs: rows)
+        products = get_dynamic_suggested_products("panels")
+        assert len(products) == 1
+        assert products[0]["reference"] == "REAL-590"
+        assert products[0]["price"] == 1250.75
+        assert products[0]["currency"] == "DH"
+        assert products[0]["source"] == "local_sqlite"
+
+    def test_catalog_failure_uses_limited_reference_equipment(self, monkeypatch):
+        from app.services import catalog_service
+
+        def unavailable_catalog(**kwargs):
+            raise RuntimeError("catalogue unavailable")
+
+        monkeypatch.setattr(catalog_service, "get_all_products", unavailable_catalog)
+        products = get_dynamic_suggested_products("drives", limit=1)
+        assert len(products) == 1
+        assert products[0]["reference"] == "SI23-D5-5R5"
+        assert products[0]["source"] == "reference_catalog"
+
+    def test_invalid_catalog_rows_use_reference_equipment(self, monkeypatch):
+        from app.services import catalog_service
+
+        valid_row = {"id": 12, "category": "panels", "reference": "REAL-590",
+                     "sale_price": 1250.75, "currency": "DH", "stock": 4,
+                     "active": 1, "demo": 0}
+        invalid_fields = [
+            {"category": "batteries"}, {"demo": 1}, {"demo": "1"},
+            {"active": 0}, {"active": None}, {"stock": 0}, {"stock": -1},
+            {"stock": float("nan")}, {"stock": float("inf")},
+            {"sale_price": 0}, {"sale_price": -1}, {"sale_price": "invalid"},
+            {"sale_price": float("nan")}, {"sale_price": float("inf")},
+            {"currency": "EUR"}, {"currency": ""},
+        ]
+        rows = [dict(valid_row, **fields) for fields in invalid_fields]
+        monkeypatch.setattr(catalog_service, "get_all_products", lambda **kwargs: rows)
+        products = get_dynamic_suggested_products("panels", limit=2)
+        assert [item["reference"] for item in products] == ["HYB-PV-585", "HYB-PV-725"]
+        assert all(item["source"] == "reference_catalog" for item in products)
+
+    @pytest.mark.parametrize("limit", [0, -1])
+    def test_nonpositive_limit_skips_catalog_access(self, monkeypatch, limit):
+        from app.services import catalog_service
+
+        def unexpected_catalog_access(**kwargs):
+            pytest.fail("a nonpositive limit must not load the catalogue")
+
+        monkeypatch.setattr(catalog_service, "get_all_products", unexpected_catalog_access)
+        assert get_dynamic_suggested_products("panels", limit=limit) == []
+
+    def test_reference_equipment_returns_independent_items(self, monkeypatch):
+        from app.services import catalog_service
+
+        monkeypatch.setattr(catalog_service, "get_all_products", lambda **kwargs: [])
+        first = get_dynamic_suggested_products("panels", limit=1)
+        original_image_url = first[0]["image_url"]
+        first[0]["price"] = 1.0
+        first[0]["reference"] = "CHANGED"
+        first[0]["image_url"] = "changed.png"
+        second = get_dynamic_suggested_products("panels", limit=1)
+        assert second[0]["price"] == 480.0
+        assert second[0]["reference"] == "HYB-PV-585"
+        assert second[0]["image_url"] == original_image_url
+
+    def test_currency_sanitizer_keeps_the_original_amount(self):
+        assert _sanitize_ai_response("Prix vérifié : 12,50 € HT.") == "Prix vérifié : 12,50 € HT."
 
 
 class TestDarijaPhoneticMatching:
@@ -130,20 +206,23 @@ class TestCommercialDirectAnswerAndCTA:
         assert "1800 DH/mois" in res["content"]
         assert "5.6 kWc" in res["content"]
         assert res["action"]["type"] == "open_quote_wizard"
-        assert len(res["products"]) > 0
+        assert res["products"]
+        assert all(item["category"] == "panels" for item in res["products"])
 
     def test_commercial_direct_answer_darija_pompage(self):
         res = _get_commercial_direct_answer("bghit pompa dial lbir")
         assert res is not None
         assert "pompage solaire" in res["content"].lower()
         assert res["action"]["type"] == "open_pumping_calculator"
-        assert len(res["products"]) > 0
+        assert res["products"]
+        assert all(item["category"] == "drives" for item in res["products"])
 
     def test_commercial_direct_answer_darija_batteries(self):
         res = _get_commercial_direct_answer("bghit batriyat bach ila t9te3 do")
         assert res is not None
         assert "lithium lifepo4" in res["content"].lower()
-        assert len(res["products"]) > 0
+        assert res["products"]
+        assert all(item["category"] == "batteries" for item in res["products"])
 
     def test_quick_assistant_response_handles_darija_and_attaches_action(self):
         reply = quick_assistant_response([user("fakhtora diali 2000 dh")])
