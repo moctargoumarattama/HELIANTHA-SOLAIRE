@@ -870,6 +870,36 @@ def match_darija(text: str, intent_key: str) -> bool:
 # 3. MOTEUR COMMERCIAL, CTA ACTION & DÉTECTION AVANCÉE
 # ==========================================================
 
+def _estimate_pv_power_from_bill(monthly_bill_dh: Decimal | float | int) -> float:
+    """Return the shared residential PV estimate for a monthly DH bill.
+
+    This calibrated estimate is intentionally the same for French and Darija
+    entry points: a 1,800 DH monthly bill maps to 5.6 kWc.
+    """
+    try:
+        bill = Decimal(str(monthly_bill_dh))
+    except (ArithmeticError, ValueError):
+        return 1.5
+    if not bill.is_finite() or bill <= 0:
+        return 1.5
+    estimate = (bill / Decimal("320")).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+    return float(max(Decimal("1.5"), estimate))
+
+
+def _bill_quote_action(monthly_bill_dh: Decimal | float | int) -> dict[str, Any]:
+    """Build the identical quote CTA for every monthly-bill conversation path."""
+    bill = float(monthly_bill_dh)
+    estimated_kwc = _estimate_pv_power_from_bill(bill)
+    return {
+        "type": "open_quote_wizard",
+        "bill_dh": bill,
+        "estimated_kwc": estimated_kwc,
+        "category": "residential",
+        "label": f"Générer mon devis sur-mesure ({estimated_kwc} kWc)",
+        "button_text": f"Générer mon devis sur-mesure ({estimated_kwc} kWc)",
+    }
+
+
 def _detect_bill_and_build_cta(query: str) -> dict[str, Any] | None:
     """Détecte un montant de facture ou une puissance et génère le CTA du devis."""
     q = (query or "").lower().strip()
@@ -885,15 +915,7 @@ def _detect_bill_and_build_cta(query: str) -> dict[str, Any] | None:
 
         if bill_match:
             bill = float(bill_match.group(1))
-            estimated_kwc = max(1.5, round(bill / 320, 1))
-            return {
-                "type": "open_quote_wizard",
-                "bill_dh": bill,
-                "estimated_kwc": estimated_kwc,
-                "category": "residential",
-                "label": f"Générer mon devis sur-mesure ({estimated_kwc} kWc)",
-                "button_text": f"Générer mon devis sur-mesure ({estimated_kwc} kWc)",
-            }
+            return _bill_quote_action(bill)
 
     # 2. Détection de puissance directe (ex: 5 kw, 6kwc)
     kw_match = re.search(r"\b(\d+(?:\.\d+)?)\s*(?:kw|kwc|kilo)\b", q)
@@ -1402,19 +1424,38 @@ def quick_solar_power_response(messages: list[dict], products: list[dict] | None
     else:
         value = request["value"]
         monthly_value = value * (30 if request["period"] == "day" else 1)
-        kwh_month = monthly_value / Decimal("1.30") if request["unit"] == "dh" else monthly_value
-        kwh_day = kwh_month / 30
-        estimated_kw = kwh_day / Decimal("4.5")
-        recommended_kw = estimated_kw.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
-        target_w = (recommended_kw or estimated_kw) * 1000
-        selected = []
-        # Prefer the actual catalogue panels closest to these power ranges, without
-        # fabricating a reference when only one range is available.
-        for preference in (Decimal(590), Decimal(700)):
+        if request["unit"] == "dh":
+            # A bill is sized with the calibrated residential method used by the
+            # Darija CTA, not by a second tariff/PSH conversion.
+            kwh_month = monthly_value / Decimal("1.30")
+            kwh_day = kwh_month / 30
+            reference_kw = (kwh_day / Decimal("4.5")).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+            recommended_kw = Decimal(str(_estimate_pv_power_from_bill(monthly_value)))
+            target_w = recommended_kw * 1000
             if panels:
-                candidate = min(panels, key=lambda panel: abs(Decimal(str(panel["power_w"])) - preference))
-                if not any(panel["id"] == candidate["id"] for panel in selected):
-                    selected.append(candidate)
+                selected = []
+                for preference in (Decimal(590), Decimal(700)):
+                    candidate = min(panels, key=lambda panel: abs(Decimal(str(panel["power_w"])) - preference))
+                    if not any(panel["id"] == candidate["id"] for panel in selected):
+                        selected.append(candidate)
+            else:
+                # Cold starts use the verified dynamic catalogue (and its calibrated
+                # in-memory fallback) so a bill answer still exposes panel cards.
+                selected = _solar_panels(get_dynamic_suggested_products("panels", limit=3))
+        else:
+            kwh_month = monthly_value
+            kwh_day = kwh_month / 30
+            estimated_kw = kwh_day / Decimal("4.5")
+            recommended_kw = estimated_kw.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+            target_w = (recommended_kw or estimated_kw) * 1000
+            selected = []
+            # Prefer the actual catalogue panels closest to these power ranges, without
+            # fabricating a reference when only one range is available.
+            for preference in (Decimal(590), Decimal(700)):
+                if panels:
+                    candidate = min(panels, key=lambda panel: abs(Decimal(str(panel["power_w"])) - preference))
+                    if not any(panel["id"] == candidate["id"] for panel in selected):
+                        selected.append(candidate)
         lines = ["Prédimensionnement solaire indicatif :"]
         if request["unit"] == "dh":
             lines.append(
@@ -1426,10 +1467,20 @@ def quick_solar_power_response(messages: list[dict], products: list[dict] | None
         else:
             lines.append(f"Consommation : {_solar_number(kwh_month)} kWh/mois.")
         power_label = _solar_number(recommended_kw) if recommended_kw else "moins de 0.1"
-        lines.append(
-            f"Hypothèses : 30 jours/mois, soit {_solar_number(kwh_day, 2)} kWh/jour, "
-            f"et 4.5 heures équivalentes de soleil/jour (PSH) : puissance cible d'environ {power_label} kWc."
-        )
+        if request["unit"] == "dh":
+            lines.append(
+                f"Repère de conversion : 30 jours/mois, soit {_solar_number(kwh_day, 2)} kWh/jour, et 4.5 heures "
+                f"équivalentes de soleil/jour (PSH) correspondent à {_solar_number(reference_kw)} kWc de production brute."
+            )
+            lines.append(
+                f"Le prédimensionnement résidentiel optimisé pour l'effacement de facture est d'environ {power_label} kWc ; "
+                "l'orientation, les ombrages et votre profil de consommation seront confirmés dans le devis."
+            )
+        else:
+            lines.append(
+                f"Hypothèses : 30 jours/mois, soit {_solar_number(kwh_day, 2)} kWh/jour, "
+                f"et 4.5 heures équivalentes de soleil/jour (PSH) : puissance cible d'environ {power_label} kWc."
+            )
         lines.extend(_solar_panel_options(target_w, selected))
         lines.append(
             f"Prévoir un onduleur réseau On-Grid ou Hybride dimensionné autour de {power_label} kW, "
@@ -1442,14 +1493,7 @@ def quick_solar_power_response(messages: list[dict], products: list[dict] | None
         )
         action = None
         if request["unit"] == "dh":
-            action = {
-                "type": "open_quote_wizard",
-                "bill_dh": float(monthly_value),
-                "estimated_kwc": float(recommended_kw),
-                "category": "residential",
-                "label": f"Générer mon devis sur-mesure ({_solar_number(recommended_kw)} kWc)",
-                "button_text": f"Générer mon devis sur-mesure ({_solar_number(recommended_kw)} kWc)",
-            }
+            action = _bill_quote_action(monthly_value)
         elif recommended_kw:
             target_kw = float(recommended_kw)
             action = {
@@ -1911,10 +1955,20 @@ def stream_ollama_chat(messages: list[dict[str, str]], products: list[dict[str, 
     }
     pending = ""
     received_content = False
+    has_yielded_content = False
     quote_started = False
     canonical_catalog = is_catalog_query(messages) and (
         not products or _COMMERCIAL_RE.search(_normalize_text(_latest_user_content(messages)))
     )
+
+    def guarded_stream_chunk(chunk: str) -> str:
+        """Keep token delimiters after the content guard normalizes prose."""
+        guarded = _guard_technical_content(messages, chunk, products)
+        trailing_whitespace = chunk[len(chunk.rstrip()):]
+        if trailing_whitespace and guarded and not guarded.endswith(trailing_whitespace):
+            return guarded + trailing_whitespace
+        return guarded
+
     try:
         with requests.post(f"{OLLAMA_HOST}/api/chat", json=payload, timeout=45, stream=True) as response:
             response.raise_for_status()
@@ -1938,7 +1992,10 @@ def stream_ollama_chat(messages: list[dict[str, str]], products: list[dict[str, 
                     marker_index = pending.find("<<<DEVIS_DATA:")
                     if marker_index >= 0:
                         if marker_index:
-                            yield _guard_technical_content(messages, pending[:marker_index], products)
+                            visible = guarded_stream_chunk(pending[:marker_index])
+                            if visible:
+                                has_yielded_content = True
+                                yield visible
                         pending = pending[marker_index:]
                         quote_started = True
                         continue
@@ -1946,15 +2003,22 @@ def stream_ollama_chat(messages: list[dict[str, str]], products: list[dict[str, 
                     boundaries = list(re.finditer(r"[.!?]\s+|\n", pending))
                     if boundaries:
                         end = boundaries[-1].end()
-                        yield _guard_technical_content(messages, pending[:end], products)
+                        visible = guarded_stream_chunk(pending[:end])
+                        if visible:
+                            has_yielded_content = True
+                            yield visible
                         pending = pending[end:]
             record_ai_observation(received_content, started)
             if pending:
-                yield _guard_technical_content(messages, pending, products)
-            elif not quote_started:
+                visible = guarded_stream_chunk(pending)
+                if visible:
+                    has_yielded_content = True
+                    yield visible
+            if not has_yielded_content and not quote_started:
                 offline = offline_fallback_response(messages, products, currency=currency)
                 yield offline.get("content", ASSISTANT_FALLBACK_MESSAGE)
     except (requests.RequestException, ValueError):
-        record_ai_observation(False, started)
-        offline = offline_fallback_response(messages, products, currency=currency)
-        yield offline.get("content", ASSISTANT_FALLBACK_MESSAGE)
+        record_ai_observation(received_content or has_yielded_content, started)
+        if not has_yielded_content:
+            offline = offline_fallback_response(messages, products, currency=currency)
+            yield offline.get("content", ASSISTANT_FALLBACK_MESSAGE)
