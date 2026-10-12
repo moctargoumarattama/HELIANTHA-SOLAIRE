@@ -757,13 +757,15 @@ _DEFAULT_DRIVES = [
         "id": 5, "reference": "SI23-D5-5R5", "category": "drives",
         "name": "Variateur Inomax 5.5 kW (7.5 CV)", "description": "5.5 kW (7.5 CV)",
         "brand": "Inomax", "model": "SI23-D5-5R5",
-        "power_kw": 5.5, "price": 2375.0, "image_id": 576,
+        "power_kw": 5.5, "phase": "triphase", "voltage": 380,
+        "price": 2375.0, "image_id": 576,
     },
     {
         "id": 8, "reference": "SI23-T3-015", "category": "drives",
         "name": "Variateur Inomax 15 kW (20 CV)", "description": "15 kW (20 CV)",
         "brand": "Inomax", "model": "SI23-T3-015",
-        "power_kw": 15, "price": 4583.33, "image_id": 576,
+        "power_kw": 15, "phase": "triphase", "voltage": 380,
+        "price": 4583.33, "image_id": 576,
     },
 ]
 
@@ -1010,6 +1012,93 @@ def _detect_pumping_power(
     }
 
 
+def _pumping_phase_voltage(query: str, pump_kw: float) -> tuple[str, int | None, bool]:
+    """Resolve only explicit phases, except the established high-power 380 V default."""
+    normalized = _normalize_text(query)
+    monophase = bool(re.search(r"\b(?:220|230)\s*v\b|\bmono(?:phase)?\b", normalized))
+    triphase = bool(re.search(r"\b(?:380|400)\s*v\b|\btri(?:phase)?\b", normalized))
+    if monophase and triphase:
+        return "conflict", None, True
+    if monophase:
+        return "monophase", 220, False
+    if triphase:
+        return "triphase", 380, False
+    if pump_kw > 5.5:
+        return "triphase", 380, False
+    return "", None, False
+
+
+def _drive_power_kw(product: dict[str, Any]) -> float | None:
+    specs = product.get("technical_specs")
+    if isinstance(specs, str):
+        try:
+            specs = json.loads(specs)
+        except (TypeError, ValueError):
+            specs = {}
+    if not isinstance(specs, dict):
+        specs = {}
+    value = product.get("power_kw") or specs.get("power_kw")
+    if value is None:
+        searchable = " ".join(
+            str(product.get(key) or "") for key in ("description", "name", "model", "reference")
+        )
+        match = re.search(r"\b(\d+(?:[.,]\d+)?)\s*kW\b", searchable, re.IGNORECASE)
+        value = match.group(1).replace(",", ".") if match else None
+    try:
+        power = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return power if isfinite(power) and power > 0 else None
+
+
+def _drive_phase(product: dict[str, Any]) -> str:
+    specs = product.get("technical_specs")
+    if isinstance(specs, str):
+        try:
+            specs = json.loads(specs)
+        except (TypeError, ValueError):
+            specs = {}
+    if not isinstance(specs, dict):
+        specs = {}
+    phase_text = _normalize_text(" ".join(str(value or "") for value in (
+        product.get("phase"), product.get("phases"), product.get("subcategory"),
+        specs.get("phase"), specs.get("phases"), product.get("name"),
+        product.get("description"), product.get("model"), product.get("reference"),
+    )))
+    if re.search(r"\b(?:mono|monophase|single[- ]?phase)\b", phase_text):
+        return "monophase"
+    if re.search(r"\b(?:tri|triphase|three[- ]?phase)\b", phase_text):
+        return "triphase"
+
+    voltage = product.get("voltage") or product.get("voltage_v") or specs.get("voltage_v") or specs.get("voltage")
+    try:
+        voltage = float(voltage)
+    except (TypeError, ValueError, OverflowError):
+        voltage = None
+    if voltage in {220, 230}:
+        return "monophase"
+    if voltage in {380, 400}:
+        return "triphase"
+    return ""
+
+
+def _compatible_pumping_drives(
+    products: list[dict[str, Any]], *, required_kw: float, phase: str, limit: int = 2,
+) -> list[dict[str, Any]]:
+    """Only expose stocked drives close to the calibrated rating and known phase."""
+    compatible = []
+    maximum_kw = required_kw * 1.25
+    for product in products:
+        power_kw = _drive_power_kw(product)
+        if power_kw is None or power_kw < required_kw or power_kw > maximum_kw:
+            continue
+        product_phase = _drive_phase(product)
+        if phase and product_phase != phase:
+            continue
+        compatible.append(product)
+    return compatible[:limit]
+
+
 def _sanitize_ai_response(text: str, user_count: int = 1) -> str:
     if not isinstance(text, str):
         return text
@@ -1088,14 +1177,35 @@ def _get_commercial_direct_answer(
     # Cas 0 : Détection directe d'une puissance de pompe agricole (CV ou kW pompage)
     pump = _detect_pumping_power(query, history_text=history_str, branch=branch)
     if pump:
+        phase, voltage_v, phase_conflict = _pumping_phase_voltage(query, pump["kw"])
+        drive_spec = f"{pump['variateur_kw']:g} kW"
+        if phase == "monophase":
+            drive_spec += " en entrée monophasée 220 V / sortie triphasée 220 V"
+        elif phase == "triphase":
+            drive_spec += " triphasé 380 V"
+        else:
+            drive_spec += " (alimentation à confirmer sur la plaque moteur)"
+        if phase_conflict:
+            phase_note = (
+                "Votre message mentionne à la fois une alimentation monophasée et triphasée. "
+                "Merci de vérifier la tension sur la plaque moteur; aucun variateur n'est proposé avant confirmation."
+            )
+        else:
+            phase_note = ""
+        drive_candidates = get_dynamic_suggested_products("drives", 100)
+        pump_prods = [] if phase_conflict else _compatible_pumping_drives(
+            drive_candidates, required_kw=float(pump["variateur_kw"]), phase=phase,
+        )
+        custom_quote_note = ""
+        if not phase_conflict and not pump_prods:
+            custom_quote_note = (
+                " Aucune référence en stock de ce calibre et de cette tension n'est vérifiée dans le catalogue; "
+                "le variateur adapté fera l'objet d'un chiffrage sur mesure par nos ingénieurs."
+            )
         content = (
             f"Pour une pompe agricole de **{pump['cv']} CV** (~{pump['kw']} kW), nous préconisons un champ solaire d'environ **{pump['solar_kwc']} kWc** "
-            f"(soit environ {pump['panels_725']} panneaux HeliAntha 725 Wc ou {pump['panels_585']} panneaux de 585 Wc) associé à un **variateur de pompage solaire MPPT de {pump['variateur_kw']:g} kW** (Triphasé 380V).\n\n"
-            f"Le système fonctionne directement au fil du soleil, sans aucune batterie ni onduleur hybride, avec coffret de protection DC/AC et sondes de puits. Cliquez ci-dessous pour voir le dimensionnement complet."
-        )
-        pump_prods = (
-            get_dynamic_suggested_products("drives", 2)
-            or get_dynamic_suggested_products("panels", 3)
+            f"(soit environ {pump['panels_725']} panneaux HeliAntha 725 Wc ou {pump['panels_585']} panneaux de 585 Wc) associé à un **variateur solaire MPPT de {drive_spec}**.\n\n"
+            f"{phase_note} Le système fonctionne directement au fil du soleil, sans aucune batterie ni onduleur hybride, avec coffret de protection DC/AC et sondes de puits.{custom_quote_note} Cliquez ci-dessous pour voir le dimensionnement complet."
         )
         return {
             "content": content,
@@ -1104,6 +1214,9 @@ def _get_commercial_direct_answer(
                 "type": "open_pumping_calculator",
                 "pump_power_cv": pump["cv"],
                 "pump_power_kw": pump["kw"],
+                "drive_power_kw": pump["variateur_kw"],
+                "phase": phase,
+                "voltage_v": voltage_v,
                 "estimated_kwc": pump["solar_kwc"],
                 "label": f"Lancer le dimensionnement pompage ({pump['solar_kwc']} kWc)",
                 "button_text": f"Lancer le dimensionnement pompage ({pump['solar_kwc']} kWc)",

@@ -90,7 +90,11 @@ from .pumping_rules import (
 )
 from .public_presenters import build_public_quote_payload, company_profile, sanitize_calculation_result_for_public
 from .services.anti_abuse import ASSISTANT_WAIT_MESSAGE
-from .services.assistant_devis import AssistantDevisManager, extract_phase
+from .services.assistant_devis import (
+    AssistantDevisManager,
+    extract_phase,
+    post_quote_acknowledgement,
+)
 from .services.ai_service import (
     can_use_quote_manager,
     chat_with_ollama,
@@ -773,7 +777,9 @@ def _ndjson(payload: dict) -> str:
 
 def _assistant_with_products(payload: dict, products: list[dict], currency: str = "MAD") -> dict:
     """Attach verified catalogue facts to every final response, including quotes."""
-    if products and not payload.get("suggested_products"):
+    action = payload.get("action") if isinstance(payload.get("action"), dict) else {}
+    is_pumping_recommendation = action.get("type") == "open_pumping_calculator"
+    if products and not payload.get("suggested_products") and not is_pumping_recommendation:
         payload["suggested_products"] = products
     if currency != "MAD" and payload.get("quote_ready"):
         payload["content"] += (f" Le devis officiel est calculé en DH. "
@@ -806,6 +812,9 @@ def assistant_chat():
         messages = sanitize_messages(payload.get("messages"))
     except ValueError:
         return jsonify(error="messages doit etre une liste non vide."), 400
+    quote_acknowledgement = post_quote_acknowledgement(messages)
+    if quote_acknowledgement:
+        return jsonify(_assistant_payload_from_content(quote_acknowledgement))
     currency = normalize_assistant_currency(payload.get("currency"))
     products = (find_catalog_products(messages) if currency == "MAD"
                 else find_catalog_products(messages, currency=currency))
@@ -839,6 +848,13 @@ def assistant_chat_stream():
         messages = sanitize_messages(payload.get("messages"))
     except ValueError:
         return jsonify(error="messages doit etre une liste non vide."), 400
+
+    quote_acknowledgement = post_quote_acknowledgement(messages)
+    if quote_acknowledgement:
+        return Response(
+            _ndjson({"type": "final", **_assistant_payload_from_content(quote_acknowledgement)}),
+            mimetype="application/x-ndjson",
+        )
 
     currency = normalize_assistant_currency(payload.get("currency"))
     products = (find_catalog_products(messages) if currency == "MAD"

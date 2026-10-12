@@ -356,3 +356,48 @@ def test_assistant_stream_unknown_local_intent_goes_to_ollama(tmp_path):
     )
     assert token_text == "Analyse Ollama."
     post.assert_called_once()
+
+
+def test_quote_summary_names_only_official_selected_equipment():
+    from app.routes import _quote_summary
+
+    summary = _quote_summary("photovoltaic", {
+        "final_results": {"installed_power_kwp": 3.25},
+        "selected_equipment": [
+            {"component": "panel", "quantity": 5, "brand": "Jinko", "model": "Tiger Neo",
+             "reference": "JK-650", "technical_specs": {"power_w": 650}},
+            {"component": "inverter", "quantity": 1, "brand": "Deye", "model": "SUN-5K",
+             "reference": "DE-5K", "technical_specs": {"power_kw": 5, "voltage": 220}},
+            {"component": "installation", "description": "unverified brand"},
+        ],
+    })
+    assert "Jinko Tiger Neo (JK-650) - 650 Wc" in summary
+    assert "Deye SUN-5K (DE-5K) - 5 kW, 220 V" in summary
+    assert "unverified brand" not in summary
+
+
+def test_quote_in_other_currency_keeps_official_dh_amount():
+    from app.routes import _assistant_with_products
+
+    payload = _assistant_with_products(
+        {"role": "assistant", "content": "Total TTC : 13 100 DH.", "quote_ready": True},
+        [], currency="EUR",
+    )
+    assert "13 100 DH" in payload["content"]
+    assert "Aucun montant en EUR vérifié" in payload["content"]
+    assert "13 100 EUR" not in payload["content"]
+
+
+def test_pumping_quote_summary_uses_actual_drive_reference_and_voltage():
+    from app.routes import _quote_summary
+
+    summary = _quote_summary("pumping", {
+        "final_results": {"selected_pump_cv": 5},
+        "selected_equipment": [
+            {"component": "pump_drive", "quantity": 1, "brand": "INVT", "model": "GD100",
+             "reference": "DRV-380", "technical_specs": {"power_kw": 5.5, "voltage_v": 380}},
+        ],
+    })
+    assert "INVT GD100 (DRV-380)" in summary
+    assert "5.5 kW" in summary
+    assert "380 V" in summary

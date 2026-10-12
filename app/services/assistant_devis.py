@@ -21,6 +21,22 @@ NUMBER_PATTERN = r"((?:\d{1,3}(?:[ \u00a0\u202f]\d{3})+|\d+)(?:[,.]\d+)?)"
 # customer numbers from overflowing calculator inputs or derived quantities.
 MAX_CUSTOMER_NUMBER = 1_000_000_000
 DEVIS_MARKER_TEMPLATE = "<<<DEVIS_DATA:{payload}>>>"
+_ACKNOWLEDGEMENT_WORDS = {
+    "accord", "barakallah", "bien", "beaucoup", "c", "chokran", "choukrane",
+    "d", "est", "fik", "infiniment", "merci", "note", "ok", "okay",
+    "parfait", "super", "top", "vraiment",
+}
+_FINAL_QUOTE_PATTERNS = (
+    re.compile(r"<<<DEVIS_DATA:", re.IGNORECASE),
+    re.compile(r"\bj['’ ]ai\s+genere\s+le\s+devis\b", re.IGNORECASE),
+    re.compile(r"\bvotre\s+devis\s+officiel\s+est\s+pret\b", re.IGNORECASE),
+    re.compile(r"\ble\s+pdf\s+est\s+pret\s+ci-dessous\b", re.IGNORECASE),
+)
+POST_QUOTE_ACKNOWLEDGEMENT = (
+    "Avec grand plaisir ! Votre estimation reste enregistrée. "
+    "Si vous souhaitez modifier un équipement ou nous transmettre des détails supplémentaires, "
+    "je reste à votre disposition."
+)
 
 QUOTE_INTENT_WORDS = (
     "devis",
@@ -172,6 +188,25 @@ def latest_user_message(messages: list[dict[str, str]]) -> str:
         if message.get("role") == "user":
             return str(message.get("content") or "").strip()
     return ""
+
+
+def is_pure_acknowledgement(text: str) -> bool:
+    """True for a courtesy-only message, never for a new technical instruction."""
+    tokens = re.findall(r"[a-z0-9]+", normalize_text(text))
+    return bool(tokens) and all(token in _ACKNOWLEDGEMENT_WORDS for token in tokens)
+
+
+def post_quote_acknowledgement(messages: list[dict[str, str]]) -> str | None:
+    """Respond to a courtesy after a completed quote without replaying the quote."""
+    if not is_pure_acknowledgement(latest_user_message(messages)):
+        return None
+    for message in messages:
+        if message.get("role") != "assistant":
+            continue
+        content = str(message.get("content") or "")
+        if any(pattern.search(content) for pattern in _FINAL_QUOTE_PATTERNS):
+            return POST_QUOTE_ACKNOWLEDGEMENT
+    return None
 
 
 def previous_assistant_prompt(messages: list[dict[str, str]]) -> bool:
@@ -672,6 +707,10 @@ class AssistantDevisManager:
     """Progressive deterministic manager for quote conversations."""
 
     def handle(self, messages: list[dict[str, str]], quote_factory: QuoteFactory | None = None) -> AssistantDevisResponse:
+        followup = post_quote_acknowledgement(messages)
+        if followup:
+            return AssistantDevisResponse(handled=True, content=followup)
+
         slots = extract_slots(messages)
         if not should_handle_devis(messages, slots):
             return AssistantDevisResponse(handled=False)

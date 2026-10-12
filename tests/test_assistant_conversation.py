@@ -8,7 +8,11 @@ import pytest
 from flask import Flask
 
 from app.routes import bp
-from app.services.ai_service import messages_with_system_prompt, sanitize_messages
+from app.services.ai_service import (
+    messages_with_system_prompt,
+    quick_assistant_response,
+    sanitize_messages,
+)
 from app.services.anti_abuse import AssistantQuota
 from app.services.assistant_devis import AssistantDevisManager, extract_slots
 
@@ -216,6 +220,55 @@ def test_complete_progressive_quote_does_not_reask_provided_contacts():
     assert "<<<DEVIS_DATA:" in response.content
 
 
+def test_courtesy_after_finalized_quote_does_not_replay_quote_factory():
+    factory = Mock(return_value={"id": 124, "ref": "HSQ-124"})
+    history = [
+        user("Je veux un devis autoconsommation"),
+        assistant("Parfait, j'ai genere le devis HSQ-123. Le PDF est pret ci-dessous."),
+        user("Merci beaucoup, c'est noté !"),
+    ]
+
+    response = AssistantDevisManager().handle(history, quote_factory=factory)
+
+    assert response.handled
+    assert response.quote is None
+    assert "Avec grand plaisir" in response.content
+    factory.assert_not_called()
+
+
+def test_courtesy_filter_does_not_swallow_a_technical_change_request():
+    from app.services.assistant_devis import is_pure_acknowledgement
+
+    assert is_pure_acknowledgement("Barakallah fik, d'accord, super")
+    assert not is_pure_acknowledgement("Merci, ajoutez un panneau de 585 Wc")
+
+
+def test_pumping_fast_path_respects_phase_and_drive_calibre():
+    from app.services import ai_service
+
+    messages_2cv = [
+        user("Pompage solaire pour puits agricole"),
+        user("2cv 220v monophase"),
+    ]
+    messages_50cv = [user("50cv")]
+    with (
+        patch.object(ai_service, "company_profile_from_settings", return_value=ai_service.DEFAULT_COMPANY_PROFILE),
+        patch.object(ai_service, "get_dynamic_suggested_products", return_value=ai_service._DEFAULT_DRIVES),
+    ):
+        small_pump = quick_assistant_response(messages_2cv)
+        large_pump = quick_assistant_response(messages_50cv)
+
+    assert small_pump is not None
+    assert "220 V / sortie triphasée 220 V" in small_pump["content"]
+    assert "380V" not in small_pump["content"]
+    assert small_pump["suggested_products"] == []
+    assert "chiffrage sur mesure" in small_pump["content"]
+    assert large_pump is not None
+    assert "45 kW" in large_pump["content"]
+    assert large_pump["suggested_products"] == []
+    assert "chiffrage sur mesure" in large_pump["content"]
+
+
 @pytest.fixture
 def arithmetic_client(tmp_path, monkeypatch):
     # A minimal Flask harness exercises the real API handlers without database
@@ -226,6 +279,29 @@ def arithmetic_client(tmp_path, monkeypatch):
     app.register_blueprint(bp)
     monkeypatch.setattr("app.db.list_company_settings", lambda: [])
     return app.test_client()
+
+
+@pytest.mark.parametrize("endpoint", ["/api/assistant/chat", "/api/assistant/chat/stream"])
+def test_completed_quote_thanks_short_circuits_both_routes(arithmetic_client, endpoint):
+    history = [
+        user("Je veux un devis autoconsommation"),
+        assistant("Parfait, j'ai genere le devis HSQ-123. Le PDF est pret ci-dessous."),
+        user("Merci"),
+    ]
+    with patch("app.routes.find_catalog_products", side_effect=AssertionError("catalogue must not be queried")), patch(
+        "app.routes._assistant_quote_factory"
+    ) as quote_factory:
+        response = arithmetic_client.post(endpoint, json={"messages": history})
+
+    assert response.status_code == 200
+    if endpoint.endswith("/stream"):
+        payload = json.loads(response.data.decode().splitlines()[-1])
+        assert payload["type"] == "final"
+    else:
+        payload = response.get_json()
+    assert "Votre estimation reste enregistrée" in payload["content"]
+    assert not payload.get("quote_ready", False)
+    quote_factory.assert_not_called()
 
 
 @pytest.mark.parametrize("endpoint", ["/api/assistant/chat", "/api/assistant/chat/stream"])

@@ -571,3 +571,63 @@ def test_commercial_chat_ignores_unsolicited_model_quote_marker(catalog_app):
     assert payload["suggested_products"][0]["id"] == 1002
     with catalog_app.app_context():
         assert get_db().execute("SELECT COUNT(*) FROM quote_requests").fetchone()[0] == before
+
+
+def test_active_eur_currency_uses_only_verified_eur_price(catalog_app):
+    with catalog_app.app_context():
+        db = get_db()
+        insert_product(db, 3001, "PANEL-EUR-550", "panels", currency="EUR", sale_price=99.95)
+        db.commit()
+        messages = [user("Quel prix pour un panneau LONGI pour ma maison ?")]
+        products = find_catalog_products(messages, currency="EUR")
+        prompt = messages_with_system_prompt(messages, products=products, currency="EUR")[0]["content"]
+    assert [product["id"] for product in products] == [3001]
+    assert products[0]["price"] == 99.95
+    assert products[0]["currency"] == "EUR"
+    assert "DEVISE ACTIVE DU CLIENT : EUR" in prompt
+    assert "99.95 EUR HT" in prompt
+    assert "1250 DH HT" not in prompt
+
+    with patch("app.services.ai_service.requests.post") as post:
+        response = catalog_app.test_client().post(
+            "/api/assistant/chat", json={"messages": messages, "currency": "EUR"},
+        )
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert "99.95 EUR HT" in payload["content"]
+    assert payload["suggested_products"][0]["reference"] == "PANEL-EUR-550"
+    post.assert_not_called()
+
+
+def test_eur_without_verified_price_does_not_relabel_dh(catalog_app):
+    with patch("app.services.ai_service.requests.post", return_value=ollama_json_response("1250 € HT")):
+        response = catalog_app.test_client().post(
+            "/api/assistant/chat",
+            json={"messages": [user("Quel prix pour une batterie DEYE ?")], "currency": "EUR"},
+        )
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert "1250" not in payload["content"]
+    assert "prix vérifié en EUR" in payload["content"]
+    assert "suggested_products" not in payload
+
+
+def test_eur_catalog_stream_uses_verified_price_without_model(catalog_app):
+    with catalog_app.app_context():
+        db = get_db()
+        insert_product(db, 3002, "PANEL-EUR-600", "panels",
+                       brand="LONGI", model="600 Wc", power_w=600,
+                       currency="EUR", sale_price=101.20)
+        db.commit()
+    with patch("app.services.ai_service.requests.post") as post:
+        response = catalog_app.test_client().post(
+            "/api/assistant/chat/stream",
+            json={"messages": [user("Quel prix pour un panneau LONGI ?")], "currency": "EUR"},
+        )
+    assert response.status_code == 200
+    events = [json.loads(line) for line in response.data.decode().splitlines()]
+    assert len(events) == 1
+    assert events[0]["type"] == "final"
+    assert "101.2 EUR HT" in events[0]["content"]
+    assert events[0]["suggested_products"][0]["reference"] == "PANEL-EUR-600"
+    post.assert_not_called()
