@@ -1627,7 +1627,7 @@ def admin_quote_status(quote_id):
     fields = _admin_submitted_fields()
     if fields is None:
         return _admin_ajax_error({"form": "Données invalides."})
-    status = str(fields.get("status", "Nouveau"))
+    status = str(fields.get("status", "A contacter"))
     if status not in ADMIN_QUOTE_STATUSES:
         if _admin_is_ajax():
             return _admin_ajax_error({"status": "Choisissez un statut valide."})
@@ -1639,7 +1639,7 @@ def admin_quote_status(quote_id):
         label = display_quote_status(status)
         if status in {"Accepte", "Termine"}:
             badge_class = "crm-st-success"
-        elif status in {"Etude", "Devis prepare", "Devis envoye", "Installation"}:
+        elif status == "Installation":
             badge_class = "crm-st-info"
         elif status == "Refuse":
             badge_class = "crm-st-danger"

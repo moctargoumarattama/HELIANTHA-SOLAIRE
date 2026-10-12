@@ -15,17 +15,12 @@ DASHBOARD_PROJECT_LABELS = {
 }
 
 QUOTE_STATUSES = [
-    "Nouveau",
     "A contacter",
-    "Contacte",
-    "Etude",
-    "Visite programmee",
-    "Devis prepare",
-    "Devis envoye",
     "Accepte",
     "Refuse",
     "Installation",
     "Termine",
+    "Visite programmee",  # Statut interne des visites, absent du menu admin.
 ]
 
 CALCULATOR_VERSIONS = {

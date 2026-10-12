@@ -116,6 +116,10 @@ def test_quote_detail_preserves_pdf_and_status_actions_without_visit_panel(clien
     assert '/admin/devis/1/pdf' in html and '/admin/devis/1/status' in html
     assert "visite-technique" not in html and "Visite demandée" not in html
     assert '<option value="Visite programmee"' not in html
+    assert '<option value="Devis envoye"' not in html
+    assert '<option value="Etude"' not in html
+    assert '<option value="A contacter"' in html
+    assert '<option value="" selected disabled>Choisir un statut</option>' in html
 
 
 def test_removed_visit_status_cannot_be_submitted_through_admin(client):

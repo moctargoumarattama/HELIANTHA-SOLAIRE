@@ -95,6 +95,8 @@ def test_quote_status_ajax_updates_badge_and_database(admin):
     app, client = admin
     with app.app_context():
         quote_id = save_quote("HSQ-AJAX-STATUS", "photovoltaic", {}, {"name": "Client"}, {})
+    with app.app_context():
+        assert get_db().execute("SELECT status FROM quote_requests WHERE id=?", (quote_id,)).fetchone()[0] == "A contacter"
     response = ajax(client, f"/admin/devis/{quote_id}/status", {"status": "Accepte"})
     assert response.status_code == 200 and response.is_json
     data = response.get_json()
@@ -109,7 +111,7 @@ def test_quote_status_ajax_updates_badge_and_database(admin):
     invalid = ajax(client, f"/admin/devis/{quote_id}/status", {"status": "Visite programmee"})
     assert invalid.status_code == 400 and "status" in invalid.get_json()["errors"]
     ordinary = client.post(f"/admin/devis/{quote_id}/status", data={"status": "Contacte"})
-    assert ordinary.status_code == 302
+    assert ordinary.status_code == 400
 
 
 def test_ajax_csrf_header_is_required_when_enabled(tmp_path):

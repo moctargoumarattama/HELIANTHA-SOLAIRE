@@ -94,7 +94,7 @@ CREATE TABLE IF NOT EXISTS quote_requests (
     location TEXT,
     request_json TEXT NOT NULL,
     result_json TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'Nouveau',
+    status TEXT NOT NULL DEFAULT 'A contacter',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -1205,7 +1205,7 @@ def save_quote(quote_number, project, data, contact, result):
             data.get("city") or contact.get("location", ""),
             dumps({"data": data, "contact": contact}),
             dumps(result),
-            contact.get("status", "Nouveau") if contact.get("status") in QUOTE_STATUSES else "Nouveau",
+            contact.get("status", "A contacter") if contact.get("status") in QUOTE_STATUSES else "A contacter",
             result.get("title", ""),
             financial.get("total_ht"),
             financial.get("total_ttc"),
