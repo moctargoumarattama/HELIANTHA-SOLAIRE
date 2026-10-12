@@ -95,6 +95,8 @@ from .services.ai_service import (
     can_use_quote_manager,
     chat_with_ollama,
     extract_quote_request,
+    _catalog_facts_response,
+    normalize_assistant_currency,
     find_catalog_products,
     is_catalog_query,
     quick_assistant_response,
@@ -528,7 +530,7 @@ def _money_label(value) -> str:
         return format_currency(0, decimals=0)
 
 
-def _quote_summary(project: str, result: dict) -> str:
+def _quote_base_summary(project: str, result: dict) -> str:
     final = result.get("final_results") or {}
     if project == "photovoltaic":
         power = final.get("installed_power_kwp") or final.get("target_kwp")
@@ -550,6 +552,32 @@ def _quote_summary(project: str, result: dict) -> str:
     if pump_cv:
         return f"Pompage solaire {float(pump_cv):g} CV"
     return "Solution pompage solaire"
+
+
+def _quote_summary(project: str, result: dict) -> str:
+    """Describe only equipment selected by the official quote engine."""
+    summary = _quote_base_summary(project, result)
+    equipment = []
+    for line in result.get("selected_equipment") or []:
+        if not isinstance(line, dict) or line.get("component") not in {"panel", "inverter", "battery", "drive", "pump", "pump_drive"}:
+            continue
+        identity = " ".join(str(line.get(key) or "").strip() for key in ("brand", "model")).strip()
+        reference = str(line.get("reference") or "").strip()
+        if reference and reference not in identity:
+            identity = f"{identity} ({reference})" if identity else reference
+        if not identity:
+            continue
+        specs = line.get("technical_specs") or {}
+        details = []
+        for key, unit in (("power_w", "Wc"), ("power_kw", "kW"), ("capacity_kwh", "kWh"), ("voltage", "V"), ("voltage_v", "V")):
+            value = line.get(key) or specs.get(key)
+            if value not in (None, "", 0):
+                details.append(f"{value} {unit}")
+        label = f"{line.get('quantity', 1)} × {identity}"
+        if details:
+            label += " - " + ", ".join(details)
+        equipment.append(label)
+    return summary + (" ; Équipements : " + " ; ".join(equipment) if equipment else "")
 
 
 def _result_kwc(final: dict) -> float | str:
@@ -743,10 +771,13 @@ def _ndjson(payload: dict) -> str:
     return json_dumps(payload, ensure_ascii=False) + "\n"
 
 
-def _assistant_with_products(payload: dict, products: list[dict]) -> dict:
+def _assistant_with_products(payload: dict, products: list[dict], currency: str = "MAD") -> dict:
     """Attach verified catalogue facts to every final response, including quotes."""
     if products and not payload.get("suggested_products"):
         payload["suggested_products"] = products
+    if currency != "MAD" and payload.get("quote_ready"):
+        payload["content"] += (f" Le devis officiel est calculé en DH. "
+                               f"Aucun montant en {currency} vérifié n’est disponible pour ce devis.")
     return payload
 
 
@@ -775,23 +806,28 @@ def assistant_chat():
         messages = sanitize_messages(payload.get("messages"))
     except ValueError:
         return jsonify(error="messages doit etre une liste non vide."), 400
-    products = find_catalog_products(messages)
+    currency = normalize_assistant_currency(payload.get("currency"))
+    products = (find_catalog_products(messages) if currency == "MAD"
+                else find_catalog_products(messages, currency=currency))
     catalog_query = is_catalog_query(messages)
+    if catalog_query and currency != "MAD":
+        facts = {"role": "assistant", "content": _catalog_facts_response(products, currency=currency)}
+        return jsonify(_assistant_with_products(facts, products, currency=currency))
     devis_response = None
     if not catalog_query and can_use_quote_manager(messages):
         devis_response = assistant_devis_manager.handle(messages, quote_factory=_assistant_quote_factory)
     if devis_response and devis_response.handled:
         return jsonify(_assistant_with_products(
-            _assistant_payload_from_content(devis_response.content), products
+            _assistant_payload_from_content(devis_response.content), products, currency=currency
         ))
-    quick_response = quick_solar_power_response(messages, products=products)
-    if quick_response is None and not catalog_query:
+    quick_response = quick_solar_power_response(messages, products=products) if currency == "MAD" else None
+    if quick_response is None and not catalog_query and currency == "MAD":
         quick_response = quick_assistant_response(messages)
     if quick_response:
-        return jsonify(_assistant_with_products(quick_response, products))
-    assistant_response = chat_with_ollama(messages, products=products)
+        return jsonify(_assistant_with_products(quick_response, products, currency=currency))
+    assistant_response = chat_with_ollama(messages, products=products, **({"currency": currency} if currency != "MAD" else {}))
     result = _assistant_payload_from_content(assistant_response.get("content", ""))
-    return jsonify(_assistant_with_products(result, products))
+    return jsonify(_assistant_with_products(result, products, currency=currency))
 
 
 @bp.post("/api/assistant/chat/stream")
@@ -804,24 +840,32 @@ def assistant_chat_stream():
     except ValueError:
         return jsonify(error="messages doit etre une liste non vide."), 400
 
-    products = find_catalog_products(messages)
+    currency = normalize_assistant_currency(payload.get("currency"))
+    products = (find_catalog_products(messages) if currency == "MAD"
+                else find_catalog_products(messages, currency=currency))
     catalog_query = is_catalog_query(messages)
+    if catalog_query and currency != "MAD":
+        facts = {"role": "assistant", "content": _catalog_facts_response(products, currency=currency)}
+        return Response(
+            _ndjson({"type": "final", **_assistant_with_products(facts, products, currency=currency)}),
+            mimetype="application/x-ndjson",
+        )
     devis_response = None
     if not catalog_query and can_use_quote_manager(messages):
         devis_response = assistant_devis_manager.handle(messages, quote_factory=_assistant_quote_factory)
     if devis_response and devis_response.handled:
         return Response(
             _ndjson({"type": "final", **_assistant_with_products(
-                _assistant_payload_from_content(devis_response.content), products
+                _assistant_payload_from_content(devis_response.content), products, currency=currency
             )}),
             mimetype="application/x-ndjson",
         )
 
-    quick_response = quick_solar_power_response(messages, products=products)
-    if quick_response is None and not catalog_query:
+    quick_response = quick_solar_power_response(messages, products=products) if currency == "MAD" else None
+    if quick_response is None and not catalog_query and currency == "MAD":
         quick_response = quick_assistant_response(messages)
     if quick_response:
-        stream_payload = _assistant_with_products(dict(quick_response), products)
+        stream_payload = _assistant_with_products(dict(quick_response), products, currency=currency)
         return Response(_ndjson({"type": "final", **stream_payload}), mimetype="application/x-ndjson")
 
     @stream_with_context
@@ -832,7 +876,7 @@ def assistant_chat_stream():
         marker_tail = len(marker) - 1
         suppress_tag = False
 
-        for chunk in stream_ollama_chat(messages, products=products):
+        for chunk in stream_ollama_chat(messages, products=products, **({"currency": currency} if currency != "MAD" else {})):
             if not chunk:
                 continue
             full_content += chunk
@@ -859,7 +903,7 @@ def assistant_chat_stream():
             yield _ndjson({"type": "token", "content": pending_visible})
 
         result = _assistant_payload_from_content(full_content)
-        yield _ndjson({"type": "final", **_assistant_with_products(result, products)})
+        yield _ndjson({"type": "final", **_assistant_with_products(result, products, currency=currency)})
 
     return Response(generate(), mimetype="application/x-ndjson")
 
